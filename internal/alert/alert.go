@@ -27,6 +27,10 @@ const (
 
 	MaxAttempts     = 10
 	DefaultInterval = 5 * time.Second
+
+	// SlackWaitsForLinear es lo más que espera el aviso de Slack a que el de
+	// Linear del mismo error se envíe, para llevar el botón de su issue.
+	SlackWaitsForLinear = 2 * time.Minute
 )
 
 // Backoff es la espera tras cada intento fallido; a partir del último, se repite.
@@ -68,13 +72,16 @@ type pending struct {
 	environment string
 	eventAt     time.Time
 	createID    string
+	resolvedAt  *time.Time
 
-	project string
-	linear_extra_label   bool
-	title   string
-	culprit string
-	count   int64
-	linear  string
+	project          string
+	linear_extra_label            bool
+	title            string
+	culprit          string
+	count            int64
+	linear           string
+	linearIdentifier string
+	linearURL        string
 }
 
 func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
@@ -88,7 +95,7 @@ func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	if o.SlackWebhookURL != "" {
-		a.channels[channelSlack] = &slack{url: o.SlackWebhookURL, client: client, base: base}
+		a.channels[channelSlack] = &slack{st: st, url: o.SlackWebhookURL, client: client, base: base}
 		a.order = append(a.order, channelSlack)
 	}
 	if o.LinearAPIKey != "" {
@@ -113,8 +120,9 @@ func (a *Alerter) Channels() []string { return append([]string(nil), a.order...)
 
 // IssueChanged encola un aviso por canal si el issue es nuevo o ha vuelto.
 // Si falla, lo registra y deja seguir a la ingesta.
-func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, issueID int64, ev *event.Event, outcome ingest.Outcome) error {
-	if outcome == ingest.Unchanged || len(a.order) == 0 {
+func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
+	issueID := res.IssueID
+	if res.Outcome == ingest.Unchanged || len(a.order) == 0 {
 		return nil
 	}
 	sp, err := tx.Begin(ctx)
@@ -122,14 +130,21 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, issueID int64, ev
 		a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
 		return nil
 	}
+	ids := map[string]int64{}
 	for _, ch := range a.order {
-		_, err = sp.Exec(ctx, `
-			INSERT INTO alert_outbox (issue_id, channel, kind, release, environment, event_at, next_attempt_at)
-			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7)`,
-			issueID, ch, outcome.String(), ev.Release, ev.Environment, ev.Timestamp, a.now().UTC())
+		var id int64
+		err = sp.QueryRow(ctx, `
+			INSERT INTO alert_outbox (issue_id, channel, kind, release, environment, event_at, resolved_at, next_attempt_at, created_at)
+			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $8)
+			RETURNING id`,
+			issueID, ch, res.Outcome.String(), ev.Release, ev.Environment, ev.Timestamp, res.ResolvedAt, a.now().UTC()).Scan(&id)
 		if err != nil {
 			break
 		}
+		ids[ch] = id
+	}
+	if slackID, linearID := ids[channelSlack], ids[channelLinear]; err == nil && slackID != 0 && linearID != 0 {
+		_, err = sp.Exec(ctx, `UPDATE alert_outbox SET waits_for = $2 WHERE id = $1`, slackID, linearID)
 	}
 	if err == nil {
 		err = sp.Commit(ctx)
@@ -185,21 +200,24 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	var p pending
 	var channel string
 	var attempts int
-	// El NOT EXISTS mantiene el orden por issue y canal: una regresión no se
-	// manda antes de que se mande (o se abandone) el aviso de error nuevo.
+	// El primer NOT EXISTS mantiene el orden por issue y canal: una regresión
+	// no se manda antes de que se mande (o se abandone) el aviso de error nuevo.
+	// El segundo hace que Slack espere a Linear, como mucho SlackWaitsForLinear.
 	err = tx.QueryRow(ctx, `
 		SELECT o.id, o.issue_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
-			o.event_at, o.linear_create_id::text, o.attempts
+			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts
 		FROM alert_outbox o
 		WHERE o.sent_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= $1
 			AND o.channel = ANY($2)
 			AND NOT EXISTS (SELECT 1 FROM alert_outbox b
 				WHERE b.issue_id = o.issue_id AND b.channel = o.channel AND b.id < o.id
 					AND b.sent_at IS NULL AND b.failed_at IS NULL)
+			AND NOT (o.created_at > $3 AND EXISTS (SELECT 1 FROM alert_outbox w
+				WHERE w.id = o.waits_for AND w.sent_at IS NULL AND w.failed_at IS NULL))
 		ORDER BY o.next_attempt_at, o.id
 		LIMIT 1
-		FOR UPDATE SKIP LOCKED`, now, a.order).
-		Scan(&p.id, &p.issueID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.createID, &attempts)
+		FOR UPDATE SKIP LOCKED`, now, a.order, now.Add(-SlackWaitsForLinear)).
+		Scan(&p.id, &p.issueID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID, &attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -207,10 +225,11 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("coger aviso: %w", err)
 	}
 	err = tx.QueryRow(ctx, `
-		SELECT p.name, p.linear_extra_label, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, '')
+		SELECT p.name, p.linear_extra_label, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
+			COALESCE(i.linear_issue_identifier, ''), COALESCE(i.linear_issue_url, '')
 		FROM issues i JOIN projects p ON p.id = i.project_id
 		WHERE i.id = $1`, p.issueID).
-		Scan(&p.project, &p.linear_extra_label, &p.title, &p.culprit, &p.count, &p.linear)
+		Scan(&p.project, &p.linear_extra_label, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
 	if err != nil {
 		return false, fmt.Errorf("leer issue %d: %w", p.issueID, err)
 	}

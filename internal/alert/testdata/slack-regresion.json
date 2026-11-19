@@ -1,0 +1,73 @@
+{
+  "text": "Ha vuelto un error en backend: ZeroDivisionError: division by zero",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Ha vuelto* · backend · production · se resolvió el 12 de noviembre"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*ZeroDivisionError: division by zero*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`app/informes/medias.py:25` en `division`\n```return {\"media\": 10 / total[\"mensajes\"]}```"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Release*\nbackend-2026.11.18"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Espacio*\n8a1c4e2f"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Eventos*\n128 en total"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Petición*\nGET /v1/informes/medias"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Ver el error",
+            "emoji": false
+          },
+          "url": "https://errors.test/issues/7",
+          "style": "primary"
+        },
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "INT-123 en Linear",
+            "emoji": false
+          },
+          "url": "https://linear.app/example/issue/INT-123"
+        }
+      ]
+    }
+  ]
+}

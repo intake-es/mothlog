@@ -467,6 +467,7 @@ func (s *Store) IssueEvents(ctx context.Context, issueID int64, cur string, limi
 
 // SetIssueStatus cambia el estado a mano. Con resolved_next guarda el release
 // del último evento, que la ingesta compara para decidir si hay regresión.
+// resolved_at guarda desde cuándo está resuelto; en otro estado queda vacío.
 func (s *Store) SetIssueStatus(ctx context.Context, id int64, status string) (Issue, error) {
 	if !slices.Contains(Statuses, status) {
 		return Issue{}, fmt.Errorf("%w: status es open, resolved, resolved_next o silenced", ErrInvalid)
@@ -485,7 +486,13 @@ func (s *Store) SetIssueStatus(ctx context.Context, id int64, status string) (Is
 			return Issue{}, ErrNoRelease
 		}
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE issues SET status = $2, resolved_in_release = $3 WHERE id = $1`, id, status, release)
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE issues SET status = $2, resolved_in_release = $3,
+			resolved_at = CASE
+				WHEN $2 NOT IN ('resolved', 'resolved_next') THEN NULL
+				WHEN status IN ('resolved', 'resolved_next') THEN COALESCE(resolved_at, now())
+				ELSE now() END
+		WHERE id = $1`, id, status, release)
 	if err != nil {
 		return Issue{}, fmt.Errorf("cambiar estado: %w", err)
 	}

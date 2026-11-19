@@ -149,7 +149,8 @@ type recorder struct {
 	calls []call
 }
 
-func (r *recorder) IssueChanged(ctx context.Context, tx pgx.Tx, issueID int64, ev *event.Event, o Outcome) error {
+func (r *recorder) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res Result) error {
+	issueID := res.IssueID
 	// Comprueba que el aviso ve el issue de su propia transacción.
 	var n int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM issues WHERE id = $1`, issueID).Scan(&n); err != nil {
@@ -160,7 +161,7 @@ func (r *recorder) IssueChanged(ctx context.Context, tx pgx.Tx, issueID int64, e
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.calls = append(r.calls, call{issueID, ev.ID, o})
+	r.calls = append(r.calls, call{issueID, ev.ID, res.Outcome})
 	return nil
 }
 
@@ -411,7 +412,7 @@ func TestNotifierErrorRollsBack(t *testing.T) {
 
 type failingNotifier struct{}
 
-func (failingNotifier) IssueChanged(context.Context, pgx.Tx, int64, *event.Event, Outcome) error {
+func (failingNotifier) IssueChanged(context.Context, pgx.Tx, *event.Event, Result) error {
 	return io.ErrUnexpectedEOF
 }
 

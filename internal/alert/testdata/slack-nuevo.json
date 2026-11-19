@@ -1,0 +1,60 @@
+{
+  "text": "Nuevo error en frontend: TypeError: Cannot read properties of undefined (reading 'lineas')",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Nuevo error* · frontend · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*TypeError: Cannot read properties of undefined (reading 'lineas')*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`src/app/pedidos/total.ts:12` en `leerTotal`\n```return pedido.lineas.reduce((s, l) =&gt; s + l.importe, 0);```"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Release*\n3f9c2a1"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Espacio*\nClínica Sonrisa"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Usuario*\nu_1834"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Ver el error",
+            "emoji": false
+          },
+          "url": "https://errors.test/issues/42",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}

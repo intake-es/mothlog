@@ -1,6 +1,7 @@
 package alert
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -35,14 +38,23 @@ var baseLabels = []string{"label-bug", "label-errores"}
 type fakeSlack struct {
 	mu       sync.Mutex
 	texts    []string
+	bodies   []json.RawMessage
 	failWith int
 	delay    time.Duration
 }
 
 func (f *fakeSlack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(f.delay)
-	var body struct{ Text string }
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "invalid_payload", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Text   string
+		Blocks []json.RawMessage
+	}
+	if err := json.Unmarshal(raw, &body); err != nil || body.Text == "" || len(body.Blocks) == 0 {
 		http.Error(w, "invalid_payload", http.StatusBadRequest)
 		return
 	}
@@ -53,7 +65,21 @@ func (f *fakeSlack) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.texts = append(f.texts, body.Text)
+	f.bodies = append(f.bodies, raw)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func (f *fakeSlack) payloads(t *testing.T) []slackPayload {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]slackPayload, len(f.bodies))
+	for i, b := range f.bodies {
+		if err := json.Unmarshal(b, &out[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return out
 }
 
 func (f *fakeSlack) setFail(code int) {
@@ -69,6 +95,7 @@ func (f *fakeSlack) messages() []string {
 }
 
 type linearIssue struct {
+	Identifier         string
 	Title, Description string
 	Labels             []string
 	State              string
@@ -138,7 +165,8 @@ func (f *fakeLinear) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.creates++
-		is := &linearIssue{Title: in.Input["title"].(string), Description: in.Input["description"].(string), State: "state-triage"}
+		is := &linearIssue{Identifier: fmt.Sprintf("INT-%d", 100+f.creates), Title: in.Input["title"].(string),
+			Description: in.Input["description"].(string), State: "state-triage"}
 		if ls, ok := in.Input["labelIds"].([]any); ok {
 			for _, l := range ls {
 				is.Labels = append(is.Labels, l.(string))
@@ -146,7 +174,8 @@ func (f *fakeLinear) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.issues[newID] = is
 		f.order = append(f.order, newID)
-		reply(map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]any{"id": newID}}})
+		reply(map[string]any{"issueCreate": map[string]any{"success": true, "issue": map[string]any{
+			"id": newID, "identifier": is.Identifier, "url": linearURL(is.Identifier)}}})
 	case strings.Contains(q, "issueUpdate"):
 		var in struct {
 			Input struct {
@@ -193,14 +222,20 @@ func (f *fakeLinear) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			{"id": "state-later", "position": 2.0}, {"id": f.todo, "position": 1.0},
 		}}}})
 	case strings.Contains(q, "issue("):
-		if _, ok := f.issues[id]; !ok {
+		is, ok := f.issues[id]
+		if !ok {
 			notFound()
 			return
 		}
-		reply(map[string]any{"issue": map[string]any{"id": id, "trashed": false, "archivedAt": nil}})
+		reply(map[string]any{"issue": map[string]any{"id": id, "identifier": is.Identifier, "url": linearURL(is.Identifier),
+			"trashed": false, "archivedAt": nil}})
 	default:
 		http.Error(w, "consulta desconocida: "+q, http.StatusBadRequest)
 	}
+}
+
+func linearURL(identifier string) string {
+	return "https://linear.app/example/issue/" + identifier
 }
 
 func mustJSON(v any) []byte {
@@ -360,14 +395,18 @@ func TestNewRepeatAndRegression(t *testing.T) {
 		t.Fatalf("enviados = %d, quiero 2", n)
 	}
 	link := fmt.Sprintf("%s/issues/%d", publicURL, first.IssueID)
-	msgs := e.slack.messages()
+	msgs := e.slack.payloads(t)
 	if len(msgs) != 1 {
-		t.Fatalf("slack = %q", msgs)
+		t.Fatalf("slack = %+v", msgs)
 	}
-	for _, want := range []string{"*Error nuevo* en *backend*", "<" + link + "|task failed id=43ed20e1ee514256b5fd6db53d2ad712", "Eventos: 1", "Release: ", "Entorno: "} {
-		if !strings.Contains(msgs[0], want) {
-			t.Errorf("slack sin %q:\n%s", want, msgs[0])
+	for _, want := range []string{"*Nuevo error* · backend · development", "*task failed id=43ed20e1ee514256b5fd6db53d2ad712",
+		"*Release*\nfixture-release-1", "Ver el error " + link, "INT-101 en Linear " + linearURL("INT-101")} {
+		if got := flatten(msgs[0]); !strings.Contains(got, want) {
+			t.Errorf("slack sin %q:\n%s", want, got)
 		}
+	}
+	if !strings.HasPrefix(msgs[0].Text, "Nuevo error en backend: task failed id=43ed20e1ee514256b5fd6db53d2ad712") {
+		t.Errorf("text = %q", msgs[0].Text)
 	}
 	issues, order := e.linear.snapshot()
 	if len(order) != 1 {
@@ -409,9 +448,10 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	if n := e.send(t); n != 2 {
 		t.Fatalf("enviados = %d, quiero 2", n)
 	}
-	msgs = e.slack.messages()
-	if len(msgs) != 2 || !strings.Contains(msgs[1], "*Regresión* en *backend*") || !strings.Contains(msgs[1], "Eventos: 3") {
-		t.Fatalf("slack = %q", msgs)
+	msgs = e.slack.payloads(t)
+	if len(msgs) != 2 || !strings.Contains(flatten(msgs[1]), "*Ha vuelto* · backend · development · se resolvió el ") ||
+		!strings.Contains(flatten(msgs[1]), "*Eventos*\n3 en total") {
+		t.Fatalf("slack = %+v", msgs)
 	}
 	issues, order = e.linear.snapshot()
 	if len(order) != 1 {
@@ -530,8 +570,8 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 
 type failAfter struct{ n ingest.Notifier }
 
-func (f failAfter) IssueChanged(ctx context.Context, tx pgx.Tx, id int64, ev *event.Event, o ingest.Outcome) error {
-	if err := f.n.IssueChanged(ctx, tx, id, ev, o); err != nil {
+func (f failAfter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
+	if err := f.n.IssueChanged(ctx, tx, ev, res); err != nil {
 		return err
 	}
 	return errors.New("fallo después de encolar")
@@ -571,6 +611,10 @@ func TestRetriesWithBackoffAndGivesUp(t *testing.T) {
 	e.slack.setFail(http.StatusInternalServerError)
 	e.linear.setFail(http.StatusServiceUnavailable)
 	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	// Aquí se miden los reintentos de cada canal por separado: Slack no espera a Linear.
+	if _, err := e.db.Pool().Exec(context.Background(), `UPDATE alert_outbox SET waits_for = NULL`); err != nil {
+		t.Fatal(err)
+	}
 
 	want := []time.Duration{time.Minute, 5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 6 * time.Hour,
 		12 * time.Hour, 24 * time.Hour, 24 * time.Hour, 24 * time.Hour}
@@ -744,5 +788,183 @@ func TestExtraLabel(t *testing.T) {
 	}
 	if l := issues[order[1]].Labels; !slices.Equal(l, baseLabels) {
 		t.Errorf("sin etiqueta extra: etiquetas = %v", l)
+	}
+}
+
+func buttons(p slackPayload) []string {
+	var out []string
+	for _, b := range p.Blocks {
+		if b.Type != "actions" {
+			continue
+		}
+		for _, el := range b.Elements {
+			m := el.(map[string]any)
+			out = append(out, m["text"].(map[string]any)["text"].(string))
+		}
+	}
+	return out
+}
+
+func TestSlackWaitsForLinear(t *testing.T) {
+	e := newEnv(t, nil)
+	e.linear.setFail(http.StatusInternalServerError)
+	e.ingest(t, "backend-ardiq-task-failed-a-1")
+
+	if n := e.send(t); n != 1 {
+		t.Fatalf("enviados = %d; solo debería intentarse Linear", n)
+	}
+	if len(e.slack.messages()) != 0 {
+		t.Fatal("Slack no ha esperado a Linear")
+	}
+	e.linear.setFail(0)
+	e.clock.set(e.clock.now().Add(time.Minute))
+	if n := e.send(t); n != 2 {
+		t.Fatalf("enviados = %d", n)
+	}
+	msgs := e.slack.payloads(t)
+	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error", "INT-101 en Linear"}) {
+		t.Fatalf("botones = %v", buttons(msgs[0]))
+	}
+}
+
+func TestSlackStopsWaitingForLinear(t *testing.T) {
+	e := newEnv(t, nil)
+	e.linear.setFail(http.StatusInternalServerError)
+	start := e.clock.now()
+	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	e.send(t)
+	e.clock.set(start.Add(time.Minute))
+	e.send(t)
+	e.clock.set(start.Add(SlackWaitsForLinear - time.Second))
+	e.send(t)
+	if len(e.slack.messages()) != 0 {
+		t.Fatal("Slack ha salido antes del tope")
+	}
+	e.clock.set(start.Add(SlackWaitsForLinear))
+	if n := e.send(t); n != 1 {
+		t.Fatalf("enviados = %d", n)
+	}
+	msgs := e.slack.payloads(t)
+	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error"}) {
+		t.Fatalf("mensajes = %+v", msgs)
+	}
+}
+
+func TestResolvedAt(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	id := e.ingest(t, "backend-ardiq-task-failed-a-1").IssueID
+	resolvedAt := func() *time.Time {
+		var at *time.Time
+		if err := e.db.Pool().QueryRow(ctx, `SELECT resolved_at FROM issues WHERE id = $1`, id).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	set := func(status string) {
+		if _, err := e.db.SetIssueStatus(ctx, id, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if resolvedAt() != nil {
+		t.Fatal("un issue nuevo no está resuelto")
+	}
+	set("resolved")
+	first := resolvedAt()
+	if first == nil {
+		t.Fatal("resolved sin resolved_at")
+	}
+	set("resolved_next")
+	if at := resolvedAt(); at == nil || !at.Equal(*first) {
+		t.Errorf("pasar de resolved a resolved_next cambia resolved_at: %v → %v", first, at)
+	}
+	set("open")
+	if resolvedAt() != nil {
+		t.Error("reabrir no borra resolved_at")
+	}
+	set("resolved")
+	res := e.ingest(t, "backend-ardiq-task-failed-b-1")
+	if res.Outcome != ingest.Regressed || res.ResolvedAt == nil || resolvedAt() != nil {
+		t.Errorf("regresión: %+v, resolved_at = %v", res, resolvedAt())
+	}
+}
+
+// TestEndToEndArdiq repite el caso de INT-248: el primer task failed de ardiq
+// y, tras resolverlo, el segundo.
+func TestEndToEndArdiq(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	if n := e.send(t); n != 2 {
+		t.Fatalf("enviados = %d", n)
+	}
+	if _, err := e.db.SetIssueStatus(ctx, first.IssueID, "resolved"); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.ingest(t, "backend-ardiq-task-failed-b-1"); res.Outcome != ingest.Regressed {
+		t.Fatalf("res = %+v", res)
+	}
+	if n := e.send(t); n != 2 {
+		t.Fatalf("enviados = %d", n)
+	}
+
+	e.slack.mu.Lock()
+	bodies := slices.Clone(e.slack.bodies)
+	e.slack.mu.Unlock()
+	if dir := os.Getenv("TEST_EVIDENCE_DIR"); dir != "" {
+		for i, b := range bodies {
+			var pretty bytes.Buffer
+			_ = json.Indent(&pretty, b, "", "  ")
+			name := filepath.Join(dir, fmt.Sprintf("slack-falso-%d-%s.json", i+1, []string{"nuevo", "regresion"}[i]))
+			if err := os.WriteFile(name, append(pretty.Bytes(), '\n'), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	link := fmt.Sprintf("%s/issues/%d", publicURL, first.IssueID)
+	msgs := e.slack.payloads(t)
+	if len(msgs) != 2 {
+		t.Fatalf("mensajes = %d", len(msgs))
+	}
+	today := spanishDate(e.clock.now(), e.clock.now())
+	want := []struct {
+		text   string
+		blocks []string
+		parts  []string
+	}{
+		{
+			"Nuevo error en backend: task failed id=43ed20e1ee514256b5fd6db53d2ad712",
+			[]string{"context", "section", "section", "actions"},
+			[]string{"*Nuevo error* · backend · development\n", "*task failed id=43ed20e1ee514256b5fd6db53d2ad712 name='enviar_factura'",
+				"*Release*\nfixture-release-1\n", "Ver el error " + link, "INT-101 en Linear " + linearURL("INT-101")},
+		},
+		{
+			"Ha vuelto un error en backend: task failed id=193d9a4704ab46469ffec6b691642810",
+			[]string{"context", "section", "section", "actions"},
+			[]string{"*Ha vuelto* · backend · development · se resolvió el " + today + "\n", "*task failed id=193d9a4704ab46469ffec6b691642810",
+				"*Release*\nfixture-release-1\n", "*Eventos*\n2 en total\n", "Ver el error " + link, "INT-101 en Linear " + linearURL("INT-101")},
+		},
+	}
+	for i, m := range msgs {
+		if !strings.HasPrefix(m.Text, want[i].text) {
+			t.Errorf("%d: text = %q", i, m.Text)
+		}
+		var types []string
+		for _, b := range m.Blocks {
+			types = append(types, b.Type)
+		}
+		if !slices.Equal(types, want[i].blocks) {
+			t.Errorf("%d: bloques = %v", i, types)
+		}
+		all := flatten(m)
+		for _, p := range want[i].parts {
+			if !strings.Contains(all, p) {
+				t.Errorf("%d: falta %q en\n%s", i, p, all)
+			}
+		}
+		if strings.Contains(string(bodies[i]), "attachments") || strings.Contains(string(bodies[i]), `"color"`) {
+			t.Errorf("%d: lleva attachments", i)
+		}
 	}
 }

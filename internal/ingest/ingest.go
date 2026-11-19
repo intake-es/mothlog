@@ -42,7 +42,7 @@ func (o Outcome) String() string {
 }
 
 type Notifier interface {
-	IssueChanged(ctx context.Context, tx pgx.Tx, issueID int64, ev *event.Event, outcome Outcome) error
+	IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res Result) error
 }
 
 type NopEnricher struct{}
@@ -51,7 +51,7 @@ func (NopEnricher) Enrich(context.Context, int64, *event.Event) error { return n
 
 type NopNotifier struct{}
 
-func (NopNotifier) IssueChanged(context.Context, pgx.Tx, int64, *event.Event, Outcome) error {
+func (NopNotifier) IssueChanged(context.Context, pgx.Tx, *event.Event, Result) error {
 	return nil
 }
 
@@ -79,6 +79,8 @@ type Result struct {
 	Outcome Outcome
 	// Duplicate indica que el event_id ya estaba guardado y no se ha contado.
 	Duplicate bool
+	// ResolvedAt es, en una regresión, desde cuándo estaba resuelto el issue.
+	ResolvedAt *time.Time
 }
 
 var errDuplicate = errors.New("evento repetido")
@@ -109,7 +111,7 @@ func (in *Ingester) Ingest(ctx context.Context, projectID int64, ev *event.Event
 		if err != nil {
 			return err
 		}
-		if err := in.notifier.IssueChanged(ctx, tx, res.IssueID, ev, res.Outcome); err != nil {
+		if err := in.notifier.IssueChanged(ctx, tx, ev, res); err != nil {
 			return fmt.Errorf("avisar: %w", err)
 		}
 		return nil
@@ -158,6 +160,7 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		status, regressed := transition(found.status, found.resolvedIn, ev.Release)
 		if regressed {
 			res.Outcome = Regressed
+			res.ResolvedAt = found.resolvedAt
 		}
 		_, err := tx.Exec(ctx, `
 			UPDATE issues SET
@@ -166,6 +169,7 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 				last_seen = GREATEST(last_seen, $2),
 				status = $3,
 				resolved_in_release = CASE WHEN $4 THEN NULL ELSE resolved_in_release END,
+				resolved_at = CASE WHEN $4 THEN NULL ELSE resolved_at END,
 				last_regressed_at = CASE WHEN $4 THEN $5 ELSE last_regressed_at END
 			WHERE id = $1`,
 			found.id, ev.Timestamp, status, regressed, now)
@@ -194,14 +198,15 @@ type lockedIssue struct {
 	id         int64
 	status     string
 	resolvedIn string
+	resolvedAt *time.Time
 }
 
 func lockIssue(ctx context.Context, tx pgx.Tx, projectID int64, fp string) (*lockedIssue, error) {
 	var li lockedIssue
 	err := tx.QueryRow(ctx, `
-		SELECT id, status, COALESCE(resolved_in_release, '') FROM issues
+		SELECT id, status, COALESCE(resolved_in_release, ''), resolved_at FROM issues
 		WHERE project_id = $1 AND fingerprint = $2
-		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn)
+		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.resolvedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

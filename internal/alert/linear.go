@@ -38,18 +38,32 @@ type linear struct {
 
 var errLinearNotFound = errors.New("la issue de Linear no existe")
 
+// linearRef es lo que se guarda de una issue de Linear: el identifier
+// (INT-123) y la url van en el botón del aviso de Slack.
+type linearRef struct {
+	ID         string
+	Identifier string
+	URL        string
+}
+
 func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
+	var is linearRef
+	var err error
 	if p.linear != "" {
-		err := l.reopen(ctx, p)
-		if !errors.Is(err, errLinearNotFound) {
+		is, err = l.reopen(ctx, p)
+		if err != nil && !errors.Is(err, errLinearNotFound) {
 			return err
 		}
 	}
-	id, err := l.create(ctx, p)
-	if err != nil {
-		return err
+	if p.linear == "" || err != nil {
+		if is, err = l.create(ctx, p); err != nil {
+			return err
+		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE issues SET linear_issue_id = $2 WHERE id = $1`, p.issueID, id)
+	_, err = tx.Exec(ctx, `
+		UPDATE issues SET linear_issue_id = $2,
+			linear_issue_identifier = NULLIF($3, ''), linear_issue_url = NULLIF($4, '')
+		WHERE id = $1`, p.issueID, is.ID, is.Identifier, is.URL)
 	return err
 }
 
@@ -61,10 +75,10 @@ func (l *linear) labelIDs(p *pending) []string {
 	return ids
 }
 
-func (l *linear) create(ctx context.Context, p *pending) (string, error) {
+func (l *linear) create(ctx context.Context, p *pending) (linearRef, error) {
 	d, err := l.st.IssueDetail(ctx, p.issueID, time.Now())
 	if err != nil {
-		return "", fmt.Errorf("leer issue %d: %w", p.issueID, err)
+		return linearRef{}, fmt.Errorf("leer issue %d: %w", p.issueID, err)
 	}
 	var desc strings.Builder
 	if link := issueLink(l.base, p.issueID); link != "" {
@@ -84,40 +98,43 @@ func (l *linear) create(ctx context.Context, p *pending) (string, error) {
 	var out struct {
 		IssueCreate struct {
 			Success bool
-			Issue   struct{ ID string }
+			Issue   linearRef
 		}
 	}
-	err = l.do(ctx, `mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id } } }`,
+	err = l.do(ctx, `mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url } } }`,
 		map[string]any{"input": input}, &out)
 	if err != nil {
 		// Si un intento anterior la creó pero no llegó a guardarse su id, ya existe.
-		if found, _, lookupErr := l.lookup(ctx, p.createID); lookupErr == nil && found {
-			return p.createID, nil
+		if is, found, _, lookupErr := l.lookup(ctx, p.createID); lookupErr == nil && found {
+			return is, nil
 		}
-		return "", err
+		return linearRef{}, err
 	}
 	if !out.IssueCreate.Success || out.IssueCreate.Issue.ID == "" {
-		return "", errors.New("linear: issueCreate sin éxito")
+		return linearRef{}, errors.New("linear: issueCreate sin éxito")
 	}
-	return out.IssueCreate.Issue.ID, nil
+	return out.IssueCreate.Issue, nil
 }
 
-func (l *linear) reopen(ctx context.Context, p *pending) error {
-	found, archived, err := l.lookup(ctx, p.linear)
+func (l *linear) reopen(ctx context.Context, p *pending) (linearRef, error) {
+	is, found, archived, err := l.lookup(ctx, p.linear)
 	if err != nil {
-		return err
+		return is, err
 	}
 	if !found {
-		return errLinearNotFound
+		return is, errLinearNotFound
 	}
 	if archived {
 		var out struct{ IssueUnarchive struct{ Success bool } }
 		if err := l.do(ctx, `mutation($id: String!) { issueUnarchive(id: $id) { success } }`,
 			map[string]any{"id": p.linear}, &out); err != nil {
-			return err
+			return is, err
 		}
 	}
+	return is, l.reopenAndComment(ctx, p)
+}
 
+func (l *linear) reopenAndComment(ctx context.Context, p *pending) error {
 	state, err := l.unstartedState(ctx)
 	if err != nil {
 		return err
@@ -156,27 +173,27 @@ func (l *linear) reopen(ctx context.Context, p *pending) error {
 }
 
 // lookup dice si la issue existe en Linear (sin contar la papelera) y si está archivada.
-func (l *linear) lookup(ctx context.Context, id string) (found, archived bool, err error) {
+func (l *linear) lookup(ctx context.Context, id string) (is linearRef, found, archived bool, err error) {
 	var out struct {
 		Issue *struct {
-			ID         string
+			linearRef
 			Trashed    *bool
 			ArchivedAt *string
 		}
 	}
-	err = l.do(ctx, `query($id: String!) { issue(id: $id) { id trashed archivedAt } }`,
+	err = l.do(ctx, `query($id: String!) { issue(id: $id) { id identifier url trashed archivedAt } }`,
 		map[string]any{"id": id}, &out)
 	var gqlErr *gqlErrors
 	if errors.As(err, &gqlErr) && gqlErr.notFound() {
-		return false, false, nil
+		return is, false, false, nil
 	}
 	if err != nil {
-		return false, false, err
+		return is, false, false, err
 	}
 	if out.Issue == nil || (out.Issue.Trashed != nil && *out.Issue.Trashed) {
-		return false, false, nil
+		return is, false, false, nil
 	}
-	return true, out.Issue.ArchivedAt != nil, nil
+	return out.Issue.linearRef, true, out.Issue.ArchivedAt != nil, nil
 }
 
 // unstartedState busca el primer estado de tipo unstarted del equipo; el
