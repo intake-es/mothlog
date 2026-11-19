@@ -8,22 +8,28 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
 type config struct {
-	DatabaseURL string
-	Addr        string
-	LogLevel    slog.Level
+	DatabaseURL        string
+	Addr               string
+	LogLevel           slog.Level
+	PublicURL          string
+	RateLimitPerMinute int
+	RetentionDays      int
 }
 
 func loadConfig() (config, error) {
 	c := config{
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		Addr:        os.Getenv("LISTEN_ADDR"),
+		PublicURL:   os.Getenv("PUBLIC_URL"),
 	}
 	if c.DatabaseURL == "" {
 		return c, errors.New("falta DATABASE_URL")
@@ -36,20 +42,45 @@ func loadConfig() (config, error) {
 			return c, fmt.Errorf("LOG_LEVEL: %w", err)
 		}
 	}
+	var err error
+	if c.RateLimitPerMinute, err = positiveEnv("RATE_LIMIT_PER_MINUTE", 60); err != nil {
+		return c, err
+	}
+	if c.RetentionDays, err = positiveEnv("RETENTION_DAYS", 90); err != nil {
+		return c, err
+	}
 	return c, nil
 }
 
+func positiveEnv(name string, def int) (int, error) {
+	v := os.Getenv(name)
+	if v == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("%s debe ser un entero positivo: %q", name, v)
+	}
+	return n, nil
+}
+
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		slog.Error("intake-errors", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(args []string) error {
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
+	}
+	if len(args) > 0 {
+		if args[0] != "projects" {
+			return fmt.Errorf("comando desconocido %q", args[0])
+		}
+		return projects(cfg, args[1:], os.Stdout)
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
@@ -63,9 +94,13 @@ func run() error {
 	}
 	defer db.Close()
 
+	go ingest.RunRetention(ctx, db.Pool(), cfg.RetentionDays, log)
+	ingester := ingest.NewIngester(db.Pool(), nil, nil, log)
+	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), log)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           routes(db),
+		Handler:           routes(db, envelopes),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -91,8 +126,9 @@ type pinger interface {
 	Ping(context.Context) error
 }
 
-func routes(db pinger) http.Handler {
+func routes(db pinger, envelopes http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	mux.Handle(ingest.Pattern, envelopes)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
