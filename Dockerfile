@@ -17,5 +17,6 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/intake-errors ./cm
 
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=build /out/intake-errors /intake-errors
-EXPOSE 8080
+ENV LISTEN_ADDR=:8000
+EXPOSE 8000
 ENTRYPOINT ["/intake-errors"]

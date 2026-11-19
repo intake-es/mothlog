@@ -7,7 +7,7 @@ intake-errors: recibe los envíos de los SDK de Sentry que ya usa la aplicación
 Hace falta Go 1.27 y Docker para el Postgres local.
 
 ```sh
-make run    # levanta Postgres 17 con docker compose y arranca el servicio en :8080
+make run    # levanta Postgres 16 (la versión de producción) con docker compose y arranca el servicio en :8080
 make test   # go test ./...
 make lint   # go vet, gofmt y golangci-lint
 ```
