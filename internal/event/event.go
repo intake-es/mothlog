@@ -68,6 +68,14 @@ type Frame struct {
 	PreContext  []string `json:"pre_context,omitempty"`
 	ContextLine string   `json:"context_line,omitempty"`
 	PostContext []string `json:"post_context,omitempty"`
+	// Minified es la posición en el JS minificado cuando un source map la tradujo.
+	Minified *Position `json:"minified,omitempty"`
+}
+
+type Position struct {
+	Filename string `json:"filename"`
+	Line     int    `json:"lineno"`
+	Column   int    `json:"colno"`
 }
 
 type User struct {

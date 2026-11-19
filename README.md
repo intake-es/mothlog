@@ -21,7 +21,8 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
 | `PUBLIC_URL` | URL pública del servicio, para escribir los DSN | obligatoria para `projects` |
 | `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto | `60` |
-| `RETENTION_DAYS` | días que se guardan los eventos | `90` |
+| `RETENTION_DAYS` | días que se guardan los eventos y los source maps | `90` |
+| `SOURCEMAP_UPLOAD_TOKEN` | token para subir source maps; sin él la subida responde 401 | vacío |
 
 `GET /healthz` responde `ok` si Postgres contesta.
 
@@ -40,11 +41,43 @@ Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo 
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
 
-Los tests de `internal/store` e `internal/ingest` usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
+Los tests de `internal/store`, `internal/ingest` e `internal/sourcemap` usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
 
 ```sh
-INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./internal/store ./internal/ingest
+INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./internal/store ./internal/ingest ./internal/sourcemap
 ```
+
+## Source maps del front
+
+Los errores del panel se traducen a su TypeScript original con los `.map` del build. Se guardan por proyecto, release y nombre del `.js` (los chunks de Angular llevan un hash en el nombre, así que no hacen falta debug IDs), comprimidos, y se borran a los `RETENTION_DAYS` días de subirlos.
+
+`POST /api/{project_id}/releases/{release}/sourcemaps/` recibe un multipart con uno o varios campos `file` (`chunk-XXXX.js.map`) y `Authorization: Bearer <SOURCEMAP_UPLOAD_TOKEN>`. Volver a subir un fichero lo sustituye. Responde con lo guardado:
+
+```json
+{"release": "2026.11.19-1", "files": [{"name": "chunk-A1B2C3D4.js.map", "file": "chunk-A1B2C3D4.js", "size": 33433}]}
+```
+
+Errores, como `{"error": "..."}`: 401 sin token o con uno malo, 404 si el proyecto no existe, 413 si un fichero pasa de 20 MiB o la petición de 100 MiB, y 400 si un fichero no es un source map v3 válido (con su nombre). Si algo falla no se guarda nada de esa petición.
+
+En `Dockerfile` del front, en lugar de `sentry-cli`, después del build y antes de borrar los `.map` (una petición por fichero para no acercarse al límite de 100 MiB; el token, como secreto de BuildKit):
+
+```dockerfile
+RUN --mount=type=secret,id=sourcemap_upload_token,env=SOURCEMAP_UPLOAD_TOKEN \
+    cd dist/app/browser && \
+    for f in *.map; do \
+      curl -sS --fail-with-body \
+        -H "Authorization: Bearer $SOURCEMAP_UPLOAD_TOKEN" \
+        -F "file=@$f" \
+        "$INTAKE_ERRORS_URL/api/$INTAKE_ERRORS_PROJECT_ID/releases/$SENTRY_RELEASE/sourcemaps/" || exit 1; \
+    done && \
+    rm -f *.map
+```
+
+`$SENTRY_RELEASE` tiene que ser el mismo `release` que manda el SDK, y si lleva `/`, codificado como `%2F`.
+
+Al recibir un evento con `release`, cada fotograma de un `.js` con mapa para ese proyecto y release pasa a su fichero original (`src/app/...`), con su línea, columna y 5 líneas de contexto antes y después de `sourcesContent`. `in_app` queda falso para lo que viene de `node_modules/`. La función se deja como la manda el SDK, y la posición minificada se guarda en `minified`. Sin release, sin mapa o con un mapa roto, el fotograma se queda como estaba.
+
+La ingesta pasa cada evento por esta traducción antes de agruparlo, así que los errores del panel se agrupan por su fichero y función originales.
 
 ## Fixtures
 

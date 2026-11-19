@@ -91,3 +91,21 @@ func TestPublicKeyFormat(t *testing.T) {
 		t.Fatalf("clave %q, %v", k, err)
 	}
 }
+
+func TestLoadConfigRetention(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("RETENTION_DAYS", "")
+	if c, err := loadConfig(); err != nil || c.RetentionDays != 90 {
+		t.Fatalf("por defecto = %d, %v", c.RetentionDays, err)
+	}
+	t.Setenv("RETENTION_DAYS", "30")
+	if c, err := loadConfig(); err != nil || c.RetentionDays != 30 {
+		t.Fatalf("= %d, %v", c.RetentionDays, err)
+	}
+	for _, bad := range []string{"0", "-1", "noventa"} {
+		t.Setenv("RETENTION_DAYS", bad)
+		if _, err := loadConfig(); err == nil {
+			t.Errorf("RETENTION_DAYS=%q debería fallar", bad)
+		}
+	}
+}

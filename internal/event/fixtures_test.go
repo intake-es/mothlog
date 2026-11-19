@@ -79,6 +79,11 @@ var fixtures = map[string]want{
 	"frontend-angular-typeerror-1": with(angular, func(w *want) {
 		w.excType, w.inApp, w.request = "TypeError", true, " https://app.example.com/auth/login"
 	}),
+	"frontend-login-typeerror-1": with(angular, func(w *want) {
+		w.excType, w.inApp, w.release, w.request = "TypeError", true, "fixture-release-1", " https://app.example.com/auth/login"
+	}),
+	"frontend-login-session-1": {key: keyFront, noEvent: true},
+	"frontend-login-session-2": {key: keyFront, noEvent: true},
 	"integrations-fastapi-typeerror-1": with(python266, func(w *want) {
 		w.excType, w.inApp, w.request = "TypeError", true, "GET http://testserver/__prueba/twilio"
 	}),
@@ -160,7 +165,9 @@ func TestFixtures(t *testing.T) {
 					t.Fatalf("%d eventos, quiero ninguno", len(items))
 				}
 				for _, it := range env.Items {
-					if it.Header.Type != envelope.TypeSessions && it.Header.Type != envelope.TypeClientReport {
+					switch it.Header.Type {
+					case envelope.TypeSession, envelope.TypeSessions, envelope.TypeClientReport:
+					default:
 						t.Errorf("item inesperado %q", it.Header.Type)
 					}
 				}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/intake-es/intake-errors/internal/ingest"
+	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -23,6 +24,8 @@ type config struct {
 	PublicURL          string
 	RateLimitPerMinute int
 	RetentionDays      int
+	// SourceMapUploadToken protege la subida de source maps; sin él se rechaza.
+	SourceMapUploadToken string
 }
 
 func loadConfig() (config, error) {
@@ -30,6 +33,8 @@ func loadConfig() (config, error) {
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 		Addr:        os.Getenv("LISTEN_ADDR"),
 		PublicURL:   os.Getenv("PUBLIC_URL"),
+
+		SourceMapUploadToken: os.Getenv("SOURCEMAP_UPLOAD_TOKEN"),
 	}
 	if c.DatabaseURL == "" {
 		return c, errors.New("falta DATABASE_URL")
@@ -94,13 +99,19 @@ func run(args []string) error {
 	}
 	defer db.Close()
 
+	if cfg.SourceMapUploadToken == "" {
+		log.Warn("sin SOURCEMAP_UPLOAD_TOKEN: la subida de source maps responde 401")
+	}
+	maps := sourcemap.New(db, log, sourcemap.Options{UploadToken: cfg.SourceMapUploadToken})
+	go maps.RunRetention(ctx, time.Duration(cfg.RetentionDays)*24*time.Hour, time.Hour)
+
 	go ingest.RunRetention(ctx, db.Pool(), cfg.RetentionDays, log)
-	ingester := ingest.NewIngester(db.Pool(), nil, nil, log)
+	ingester := ingest.NewIngester(db.Pool(), maps, nil, log)
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), log)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           routes(db, envelopes),
+		Handler:           routes(db, envelopes, maps.Register),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -126,9 +137,12 @@ type pinger interface {
 	Ping(context.Context) error
 }
 
-func routes(db pinger, envelopes http.Handler) http.Handler {
+func routes(db pinger, envelopes http.Handler, register ...func(*http.ServeMux)) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle(ingest.Pattern, envelopes)
+	for _, r := range register {
+		r(mux)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()

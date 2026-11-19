@@ -50,6 +50,7 @@ var errorFixtures = map[string]struct{ title, culprit string }{
 	"backend-ardiq-task-failed-b-1":    {"task failed id=193d9a4704ab46469ffec6b691642810", ""},
 	"integrations-fastapi-typeerror-1": {"TypeError: 'NoneType' object is not subscriptable", "app.core.http.middlewares in request_logging_middleware"},
 	"frontend-angular-typeerror-1":     {"TypeError: Cannot read properties of undefined (reading 'lineas')", "https://app.example.com/fixture-error.js in leerTotal"},
+	"frontend-login-typeerror-1":       {"TypeError: Cannot read properties of undefined (reading 'id')", "https://app.example.com/chunk-A1B2C3D4.js in t.failForFixture"},
 }
 
 var noEventFixtures = []string{
@@ -57,6 +58,7 @@ var noEventFixtures = []string{
 	"backend-intakeerror-404-1", "backend-intakeerror-404-2",
 	"backend-validationerror-2", "backend-validationerror-3",
 	"integrations-fastapi-typeerror-2", "integrations-fastapi-typeerror-3",
+	"frontend-login-session-1", "frontend-login-session-2",
 }
 
 type fixture struct {
