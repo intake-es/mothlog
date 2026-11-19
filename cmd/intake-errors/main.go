@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/intake-es/intake-errors/internal/api"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -82,10 +83,13 @@ func run(args []string) error {
 		return err
 	}
 	if len(args) > 0 {
-		if args[0] != "projects" {
-			return fmt.Errorf("comando desconocido %q", args[0])
+		switch args[0] {
+		case "projects":
+			return projects(cfg, args[1:], os.Stdout)
+		case "tokens":
+			return runCommand(args, os.Stdout)
 		}
-		return projects(cfg, args[1:], os.Stdout)
+		return fmt.Errorf("comando desconocido %q\n%s", args[0], usage)
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
@@ -109,9 +113,13 @@ func run(args []string) error {
 	ingester := ingest.NewIngester(db.Pool(), maps, nil, log)
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), log)
 
+	mux := routes(db, envelopes, maps.Register)
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL}); err != nil {
+		return err
+	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           routes(db, envelopes, maps.Register),
+		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -137,7 +145,7 @@ type pinger interface {
 	Ping(context.Context) error
 }
 
-func routes(db pinger, envelopes http.Handler, register ...func(*http.ServeMux)) http.Handler {
+func routes(db pinger, envelopes http.Handler, register ...func(*http.ServeMux)) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.Handle(ingest.Pattern, envelopes)
 	for _, r := range register {

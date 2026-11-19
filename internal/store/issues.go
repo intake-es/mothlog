@@ -1,0 +1,479 @@
+package store
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/intake-es/intake-errors/internal/event"
+)
+
+// ErrInvalid envuelve los errores de parámetros que vienen del cliente.
+var ErrInvalid = errors.New("parámetro no válido")
+
+// ErrNoRelease: resolved_next sin release en el último evento.
+var ErrNoRelease = errors.New("el último evento del issue no tiene release")
+
+var Statuses = []string{"open", "resolved", "resolved_next", "silenced"}
+
+const (
+	DefaultLimit = 25
+	MaxLimit     = 100
+	// DailyDays son los días de la gráfica del detalle, hoy incluido.
+	DailyDays = 14
+	topValues = 5
+)
+
+func isUniqueViolation(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "23505"
+}
+
+type Issue struct {
+	ID                int64      `json:"id"`
+	ProjectID         int64      `json:"project_id"`
+	Project           string     `json:"project"`
+	Title             string     `json:"title"`
+	Culprit           string     `json:"culprit"`
+	Type              string     `json:"type"`
+	Level             string     `json:"level"`
+	Status            string     `json:"status"`
+	Count             int64      `json:"count"`
+	FirstSeen         time.Time  `json:"first_seen"`
+	LastSeen          time.Time  `json:"last_seen"`
+	LastRelease       *string    `json:"last_release"`
+	ResolvedInRelease *string    `json:"resolved_in_release"`
+	LastRegression    *time.Time `json:"last_regression"`
+}
+
+const issueColumns = `
+	i.id, i.project_id, p.name, i.title, i.culprit, i.type, i.level, i.status, i.event_count,
+	i.first_seen, i.last_seen,
+	(SELECT e.release FROM events e
+	  WHERE e.issue_id = i.id AND e.release IS NOT NULL AND e.release <> ''
+	  ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1),
+	i.resolved_in_release, i.last_regressed_at`
+
+func scanIssue(r pgx.Row) (Issue, error) {
+	var i Issue
+	err := r.Scan(&i.ID, &i.ProjectID, &i.Project, &i.Title, &i.Culprit, &i.Type, &i.Level, &i.Status,
+		&i.Count, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression)
+	return i, err
+}
+
+// IssueFilter son los parámetros de la lista, iguales en la API y en el MCP.
+type IssueFilter struct {
+	// Project es el id o el nombre del proyecto; vacío, todos.
+	Project string
+	// Status: open (por defecto), resolved, resolved_next, silenced o all.
+	Status string
+	// Query busca en el título y el culprit, sin distinguir mayúsculas.
+	Query string
+	// Sort: last_seen (por defecto), first_seen o count, siempre descendente.
+	Sort   string
+	Cursor string
+	Limit  int
+}
+
+type IssuePage struct {
+	Issues     []Issue `json:"data"`
+	NextCursor string  `json:"next_cursor,omitempty"`
+}
+
+var sortColumns = map[string]string{
+	"last_seen":  "i.last_seen",
+	"first_seen": "i.first_seen",
+	"count":      "i.event_count",
+}
+
+type cursor struct {
+	Sort  string `json:"s"`
+	Value string `json:"v"`
+	ID    int64  `json:"id"`
+}
+
+func encodeCursor(c cursor) string {
+	b, _ := json.Marshal(c)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func decodeCursor(s, sort string) (cursor, error) {
+	var c cursor
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err == nil {
+		err = json.Unmarshal(b, &c)
+	}
+	if err != nil || c.Sort != sort || c.ID <= 0 {
+		return c, fmt.Errorf("%w: cursor", ErrInvalid)
+	}
+	return c, nil
+}
+
+func normalizeLimit(n int) (int, error) {
+	switch {
+	case n == 0:
+		return DefaultLimit, nil
+	case n < 0 || n > MaxLimit:
+		return 0, fmt.Errorf("%w: limit va de 1 a %d", ErrInvalid, MaxLimit)
+	}
+	return n, nil
+}
+
+func likePattern(q string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + r.Replace(q) + "%"
+}
+
+func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error) {
+	if f.Sort == "" {
+		f.Sort = "last_seen"
+	}
+	col, ok := sortColumns[f.Sort]
+	if !ok {
+		return IssuePage{}, fmt.Errorf("%w: sort es last_seen, first_seen o count", ErrInvalid)
+	}
+	if f.Status == "" {
+		f.Status = "open"
+	}
+	if f.Status != "all" && !slices.Contains(Statuses, f.Status) {
+		return IssuePage{}, fmt.Errorf("%w: status es open, resolved, resolved_next, silenced o all", ErrInvalid)
+	}
+	limit, err := normalizeLimit(f.Limit)
+	if err != nil {
+		return IssuePage{}, err
+	}
+
+	where := []string{"true"}
+	var args []any
+	arg := func(v any) string {
+		args = append(args, v)
+		return "$" + strconv.Itoa(len(args))
+	}
+	if f.Project != "" {
+		where = append(where, fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(f.Project)))
+	}
+	if f.Status != "all" {
+		where = append(where, "i.status = "+arg(f.Status))
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		where = append(where, fmt.Sprintf("(i.title ILIKE %s OR i.culprit ILIKE %[1]s)", arg(likePattern(q))))
+	}
+	if f.Cursor != "" {
+		c, err := decodeCursor(f.Cursor, f.Sort)
+		if err != nil {
+			return IssuePage{}, err
+		}
+		var v any
+		if f.Sort == "count" {
+			v, err = strconv.ParseInt(c.Value, 10, 64)
+		} else {
+			v, err = time.Parse(time.RFC3339Nano, c.Value)
+		}
+		if err != nil {
+			return IssuePage{}, fmt.Errorf("%w: cursor", ErrInvalid)
+		}
+		where = append(where, fmt.Sprintf("(%s, i.id) < (%s, %s)", col, arg(v), arg(c.ID)))
+	}
+	q := fmt.Sprintf(`SELECT %s FROM issues i JOIN projects p ON p.id = i.project_id
+		WHERE %s ORDER BY %s DESC, i.id DESC LIMIT %d`,
+		issueColumns, strings.Join(where, " AND "), col, limit+1)
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
+	}
+	issues, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Issue, error) { return scanIssue(r) })
+	if err != nil {
+		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
+	}
+	page := IssuePage{Issues: issues}
+	if len(issues) > limit {
+		page.Issues = issues[:limit]
+		last := page.Issues[limit-1]
+		c := cursor{Sort: f.Sort, ID: last.ID}
+		switch f.Sort {
+		case "count":
+			c.Value = strconv.FormatInt(last.Count, 10)
+		case "first_seen":
+			c.Value = last.FirstSeen.Format(time.RFC3339Nano)
+		default:
+			c.Value = last.LastSeen.Format(time.RFC3339Nano)
+		}
+		page.NextCursor = encodeCursor(c)
+	}
+	if page.Issues == nil {
+		page.Issues = []Issue{}
+	}
+	return page, nil
+}
+
+func (s *Store) Issue(ctx context.Context, id int64) (Issue, error) {
+	i, err := scanIssue(s.pool.QueryRow(ctx,
+		`SELECT `+issueColumns+` FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Issue{}, ErrNotFound
+	}
+	if err != nil {
+		return Issue{}, fmt.Errorf("leer issue: %w", err)
+	}
+	return i, nil
+}
+
+// StoredEvent es un evento guardado con el evento normalizado entero.
+type StoredEvent struct {
+	ID         int64       `json:"id"`
+	IssueID    int64       `json:"issue_id"`
+	ProjectID  int64       `json:"project_id"`
+	EventID    string      `json:"event_id"`
+	OccurredAt time.Time   `json:"occurred_at"`
+	ReceivedAt time.Time   `json:"received_at"`
+	Event      event.Event `json:"event"`
+}
+
+const storedEventColumns = `id, issue_id, project_id, replace(event_id::text, '-', ''), occurred_at, received_at, data`
+
+func scanStoredEvent(r pgx.Row) (StoredEvent, error) {
+	var e StoredEvent
+	var data []byte
+	if err := r.Scan(&e.ID, &e.IssueID, &e.ProjectID, &e.EventID, &e.OccurredAt, &e.ReceivedAt, &data); err != nil {
+		return e, err
+	}
+	if err := json.Unmarshal(data, &e.Event); err != nil {
+		return e, fmt.Errorf("evento %d: %w", e.ID, err)
+	}
+	return e, nil
+}
+
+// Event busca por el id interno o por el event_id del SDK (32 hex o UUID).
+func (s *Store) Event(ctx context.Context, ref string) (StoredEvent, error) {
+	var row pgx.Row
+	if id, err := strconv.ParseInt(ref, 10, 64); err == nil {
+		row = s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+` FROM events WHERE id = $1`, id)
+	} else if isUUID(ref) {
+		row = s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+` FROM events WHERE event_id = $1::uuid ORDER BY id LIMIT 1`, ref)
+	} else {
+		return StoredEvent{}, ErrNotFound
+	}
+	e, err := scanStoredEvent(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StoredEvent{}, ErrNotFound
+	}
+	if err != nil {
+		return StoredEvent{}, fmt.Errorf("leer evento: %w", err)
+	}
+	return e, nil
+}
+
+func isUUID(s string) bool {
+	s = strings.ReplaceAll(s, "-", "")
+	if len(s) != 32 {
+		return false
+	}
+	for _, c := range s {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", c) {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Store) LatestEvent(ctx context.Context, issueID int64) (*StoredEvent, error) {
+	e, err := scanStoredEvent(s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+`
+		FROM events WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, issueID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("leer último evento: %w", err)
+	}
+	return &e, nil
+}
+
+type DayCount struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+type ValueCount struct {
+	Value string `json:"value"`
+	Count int64  `json:"count"`
+}
+
+type IssueDetail struct {
+	Issue
+	LatestEvent *StoredEvent `json:"latest_event"`
+	// Daily son los eventos por día (UTC) de los últimos DailyDays días, del más viejo a hoy.
+	Daily []DayCount `json:"daily"`
+	// TopValues tiene environment, release, user y organization_id, cada uno con sus valores más frecuentes.
+	TopValues map[string][]ValueCount `json:"top_values"`
+}
+
+func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (IssueDetail, error) {
+	issue, err := s.Issue(ctx, id)
+	if err != nil {
+		return IssueDetail{}, err
+	}
+	d := IssueDetail{Issue: issue}
+	if d.LatestEvent, err = s.LatestEvent(ctx, id); err != nil {
+		return IssueDetail{}, err
+	}
+
+	rows, err := s.pool.Query(ctx, `
+		SELECT to_char(d, 'YYYY-MM-DD'), count(e.id)
+		FROM generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - $3::int + 1)::timestamp,
+		                     ($2::timestamptz AT TIME ZONE 'UTC')::date::timestamp, interval '1 day') d
+		LEFT JOIN events e ON e.issue_id = $1
+			AND e.occurred_at >= d AT TIME ZONE 'UTC'
+			AND e.occurred_at < (d + interval '1 day') AT TIME ZONE 'UTC'
+		GROUP BY d ORDER BY d`, id, now, DailyDays)
+	if err != nil {
+		return IssueDetail{}, fmt.Errorf("eventos por día: %w", err)
+	}
+	d.Daily, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (DayCount, error) {
+		var c DayCount
+		err := r.Scan(&c.Date, &c.Count)
+		return c, err
+	})
+	if err != nil {
+		return IssueDetail{}, fmt.Errorf("eventos por día: %w", err)
+	}
+
+	rows, err = s.pool.Query(ctx, `
+		SELECT v.key, v.value, count(*) AS n
+		FROM events e CROSS JOIN LATERAL (VALUES
+			('environment', e.environment),
+			('release', e.release),
+			('user', COALESCE(NULLIF(e.data->'user'->>'id', ''), NULLIF(e.data->'user'->>'email', ''),
+			                  NULLIF(e.data->'user'->>'username', ''), NULLIF(e.data->'user'->>'ip_address', ''))),
+			('organization_id', e.data->'tags'->>'organization_id')
+		) AS v(key, value)
+		WHERE e.issue_id = $1 AND v.value <> ''
+		GROUP BY v.key, v.value
+		ORDER BY v.key, n DESC, v.value`, id)
+	if err != nil {
+		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
+	}
+	d.TopValues = map[string][]ValueCount{"environment": {}, "release": {}, "user": {}, "organization_id": {}}
+	var key string
+	var vc ValueCount
+	_, err = pgx.ForEachRow(rows, []any{&key, &vc.Value, &vc.Count}, func() error {
+		if len(d.TopValues[key]) < topValues {
+			d.TopValues[key] = append(d.TopValues[key], vc)
+		}
+		return nil
+	})
+	if err != nil {
+		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
+	}
+	return d, nil
+}
+
+type EventSummary struct {
+	ID          int64     `json:"id"`
+	EventID     string    `json:"event_id"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	ReceivedAt  time.Time `json:"received_at"`
+	Release     string    `json:"release"`
+	Environment string    `json:"environment"`
+	User        string    `json:"user"`
+	// Message es «Tipo: valor» de la excepción lanzada, o el mensaje si no hay excepción.
+	Message string `json:"message"`
+}
+
+type EventPage struct {
+	Events     []EventSummary `json:"data"`
+	NextCursor string         `json:"next_cursor,omitempty"`
+}
+
+// IssueEvents lista los eventos del issue, del más nuevo al más viejo.
+func (s *Store) IssueEvents(ctx context.Context, issueID int64, cur string, limit int) (EventPage, error) {
+	limit, err := normalizeLimit(limit)
+	if err != nil {
+		return EventPage{}, err
+	}
+	if _, err := s.Issue(ctx, issueID); err != nil {
+		return EventPage{}, err
+	}
+	after := time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+	afterID := int64(1<<63 - 1)
+	if cur != "" {
+		c, err := decodeCursor(cur, "events")
+		if err != nil {
+			return EventPage{}, err
+		}
+		if after, err = time.Parse(time.RFC3339Nano, c.Value); err != nil {
+			return EventPage{}, fmt.Errorf("%w: cursor", ErrInvalid)
+		}
+		afterID = c.ID
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, replace(event_id::text, '-', ''), occurred_at, received_at,
+			COALESCE(release, ''), COALESCE(environment, ''),
+			COALESCE(NULLIF(data->'user'->>'id', ''), NULLIF(data->'user'->>'email', ''),
+			         NULLIF(data->'user'->>'username', ''), NULLIF(data->'user'->>'ip_address', ''), ''),
+			CASE WHEN jsonb_array_length(COALESCE(data->'exceptions', '[]')) > 0
+				THEN concat_ws(': ', NULLIF(data->'exceptions'->-1->>'type', ''), NULLIF(data->'exceptions'->-1->>'value', ''))
+				ELSE COALESCE(data->>'message', '') END
+		FROM events
+		WHERE issue_id = $1 AND (occurred_at, id) < ($2, $3)
+		ORDER BY occurred_at DESC, id DESC LIMIT $4`, issueID, after, afterID, limit+1)
+	if err != nil {
+		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
+	}
+	events, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (EventSummary, error) {
+		var e EventSummary
+		err := r.Scan(&e.ID, &e.EventID, &e.OccurredAt, &e.ReceivedAt, &e.Release, &e.Environment, &e.User, &e.Message)
+		return e, err
+	})
+	if err != nil {
+		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
+	}
+	page := EventPage{Events: events}
+	if len(events) > limit {
+		page.Events = events[:limit]
+		last := page.Events[limit-1]
+		page.NextCursor = encodeCursor(cursor{Sort: "events", Value: last.OccurredAt.Format(time.RFC3339Nano), ID: last.ID})
+	}
+	if page.Events == nil {
+		page.Events = []EventSummary{}
+	}
+	return page, nil
+}
+
+// SetIssueStatus cambia el estado a mano. Con resolved_next guarda el release
+// del último evento, que la ingesta compara para decidir si hay regresión.
+func (s *Store) SetIssueStatus(ctx context.Context, id int64, status string) (Issue, error) {
+	if !slices.Contains(Statuses, status) {
+		return Issue{}, fmt.Errorf("%w: status es open, resolved, resolved_next o silenced", ErrInvalid)
+	}
+	var release *string
+	if status == "resolved_next" {
+		if _, err := s.Issue(ctx, id); err != nil {
+			return Issue{}, err
+		}
+		err := s.pool.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
+			WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&release)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return Issue{}, fmt.Errorf("release del último evento: %w", err)
+		}
+		if release == nil {
+			return Issue{}, ErrNoRelease
+		}
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE issues SET status = $2, resolved_in_release = $3 WHERE id = $1`, id, status, release)
+	if err != nil {
+		return Issue{}, fmt.Errorf("cambiar estado: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return Issue{}, ErrNotFound
+	}
+	return s.Issue(ctx, id)
+}

@@ -19,7 +19,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `DATABASE_URL` | Postgres | obligatoria |
 | `LISTEN_ADDR` | dirección HTTP | `:8080` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
-| `PUBLIC_URL` | URL pública del servicio, para escribir los DSN | obligatoria para `projects` |
+| `PUBLIC_URL` | URL pública del servicio, para escribir los DSN | obligatoria para `projects`; en `/api/0/projects/`, la de cada petición |
 | `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto | `60` |
 | `RETENTION_DAYS` | días que se guardan los eventos y los source maps | `90` |
 | `SOURCEMAP_UPLOAD_TOKEN` | token para subir source maps; sin él la subida responde 401 | vacío |
@@ -33,6 +33,37 @@ intake-errors projects create backend   # imprime el DSN: https://<clave>@<host 
 intake-errors projects list
 ```
 
+## API y MCP
+
+La API REST (`/api/0/`) y el servidor MCP (`/mcp`) piden un token en `Authorization: Bearer <token>`. Los tokens se gestionan con el mismo binario y la misma `DATABASE_URL`:
+
+```sh
+intake-errors tokens create claude   # imprime el token (ie_…) una sola vez; en la base solo queda su sha256
+intake-errors tokens list            # nombre, alta, último uso y revocación
+intake-errors tokens revoke claude
+```
+
+Para conectarlo con Claude Code:
+
+```sh
+claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
+```
+
+Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events` y `set_issue_status`. Hacen las mismas consultas que la API:
+
+| Ruta | Qué devuelve |
+|---|---|
+| `GET /api/0/projects/` | id, nombre y DSN de cada proyecto |
+| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=` | issues; `status` es `open` (por defecto), `resolved`, `resolved_next`, `silenced` o `all`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `query` busca en título y culprit; `project`, id o nombre |
+| `GET /api/0/issues/{id}/` | el issue con su último evento, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y `organization_id` |
+| `GET /api/0/issues/{id}/events/` | sus eventos, del más nuevo al más viejo |
+| `GET /api/0/issues/{id}/stacktrace.md` | el último evento en Markdown, pensado para un modelo |
+| `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}`; `resolved_next` guarda el release del último evento (409 si no tiene) |
+| `GET /api/0/events/{id}/` | el evento normalizado entero, por id o por `event_id` |
+
+Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
+
+
 ## Ingesta
 
 Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Solo se guardan los items `event`; el resto se acepta y se ignora. Pasado `RATE_LIMIT_PER_MINUTE`, responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
@@ -41,10 +72,10 @@ Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo 
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
 
-Los tests de `internal/store`, `internal/ingest` e `internal/sourcemap` usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
+Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
 
 ```sh
-INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./internal/store ./internal/ingest ./internal/sourcemap
+INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...
 ```
 
 ## Source maps del front
