@@ -42,7 +42,7 @@ type setStatusIn struct {
 
 func New(st *store.Store) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "intake-errors", Version: "0.1.0"}, &mcp.ServerOptions{
-		Instructions: "intake-errors (backend, integrations y panel). Para investigar uno: list_issues para encontrarlo, get_stacktrace para leer la traza y set_issue_status cuando esté arreglado.",
+		Instructions: "Errores de las aplicaciones que envían a intake-errors. Para investigar uno: list_issues para encontrarlo, get_stacktrace para leer la traza y set_issue_status cuando esté arreglado.",
 	})
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
 

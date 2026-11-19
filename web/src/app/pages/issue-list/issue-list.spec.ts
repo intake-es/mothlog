@@ -13,7 +13,7 @@ const issue = (over: Partial<Issue>): Issue => ({
   project_id: 4,
   project: 'front',
   title: 'TypeError: Cannot read properties of undefined',
-  culprit: 'pagina-de-ejemplo.ts in failForFixture',
+  culprit: 'https://app.example.com/chunk-Z554BZQ6.js in a',
   type: 'TypeError',
   level: 'error',
   status: 'open',
@@ -90,7 +90,7 @@ describe('IssueListPage', () => {
       'Cannot read properties of undefined',
     );
     expect(rows[0].querySelector('.row__culprit')?.textContent).toBe(
-      'pagina-de-ejemplo.ts in failForFixture',
+      'https://app.example.com/chunk-Z554BZQ6.js in a',
     );
     expect(rows[0].textContent).toContain('front');
     expect(rows[0].textContent).toContain('fixture-release-1');

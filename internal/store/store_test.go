@@ -84,7 +84,7 @@ func TestProjects(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 
-	p, err := s.CreateProject(ctx, "backend", "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a")
+	p, err := s.CreateProject(ctx, "backend", "b7d66645f843482faf2f696b32b16e56")
 	if err != nil {
 		t.Fatal(err)
 	}

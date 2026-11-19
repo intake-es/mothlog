@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 import { ICONS, type IconWeight } from './icons';
 
 /**
- * Un icono de Phosphor sobre el propio `<svg>`, como en el panel:
+ * Un icono de Phosphor sobre el propio `<svg>`:
  * `<svg appIcon="copy"></svg>`. Mide 16 px salvo que el CSS diga otra cosa y toma
  * el color del texto. En duotone el primer trazo es el fondo, al 20 %.
  */

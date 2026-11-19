@@ -1,13 +1,13 @@
 # intake-errors
 
-intake-errors: recibe los envíos de los SDK de Sentry que ya usa la aplicación (solo cambia el DSN), los agrupa en issues y avisa a Slack y Linear.
+Recibe los envíos de los SDK de Sentry (solo cambia el DSN), los agrupa en issues y avisa a Slack y Linear.
 
 ## Arrancar
 
 Hace falta Go 1.27 y Docker para el Postgres local.
 
 ```sh
-make run    # levanta Postgres 16 (la versión de producción) con docker compose y arranca el servicio en :8080
+make run    # levanta Postgres 16 con docker compose y arranca el servicio en :8080
 make test   # go test ./...
 make lint   # go vet, gofmt y golangci-lint
 ```
@@ -30,7 +30,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `LINEAR_EXTRA_LABEL_ID` | id de la etiqueta extra, para los proyectos que la activan | vacío |
 | `LINEAR_API_URL` | endpoint GraphQL de Linear; solo para probar contra uno falso | `https://api.linear.app/graphql` |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |
-| `GITHUB_ORG` | org cuyos miembros activos pueden entrar (`intake-es`) | vacía |
+| `GITHUB_ORG` | org cuyos miembros activos pueden entrar | vacía |
 | `SESSION_SECRET` | firma la cookie de sesión; 32 caracteres o más, obligatoria con GitHub | vacía |
 | `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
 
@@ -124,43 +124,22 @@ INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.
 
 ## Source maps del front
 
-Los errores del panel se traducen a su TypeScript original con los `.map` del build. Se guardan por proyecto, release y nombre del `.js` (los chunks de Angular llevan un hash en el nombre, así que no hacen falta debug IDs), comprimidos, y se borran a los `RETENTION_DAYS` días de subirlos.
+Los errores del navegador se traducen a su TypeScript original con los `.map` del build. Se guardan por proyecto, release y nombre del `.js` (los chunks de un build de producción llevan un hash en el nombre, así que no hacen falta debug IDs), comprimidos, y se borran a los `RETENTION_DAYS` días de subirlos.
 
 `POST /api/{project_id}/releases/{release}/sourcemaps/` recibe un multipart con uno o varios campos `file` (`chunk-XXXX.js.map`) y `Authorization: Bearer <SOURCEMAP_UPLOAD_TOKEN>`. Volver a subir un fichero lo sustituye. Responde con lo guardado:
 
 ```json
-{"release": "2026.11.19-1", "files": [{"name": "chunk-A1B2C3D4.js.map", "file": "chunk-A1B2C3D4.js", "size": 33433}]}
+{"release": "2026.11.19-1", "files": [{"name": "chunk-Z554BZQ6.js.map", "file": "chunk-Z554BZQ6.js", "size": 6177}]}
 ```
 
 Errores, como `{"error": "..."}`: 401 sin token o con uno malo, 404 si el proyecto no existe, 413 si un fichero pasa de 20 MiB o la petición de 100 MiB, y 400 si un fichero no es un source map v3 válido (con su nombre). Si algo falla no se guarda nada de esa petición.
 
-En `Dockerfile` del front, en lugar de `sentry-cli`, después del build y antes de borrar los `.map` (una petición por fichero para no acercarse al límite de 100 MiB; el token, como secreto de BuildKit):
+Cómo subirlos en el build, en [Desplegar](#desplegar).
 
-```dockerfile
-RUN --mount=type=secret,id=sourcemap_upload_token,env=SOURCEMAP_UPLOAD_TOKEN \
-    cd dist/app/browser && \
-    for f in *.map; do \
-      curl -sS --fail-with-body \
-        -H "Authorization: Bearer $SOURCEMAP_UPLOAD_TOKEN" \
-        -F "file=@$f" \
-        "$INTAKE_ERRORS_URL/api/$INTAKE_ERRORS_PROJECT_ID/releases/$SENTRY_RELEASE/sourcemaps/" || exit 1; \
-    done && \
-    rm -f *.map
-```
+Al recibir un evento con `release`, cada fotograma de un `.js` con mapa para ese proyecto y release pasa a su fichero original (`src/...`), con su línea, columna y 5 líneas de contexto antes y después de `sourcesContent`. `in_app` queda falso para lo que viene de `node_modules/`. La función se deja como la manda el SDK, y la posición minificada se guarda en `minified`. Sin release, sin mapa o con un mapa roto, el fotograma se queda como estaba.
 
-`$SENTRY_RELEASE` tiene que ser el mismo `release` que manda el SDK, y si lleva `/`, codificado como `%2F`.
-
-Al recibir un evento con `release`, cada fotograma de un `.js` con mapa para ese proyecto y release pasa a su fichero original (`src/app/...`), con su línea, columna y 5 líneas de contexto antes y después de `sourcesContent`. `in_app` queda falso para lo que viene de `node_modules/`. La función se deja como la manda el SDK, y la posición minificada se guarda en `minified`. Sin release, sin mapa o con un mapa roto, el fotograma se queda como estaba.
-
-La ingesta pasa cada evento por esta traducción antes de agruparlo, así que los errores del panel se agrupan por su fichero y función originales.
+La ingesta pasa cada evento por esta traducción antes de agruparlo, así que los errores del navegador se agrupan por su fichero y función originales.
 
 ## Fixtures
 
-`testdata/envelopes/` son envíos reales de sentry-python 2.57.0 (backend), 2.66.1 (integrations) y sentry.javascript.angular 11.0.0, y `testdata/sourcemaps/` el build del front con su source map. Qué es cada uno y qué debe pasar con él está en [`tools/fixtures/README.md`](tools/fixtures/README.md); `internal/event/fixtures_test.go` sigue esa tabla.
-
-Para regrabarlos:
-
-1. `python3 tools/fixtures/grabador.py /ruta/de/salida` deja escuchando el receptor en `127.0.0.1:8299`.
-2. Desde `intake/backend`, con `PYTHONPATH=.`, `SECRET_KEY` y `SENTRY_DSN=http://<clave>@127.0.0.1:8299/1`, ejecutar `backend.py <caso>` con `fastapi`, `validacion`, `404`, `structlog-exception`, `structlog-error` o `ardiq`. Para integrations, `integrations.py` desde `intake/integrations` (las variables que necesita, en el README de los fixtures).
-3. Para el front, `node tools/fixtures/front.mjs <build> <salida> tools/fixtures/fixture-error.js` con Playwright.
-4. `python3 tools/fixtures/ver.py <salida>` lista los items de cada envío. Renombrar los ficheros como en la tabla, copiarlos a `testdata/envelopes/` y ajustar la tabla del test si cambia algo.
+`testdata/envelopes/` son envíos grabados de sentry-python 2.75.0 y `@sentry/browser` 11.15.0 desde dos apps de ejemplo (una de FastAPI y una página TypeScript compilada con esbuild), y `testdata/sourcemaps/` el build de la página con sus mapas. Las apps, cómo regrabarlos y qué debe pasar con cada envío están en [`tools/fixtures/README.md`](tools/fixtures/README.md); `internal/event/fixtures_test.go` sigue esa tabla.

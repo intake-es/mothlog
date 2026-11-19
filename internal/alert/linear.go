@@ -39,7 +39,7 @@ type linear struct {
 var errLinearNotFound = errors.New("la issue de Linear no existe")
 
 // linearRef es lo que se guarda de una issue de Linear: el identifier
-// (INT-123) y la url van en el botón del aviso de Slack.
+// (ERR-123) y la url van en el botón del aviso de Slack.
 type linearRef struct {
 	ID         string
 	Identifier string

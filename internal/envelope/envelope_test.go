@@ -237,7 +237,7 @@ func TestPublicKey(t *testing.T) {
 
 func FuzzParse(f *testing.F) {
 	f.Add([]byte(sample))
-	files, _ := filepath.Glob("../../testdata/envelopes/frontend-*.envelope")
+	files, _ := filepath.Glob("../../testdata/envelopes/web-*.envelope")
 	for _, p := range files {
 		if b, err := os.ReadFile(p); err == nil {
 			f.Add(b)

@@ -22,34 +22,35 @@ const stored = (id: number, release: string, line: number): StoredEvent => ({
     exceptions: [
       {
         type: 'TypeError',
-        value: "Cannot read properties of undefined (reading 'id')",
+        value: "Cannot read properties of undefined (reading 'reduce')",
         frames: [
           {
-            filename: 'node_modules/zone.js/fesm2015/zone.js',
-            function: 'invoke',
+            filename: 'node_modules/mitt/src/index.ts',
+            function: 'Object.emit',
             lineno: 1,
             in_app: false,
           },
           {
-            filename: 'src/app/pages/pagina-de-ejemplo/pagina-de-ejemplo.ts',
-            function: 't.failForFixture',
+            filename: 'src/carrito.ts',
+            function: 'a',
             lineno: line,
             in_app: true,
             pre_context: ['  x'],
-            context_line: '    return data.cuenta!.id;',
-            post_context: ['  }'],
+            context_line:
+              '  return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);',
+            post_context: ['}'],
           },
         ],
       },
     ],
     tags: { organization_id: '42', browser: 'Chrome' },
-    user: { email: 'fixture@example.test' },
-    request: { url: 'https://app.example.com/auth/login' },
+    user: { email: 'ana@example.com' },
+    request: { url: 'https://app.example.com/' },
     breadcrumbs: [
       {
         timestamp: 1795090879,
         category: 'navigation',
-        data: { from: '/auth/login', to: '/auth/login' },
+        data: { from: '/', to: '/pedidos' },
       },
     ],
   },
@@ -59,8 +60,8 @@ const detail = (over: Partial<IssueDetail> = {}): IssueDetail => ({
   id: 5,
   project_id: 4,
   project: 'front',
-  title: "TypeError: Cannot read properties of undefined (reading 'id')",
-  culprit: 'pagina-de-ejemplo.ts in t.failForFixture',
+  title: "TypeError: Cannot read properties of undefined (reading 'reduce')",
+  culprit: 'https://app.example.com/chunk-Z554BZQ6.js in a',
   type: 'TypeError',
   level: 'error',
   status: 'open',
@@ -70,7 +71,7 @@ const detail = (over: Partial<IssueDetail> = {}): IssueDetail => ({
   last_release: 'fixture-release-1',
   resolved_in_release: null,
   last_regression: null,
-  latest_event: stored(1, 'fixture-release-1', 268),
+  latest_event: stored(1, 'fixture-release-1', 7),
   daily: Array.from({ length: 14 }, (_, i) => ({
     date: `2026-11-${String(6 + i).padStart(2, '0')}`,
     count: i === 13 ? 2 : 0,
@@ -112,7 +113,7 @@ describe('IssueDetailPage', () => {
             received_at: d.last_seen,
             release: 'fixture-release-1',
             environment: 'production',
-            user: 'fixture@example.test',
+            user: 'ana@example.com',
             message: '',
           },
           {
@@ -136,7 +137,7 @@ describe('IssueDetailPage', () => {
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('.head__type')?.textContent).toBe('TypeError');
     expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Abierto');
-    expect(el.querySelector('.head__culprit')?.textContent).toContain('failForFixture');
+    expect(el.querySelector('.head__culprit')?.textContent).toContain('chunk-Z554BZQ6.js in a');
     const facts = Object.fromEntries(
       Array.from(el.querySelectorAll('.fact')).map((f) => [
         f.querySelector('dt')?.textContent,
@@ -147,10 +148,10 @@ describe('IssueDetailPage', () => {
     expect(facts['Release']).toBe('fixture-release-1');
     expect(facts['Entorno']).toBe('production');
     expect(facts['Espacio']).toBe('42');
-    expect(facts['Usuario']).toBe('fixture@example.test');
-    expect(facts['Request']).toBe('https://app.example.com/auth/login');
+    expect(facts['Usuario']).toBe('ana@example.com');
+    expect(facts['Request']).toBe('https://app.example.com/');
     expect(el.querySelectorAll('app-day-chart .col').length).toBe(14);
-    expect(el.querySelector('.code__line--error .code__n')?.textContent).toBe('268');
+    expect(el.querySelector('.code__line--error .code__n')?.textContent).toBe('7');
     expect(el.querySelector('.libs__toggle')?.textContent).toContain('1 fotograma de librerías');
     expect(el.querySelector('app-breadcrumbs')?.textContent).toContain('navigation');
     expect(el.querySelectorAll('.tag').length).toBe(2);

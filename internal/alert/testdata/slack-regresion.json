@@ -62,10 +62,10 @@
           "type": "button",
           "text": {
             "type": "plain_text",
-            "text": "INT-123 en Linear",
+            "text": "ERR-123 en Linear",
             "emoji": false
           },
-          "url": "https://linear.app/example/issue/INT-123"
+          "url": "https://linear.app/ejemplo/issue/ERR-123"
         }
       ]
     }

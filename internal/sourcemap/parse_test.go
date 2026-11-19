@@ -7,7 +7,7 @@ func TestCleanSource(t *testing.T) {
 		{"", "src/app/a.ts", "src/app/a.ts"},
 		{"", "webpack:///./src/app/a.ts", "src/app/a.ts"},
 		{"", "webpack:///src/app/a.ts", "src/app/a.ts"},
-		{"", "webpack://intake/./src/app/a.ts", "src/app/a.ts"},
+		{"", "webpack://app/./src/app/a.ts", "src/app/a.ts"},
 		{"", "././node_modules/x/y.js", "node_modules/x/y.js"},
 		{"webpack:///", "./src/a.ts", "src/a.ts"},
 		{"src/", "a.ts", "src/a.ts"},

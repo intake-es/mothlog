@@ -56,19 +56,19 @@ func pgStore(t *testing.T) (*store.Store, *pgx.Conn, string) {
 func TestPostgresUploadEnrichPurge(t *testing.T) {
 	st, admin, schema := pgStore(t)
 	ctx := context.Background()
-	p, err := st.CreateProject(ctx, "front", "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f")
+	p, err := st.CreateProject(ctx, "web", "ce01335f125960aa6957a133d15b5f3a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := New(st, quiet(), Options{UploadToken: token})
 
-	body, ct := multipartBody(t, mapFile(t, "login/chunk-A1B2C3D4.js.map"))
+	body, ct := multipartBody(t, mapFile(t, chunkJS+".map"))
 	if rec := post(t, s, uploadURL(p.ID+1, release1), "Bearer "+token, body, ct); rec.Code != http.StatusNotFound {
 		t.Errorf("proyecto inexistente: %d %s", rec.Code, rec.Body)
 	}
 
-	uploadOK(t, s, p.ID, release1, mapFile(t, "login/chunk-A1B2C3D4.js.map"), mapFile(t, "login/chunk-E5F6G7H8.js.map"))
-	uploadOK(t, s, p.ID, release1, mapFile(t, "login/chunk-A1B2C3D4.js.map"))
+	uploadOK(t, s, p.ID, release1, mapFile(t, chunkJS+".map"), mapFile(t, mainJS+".map"))
+	uploadOK(t, s, p.ID, release1, mapFile(t, chunkJS+".map"))
 	var n int
 	var size int64
 	if err := admin.QueryRow(ctx, `SELECT count(*), sum(length(map_gzip)) FROM `+schema+`.sourcemaps`).Scan(&n, &size); err != nil || n != 2 {
@@ -78,23 +78,23 @@ func TestPostgresUploadEnrichPurge(t *testing.T) {
 		t.Errorf("guardados %d bytes: no parecen comprimidos", size)
 	}
 
-	ev := readEvent(t, "frontend-login-typeerror-1")
+	ev := readEvent(t, "web-typeerror-1")
 	if err := s.Enrich(ctx, p.ID, ev); err != nil {
 		t.Fatal(err)
 	}
 	frames := ev.Exceptions[0].Frames
-	if top := frames[len(frames)-1]; top.Filename != loginPage+".ts" || top.Line != 268 || top.ContextLine != "    return data.cuenta!.id;" {
+	if top := frames[len(frames)-1]; top.Filename != carrito || top.Line != 7 || top.ContextLine != failLine {
 		t.Fatalf("primer fotograma = %s:%d %q", top.Filename, top.Line, top.ContextLine)
 	}
 
-	if _, err := admin.Exec(ctx, `UPDATE `+schema+`.sourcemaps SET uploaded_at = now() - interval '91 days' WHERE file = 'chunk-E5F6G7H8.js'`); err != nil {
+	if _, err := admin.Exec(ctx, `UPDATE `+schema+`.sourcemaps SET uploaded_at = now() - interval '91 days' WHERE file = $1`, mainJS); err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := s.Purge(ctx, 90*24*time.Hour)
 	if err != nil || deleted != 1 {
 		t.Fatalf("borrados = %d, %v", deleted, err)
 	}
-	if _, err := st.SourceMap(ctx, p.ID, release1, "chunk-A1B2C3D4.js"); err != nil {
+	if _, err := st.SourceMap(ctx, p.ID, release1, chunkJS); err != nil {
 		t.Errorf("el reciente se borró: %v", err)
 	}
 }

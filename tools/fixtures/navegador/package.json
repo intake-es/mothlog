@@ -1,0 +1,19 @@
+{
+  "name": "fixtures-navegador",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "grabar": "node grabar.mjs"
+  },
+  "dependencies": {
+    "@sentry/browser": "11.15.0",
+    "mitt": "3.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "playwright": "1.64.1",
+    "source-map": "0.8.0",
+    "typescript": "5.9.3"
+  }
+}

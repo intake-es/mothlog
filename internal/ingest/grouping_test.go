@@ -25,8 +25,8 @@ func excEvent(line int) *event.Event {
 }
 
 func TestNormalizeMessage(t *testing.T) {
-	a := `task failed id=43ed20e1ee514256b5fd6db53d2ad712 name='enviar_factura' worker=723be757 try=4 duration_ms=190918 error=AttributeError("'NoneType' object has no attribute '__dict__'")`
-	b := `task failed id=193d9a4704ab46469ffec6b691642810 name='enviar_factura' worker=f94152a2 try=3 duration_ms=12 error=AttributeError("'NoneType' object has no attribute '__dict__'")`
+	a := `task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')`
+	b := `task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35 name='enviar_factura' worker=8e00938f try=3 duration_ms=12 error=TimeoutError('timed out')`
 	if NormalizeMessage(a) != NormalizeMessage(b) {
 		t.Fatalf("distintos:\n%s\n%s", NormalizeMessage(a), NormalizeMessage(b))
 	}
@@ -135,8 +135,8 @@ func TestGroupFingerprint(t *testing.T) {
 }
 
 func TestGroupMessage(t *testing.T) {
-	a := &event.Event{Logger: "ardiq", Message: "task failed id=43ed20e1ee514256b5fd6db53d2ad712 try=4"}
-	b := &event.Event{Logger: "ardiq", Message: "task failed id=193d9a4704ab46469ffec6b691642810 try=1"}
+	a := &event.Event{Logger: "worker", Message: "task failed id=88dfc065281046dfa0098d0fa91bbdf4 try=4"}
+	b := &event.Event{Logger: "worker", Message: "task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35 try=1"}
 	c := &event.Event{Logger: "otro", Message: a.Message}
 	if Group(a).Fingerprint != Group(b).Fingerprint {
 		t.Error("mismo mensaje normalizado, mismo issue")

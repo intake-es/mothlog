@@ -71,7 +71,7 @@ func TestDSN(t *testing.T) {
 	for in, want := range map[string]string{
 		"https://errors.example.com":       "https://abc@errors.example.com/3",
 		"https://errors.example.com/":      "https://abc@errors.example.com/3",
-		"http://127.0.0.1:8080":          "http://abc@127.0.0.1:8080/3",
+		"http://127.0.0.1:8080":            "http://abc@127.0.0.1:8080/3",
 		"https://errors.example.com:8443/": "https://abc@errors.example.com:8443/3",
 	} {
 		if got, err := dsn(in, p); err != nil || got != want {

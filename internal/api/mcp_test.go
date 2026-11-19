@@ -63,8 +63,8 @@ func TestMCP(t *testing.T) {
 	e := setup(t)
 	ctx := context.Background()
 	back := e.db.AddProject(t, "backend")
-	zero := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app.core.http.middlewares in __call__", Count: 1})
-	e.db.AddEvent(t, back.ID, zero, storetest.Fixture(t, "backend-fastapi-zerodivision-1"), time.Now())
+	zero := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app in media", Count: 1})
+	e.db.AddEvent(t, back.ID, zero, storetest.Fixture(t, "api-excepcion-1"), time.Now())
 	e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "KeyError: 'numero'", Status: "resolved"})
 
 	cs := connect(t, e.srv.URL, e.token)
@@ -103,7 +103,7 @@ func TestMCP(t *testing.T) {
 
 	md, isErr := call(t, cs, "get_stacktrace", map[string]any{"issue_id": zero})
 	if isErr || !strings.HasPrefix(md, "# ZeroDivisionError: division by zero\n") ||
-		!strings.Contains(md, "> 41 |             await self.app(scope, receive, _send)") {
+		!strings.Contains(md, `> 73 |     return {"pedido": pedido_id, "media": lineas["unidades"] / lineas["envios"]}`) {
 		t.Errorf("get_stacktrace =\n%s", md)
 	}
 	if out, isErr := call(t, cs, "get_stacktrace", map[string]any{"issue_id": 999999}); !isErr || !strings.Contains(out, "no existe") {

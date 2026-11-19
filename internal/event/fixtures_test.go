@@ -18,9 +18,8 @@ import (
 const fixturesDir = "../../testdata/envelopes"
 
 const (
-	keyBackend      = "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a"
-	keyIntegrations = "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"
-	keyFront        = "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+	keyAPI = "5b6d3a35fd6eb6e0f9d410fc5c0f6cbc"
+	keyWeb = "ce01335f125960aa6957a133d15b5f3a"
 )
 
 type want struct {
@@ -37,9 +36,8 @@ type want struct {
 }
 
 var (
-	python257 = want{key: keyBackend, sdk: "sentry.python.fastapi", sdkVersion: "2.57.0", release: "fixture-release-1"}
-	python266 = want{key: keyIntegrations, sdk: "sentry.python.fastapi", sdkVersion: "2.66.1", release: "fixture-release-1"}
-	angular   = want{key: keyFront, sdk: "sentry.javascript.angular", sdkVersion: "11.0.0"}
+	python  = want{key: keyAPI, sdk: "sentry.python.fastapi", sdkVersion: "2.75.0", release: "fixture-release-1"}
+	browser = want{key: keyWeb, sdk: "sentry.javascript.browser", sdkVersion: "11.15.0", release: "fixture-release-1"}
 )
 
 func with(base want, f func(*want)) want {
@@ -49,46 +47,35 @@ func with(base want, f func(*want)) want {
 
 // Una fila por fichero de testdata/envelopes, según la tabla de tools/fixtures/README.md.
 var fixtures = map[string]want{
-	"backend-ardiq-task-failed-a-1": with(python257, func(w *want) {
-		w.logger = "ardiq"
-		w.message = `task failed id=43ed20e1ee514256b5fd6db53d2ad712 name='enviar_factura' worker=723be757 try=4 duration_ms=190918 error=AttributeError("'NoneType' object has no attribute '__dict__'")`
+	"api-excepcion-1": with(python, func(w *want) {
+		w.excType, w.inApp, w.request = "ZeroDivisionError", true, "GET http://testserver/pedidos/p_1042/media"
 	}),
-	"backend-ardiq-task-failed-b-1": with(python257, func(w *want) {
-		w.logger = "ardiq"
-		w.message = `task failed id=193d9a4704ab46469ffec6b691642810 name='enviar_factura' worker=f94152a2 try=4 duration_ms=190918 error=AttributeError("'NoneType' object has no attribute '__dict__'")`
+	"api-excepcion-2":  {key: keyAPI, noEvent: true},
+	"api-descartado-1": {key: keyAPI, noEvent: true},
+	"api-descartado-2": {key: keyAPI, noEvent: true},
+	"api-validacion-1": with(python, func(w *want) {
+		w.excType, w.inApp, w.request = "ValidationError", true, "GET http://testserver/pedidos/importar"
 	}),
-	"backend-fastapi-zerodivision-1": with(python257, func(w *want) {
-		w.excType, w.inApp, w.request = "ZeroDivisionError", true, "GET http://testserver/__prueba/division"
+	"api-validacion-2": {key: keyAPI, noEvent: true},
+	"api-log-exception-1": with(python, func(w *want) {
+		w.excType, w.inApp, w.logger, w.message = "KeyError", true, "tienda.stock", "stock.sincronizacion_fallida"
 	}),
-	"backend-fastapi-zerodivision-2": {key: keyBackend, noEvent: true},
-	"backend-fastapi-zerodivision-3": {key: keyBackend, noEvent: true},
-	"backend-intakeerror-404-1":      {key: keyBackend, noEvent: true},
-	"backend-intakeerror-404-2":      {key: keyBackend, noEvent: true},
-	"backend-structlog-error-1": with(python257, func(w *want) {
-		w.message = "ai.action_reported_failure"
+	"api-log-error-1": with(python, func(w *want) {
+		w.logger, w.message = "tienda.stock", "pagos.reembolso_rechazado"
 	}),
-	// Lanzado desde el __main__ del script de grabación: ningún fotograma es de la app.
-	"backend-structlog-exception-1": with(python257, func(w *want) {
-		w.excType = "KeyError"
+	"api-tarea-a-1": with(python, func(w *want) {
+		w.logger = "worker"
+		w.message = `task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')`
 	}),
-	"backend-validationerror-1": with(python257, func(w *want) {
-		w.excType, w.inApp, w.request = "ValidationError", true, "GET http://testserver/__prueba/validacion"
+	"api-tarea-b-1": with(python, func(w *want) {
+		w.logger = "worker"
+		w.message = `task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35 name='enviar_factura' worker=8e00938f try=4 duration_ms=157682 error=TimeoutError('timed out')`
 	}),
-	"backend-validationerror-2": {key: keyBackend, noEvent: true},
-	"backend-validationerror-3": {key: keyBackend, noEvent: true},
-	"frontend-angular-typeerror-1": with(angular, func(w *want) {
-		w.excType, w.inApp, w.request = "TypeError", true, " https://app.example.com/auth/login"
+	"web-typeerror-1": with(browser, func(w *want) {
+		w.excType, w.inApp, w.request = "TypeError", true, " https://app.example.com/"
 	}),
-	"frontend-login-typeerror-1": with(angular, func(w *want) {
-		w.excType, w.inApp, w.release, w.request = "TypeError", true, "fixture-release-1", " https://app.example.com/auth/login"
-	}),
-	"frontend-login-session-1": {key: keyFront, noEvent: true},
-	"frontend-login-session-2": {key: keyFront, noEvent: true},
-	"integrations-fastapi-typeerror-1": with(python266, func(w *want) {
-		w.excType, w.inApp, w.request = "TypeError", true, "GET http://testserver/__prueba/twilio"
-	}),
-	"integrations-fastapi-typeerror-2": {key: keyIntegrations, noEvent: true},
-	"integrations-fastapi-typeerror-3": {key: keyIntegrations, noEvent: true},
+	"web-sesion-1": {key: keyWeb, noEvent: true},
+	"web-sesion-2": {key: keyWeb, noEvent: true},
 }
 
 type meta struct {
@@ -238,7 +225,8 @@ func TestFixtures(t *testing.T) {
 				t.Errorf("hay fotogramas in_app = %v, quiero %v", inApp, w.inApp)
 			}
 			for _, f := range last.Frames {
-				if f.Filename == "" || f.Function == "" || f.Line == 0 {
+				// Los fotogramas nativos del navegador (Array.map) no tienen línea.
+				if f.Filename == "" || f.Function == "" || (f.Line == 0 && f.Filename != "<anonymous>") {
 					t.Errorf("fotograma incompleto: %+v", f)
 				}
 			}
@@ -247,7 +235,7 @@ func TestFixtures(t *testing.T) {
 }
 
 func TestFixturesPythonFrameContext(t *testing.T) {
-	env, _ := readFixture(t, "backend-fastapi-zerodivision-1")
+	env, _ := readFixture(t, "api-excepcion-1")
 	e, err := event.Parse(env.Events()[0].Payload)
 	if err != nil {
 		t.Fatal(err)
@@ -265,13 +253,13 @@ func TestFixturesPythonFrameContext(t *testing.T) {
 	if app.AbsPath == "" || app.Module == "" || app.ContextLine == "" || len(app.PreContext) == 0 || len(app.PostContext) == 0 {
 		t.Errorf("fotograma sin contexto: %+v", app)
 	}
-	if e.ServerName == "" || e.Transaction != "/__prueba/division" || e.Tags["component"] != "api" {
+	if e.ServerName == "" || e.Transaction != "/pedidos/{pedido_id}/media" || e.Tags["component"] != "api" {
 		t.Errorf("server_name %q, transaction %q, tags %v", e.ServerName, e.Transaction, e.Tags)
 	}
 }
 
 func TestFixturesFrontColumns(t *testing.T) {
-	env, _ := readFixture(t, "frontend-angular-typeerror-1")
+	env, _ := readFixture(t, "web-typeerror-1")
 	e, err := event.Parse(env.Events()[0].Payload)
 	if err != nil {
 		t.Fatal(err)
@@ -280,7 +268,7 @@ func TestFixturesFrontColumns(t *testing.T) {
 		t.Errorf("plataforma %q, entorno %q", e.Platform, e.Environment)
 	}
 	for _, f := range e.Exceptions[0].Frames {
-		if f.Column == 0 {
+		if f.Column == 0 && f.Filename != "<anonymous>" {
 			t.Errorf("fotograma sin columna: %+v", f)
 		}
 	}

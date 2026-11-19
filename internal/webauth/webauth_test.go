@@ -69,16 +69,16 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 	})
 	mux.HandleFunc("GET /user/memberships/orgs/{org}", func(w http.ResponseWriter, r *http.Request) {
 		m := members[user(r)]
-		if r.PathValue("org") != "intake-es" || m.code != http.StatusOK {
+		if r.PathValue("org") != "example-org" || m.code != http.StatusOK {
 			code := m.code
-			if code == 0 || r.PathValue("org") != "intake-es" {
+			if code == 0 || r.PathValue("org") != "example-org" {
 				code = http.StatusNotFound
 			}
 			w.WriteHeader(code)
 			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"state": m.state, "role": "member", "organization": map[string]any{"login": "intake-es"}})
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": m.state, "role": "member", "organization": map[string]any{"login": "example-org"}})
 	})
 	gh.Server = httptest.NewServer(mux)
 	t.Cleanup(gh.Close)
@@ -117,7 +117,7 @@ func githubConfig(gh *fakeGitHub) Config {
 	return Config{
 		ClientID:      "cliente",
 		ClientSecret:  "secreto",
-		Org:           "intake-es",
+		Org:           "example-org",
 		SessionSecret: testSecret,
 		PublicURL:     publicURL,
 		ListenAddr:    ":8080",
@@ -209,7 +209,7 @@ func TestGitHubLogin(t *testing.T) {
 	res = h.do(t, http.MethodGet, "/auth/session", []*http.Cookie{s}, nil)
 	var body sessionJSON
 	_ = json.NewDecoder(res.Body).Decode(&body)
-	if body.User == nil || body.User.Login != "ana" || body.User.Name != "Ana" || body.Org != "intake-es" || len(body.Methods) != 1 || body.Methods[0] != "github" {
+	if body.User == nil || body.User.Login != "ana" || body.User.Name != "Ana" || body.Org != "example-org" || len(body.Methods) != 1 || body.Methods[0] != "github" {
 		t.Errorf("/auth/session = %+v", body)
 	}
 }
@@ -473,11 +473,11 @@ func TestNewConfig(t *testing.T) {
 	}
 
 	env := map[string]string{
-		"GITHUB_CLIENT_ID": "id", "GITHUB_CLIENT_SECRET": "s", "GITHUB_ORG": "intake-es",
+		"GITHUB_CLIENT_ID": "id", "GITHUB_CLIENT_SECRET": "s", "GITHUB_ORG": "example-org",
 		"SESSION_SECRET": testSecret, "UI_DEV_LOGIN": "1",
 	}
 	c := LoadConfig(func(k string) string { return env[k] }, "127.0.0.1:8080", publicURL)
-	if c.ClientID != "id" || c.ClientSecret != "s" || c.Org != "intake-es" || !c.DevLogin || c.ListenAddr != "127.0.0.1:8080" || c.PublicURL != publicURL {
+	if c.ClientID != "id" || c.ClientSecret != "s" || c.Org != "example-org" || !c.DevLogin || c.ListenAddr != "127.0.0.1:8080" || c.PublicURL != publicURL {
 		t.Errorf("LoadConfig = %+v", c)
 	}
 	env["UI_DEV_LOGIN"] = "0"

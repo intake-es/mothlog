@@ -29,7 +29,7 @@ func setup(t *testing.T) *env {
 	t.Helper()
 	db := storetest.NewDB(t)
 	mux := http.NewServeMux()
-	// Las rutas de ingesta (INT-246) y de source maps (INT-247) conviven con las de la API.
+	// Las rutas de ingesta y de source maps conviven con las de la API.
 	noop := func(http.ResponseWriter, *http.Request) {}
 	mux.HandleFunc("POST /api/{project_id}/envelope/", noop)
 	mux.HandleFunc("POST /api/{project_id}/releases/{release}/sourcemaps/", noop)
@@ -109,9 +109,9 @@ func TestListIssues(t *testing.T) {
 	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
 	at := func(h int) time.Time { return base.Add(time.Duration(h) * time.Hour) }
 
-	zero := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app.core.http.middlewares in __call__", FirstSeen: at(0), LastSeen: at(10), Count: 5})
+	zero := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app in media", FirstSeen: at(0), LastSeen: at(10), Count: 5})
 	valid := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "ValidationError: 1 validation error", Culprit: "app.pedidos in validar", FirstSeen: at(1), LastSeen: at(8), Count: 50})
-	typeErr := e.db.AddIssue(t, storetest.Issue{ProjectID: front.ID, Title: "TypeError: Cannot read properties of undefined", Culprit: "t.failForFixture", FirstSeen: at(2), LastSeen: at(9), Count: 1})
+	typeErr := e.db.AddIssue(t, storetest.Issue{ProjectID: front.ID, Title: "TypeError: Cannot read properties of undefined", Culprit: "src/carrito.ts in contarUnidades", FirstSeen: at(2), LastSeen: at(9), Count: 1})
 	resolved := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "KeyError: 'numero'", Status: "resolved", FirstSeen: at(3), LastSeen: at(3), Count: 2})
 	silenced := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "task failed id=<id>", Status: "silenced", FirstSeen: at(4), LastSeen: at(12), Count: 7})
 	next := e.db.AddIssue(t, storetest.Issue{ProjectID: front.ID, Title: "Error 50%_off", Status: "resolved_next", FirstSeen: at(5), LastSeen: at(5), Count: 3})
@@ -133,7 +133,7 @@ func TestListIssues(t *testing.T) {
 		{"first_seen", "sort=first_seen", []int64{tie, typeErr, valid, zero}},
 		{"count", "sort=count&status=all", []int64{valid, silenced, tie, zero, next, resolved, typeErr}},
 		{"búsqueda en el título sin mayúsculas", "query=zerodivision", []int64{zero}},
-		{"búsqueda en el culprit", "query=failForFixture", []int64{typeErr}},
+		{"búsqueda en el culprit", "query=contarunidades", []int64{typeErr}},
 		{"los comodines de LIKE son texto", "query=50%25_&status=all", []int64{next}},
 		{"sin resultados", "query=nada", []int64{}},
 	} {
@@ -153,7 +153,7 @@ func TestListIssues(t *testing.T) {
 		rel := "r7"
 		reg := at(11)
 		id := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "Con regresión", Type: "error", FirstSeen: at(0), LastSeen: at(11), Count: 1, ResolvedInRelease: &rel, LastRegression: &reg})
-		ev := storetest.Fixture(t, "backend-fastapi-zerodivision-1")
+		ev := storetest.Fixture(t, "api-excepcion-1")
 		e.db.AddEvent(t, back.ID, id, ev, at(11))
 		var page store.IssuePage
 		e.get(t, "/api/0/issues/?limit=1", &page)
@@ -170,7 +170,7 @@ func TestListIssues(t *testing.T) {
 
 	t.Run("daily=1", func(t *testing.T) {
 		now := time.Now().UTC()
-		ev := storetest.Fixture(t, "backend-fastapi-zerodivision-1")
+		ev := storetest.Fixture(t, "api-excepcion-1")
 		id := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "Con serie", FirstSeen: now.Add(-72 * time.Hour), LastSeen: now, Count: 3})
 		e.db.AddEvent(t, back.ID, id, ev, now)
 		e.db.AddEvent(t, back.ID, id, ev, now)
@@ -258,7 +258,7 @@ func TestIssueDetail(t *testing.T) {
 	p := e.db.AddProject(t, "backend")
 	now := time.Now().UTC()
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "ZeroDivisionError: division by zero", FirstSeen: now.AddDate(0, 0, -20), LastSeen: now, Count: 7})
-	base := storetest.Fixture(t, "backend-fastapi-zerodivision-1")
+	base := storetest.Fixture(t, "api-excepcion-1")
 	ev := func(days int, env, release, user, org string) {
 		x := base
 		x.Environment, x.Release = env, release
@@ -272,7 +272,9 @@ func TestIssueDetail(t *testing.T) {
 	ev(1, "staging", "r2", "luis@x.es", "9")
 	ev(0, "production", "r2", "", "7")
 	ev(0, "production", "r3", "", "")
-	latest := e.db.AddEvent(t, p.ID, id, base, now.Add(time.Second))
+	dev := base
+	dev.Environment = "development"
+	latest := e.db.AddEvent(t, p.ID, id, dev, now.Add(time.Second))
 
 	var d store.IssueDetail
 	e.get(t, "/api/0/issues/"+itoa(id)+"/", &d)
@@ -327,7 +329,7 @@ func TestEvents(t *testing.T) {
 	e := setup(t)
 	p := e.db.AddProject(t, "backend")
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "x"})
-	ev := storetest.Fixture(t, "backend-fastapi-zerodivision-1")
+	ev := storetest.Fixture(t, "api-excepcion-1")
 	now := time.Now().UTC().Truncate(time.Second)
 	var want []int64
 	for i := range 5 {
@@ -376,79 +378,92 @@ func TestEvents(t *testing.T) {
 func TestStacktraceBackend(t *testing.T) {
 	e := setup(t)
 	p := e.db.AddProject(t, "backend")
-	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app.core.http.middlewares in __call__", Count: 1})
-	e.db.AddEvent(t, p.ID, id, storetest.Fixture(t, "backend-fastapi-zerodivision-1"), time.Now())
+	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app in media", Count: 1})
+	ev := storetest.Fixture(t, "api-excepcion-1")
+	e.db.AddEvent(t, p.ID, id, ev, time.Now())
 
 	md := e.markdown(t, id)
 	for _, want := range []string{
 		"# ZeroDivisionError: division by zero\n",
 		"- Proyecto: backend\n",
 		"- Release: fixture-release-1\n",
-		"- Entorno: ",
+		"- Entorno: production\n",
 		"- Usuario: (ninguno)\n",
-		"- Request: GET http://testserver/__prueba/division\n",
-		"- Transaction: /__prueba/division\n",
+		"- Request: GET http://testserver/pedidos/p_1042/media\n",
+		"- Transaction: /pedidos/{pedido_id}/media\n",
+		"- Servidor: api-1\n",
 		"## Etiquetas\n\n- component: api\n",
-		"### 1. ZeroDivisionError: division by zero\n\nMecanismo: generic, manejada\n",
-		// Fotograma in_app con su contexto y la línea que falló marcada.
-		"#### `app/core/http/middlewares.py:41` en `__call__` (módulo `app.core.http.middlewares`) (app)\n\n```\n" +
-			"  36 |             if message[\"type\"] == \"http.response.start\":\n",
-		"> 41 |             await self.app(scope, receive, _send)\n  42 |         except Exception:\n",
-		// El de fuera de la app, en una línea.
-		"- `starlette/routing.py:676` en `__call__` (módulo `starlette.routing`)\n",
-		"- `fastapi/routing.py:328` en `run_endpoint_function` (módulo `fastapi.routing`)\n",
-		// Sin in_app, el fotograma que falló también sale con su código.
-		"#### `backend.py:25` en `division` (módulo `__main__`) (app)\n",
-		"> 25 |     return {\"media\": 10 / total[\"mensajes\"]}\n",
+		"### 1. ZeroDivisionError: division by zero\n\nMecanismo: starlette, no manejada\n",
+		// Los de fuera de la app, en una línea.
+		"- `starlette/routing.py:683` en `__call__` (módulo `starlette.routing`)\n",
+		"- `fastapi/routing.py:381` en `run_endpoint_function` (módulo `fastapi.routing`)\n\n",
+		// El fotograma in_app con su contexto y la línea que falló marcada.
+		"#### `app.py:73` en `media` (módulo `app`) (app)\n\n```\n" +
+			"  68 | \n",
+		"  72 |     lineas = {\"unidades\": 12, \"envios\": 0}\n" +
+			"> 73 |     return {\"pedido\": pedido_id, \"media\": lineas[\"unidades\"] / lineas[\"envios\"]}\n  74 | \n",
 		"## Breadcrumbs\n\n(ninguno)\n",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("falta %q en\n%s", want, md)
 		}
 	}
-	if strings.Contains(md, "starlette/routing.py:676` en `__call__` (módulo `starlette.routing`) (app)") {
+	if strings.Contains(md, "starlette/routing.py:683` en `__call__` (módulo `starlette.routing`) (app)") {
 		t.Error("un fotograma de starlette sale como de la app")
+	}
+
+	// Un fotograma sin in_app cuenta como propio (el __main__ en Python): sale con su código.
+	first := &ev.Exceptions[0].Frames[0]
+	first.InApp = nil
+	e.db.AddEvent(t, p.ID, id, ev, time.Now().Add(time.Second))
+	md = e.markdown(t, id)
+	want := "#### `starlette/applications.py:96` en `__call__` (módulo `starlette.applications`) (app)\n\n```\n" +
+		"   91 | \n"
+	if !strings.Contains(md, want) || !strings.Contains(md, "```\n\n- `starlette/middleware/errors.py:186` en `__call__`") {
+		t.Errorf("falta %q en\n%s", want, md)
 	}
 }
 
 func TestStacktraceFrontend(t *testing.T) {
 	e := setup(t)
 	p := e.db.AddProject(t, "front")
-	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "TypeError: Cannot read properties of undefined (reading 'id')", Culprit: "t.failForFixture"})
-	ev := storetest.Fixture(t, "frontend-login-typeerror-1")
+	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "TypeError: Cannot read properties of undefined (reading 'reduce')", Culprit: "a"})
+	ev := storetest.Fixture(t, "web-typeerror-1")
 	e.db.AddEvent(t, p.ID, id, ev, time.Now())
 
 	md := e.markdown(t, id)
 	for _, want := range []string{
-		"# TypeError: Cannot read properties of undefined (reading 'id')\n",
+		"# TypeError: Cannot read properties of undefined (reading 'reduce')\n",
 		"- Proyecto: front\n",
 		"- Release: fixture-release-1\n",
 		"- Entorno: production\n",
-		"- Request: https://app.example.com/auth/login\n",
-		"Mecanismo: auto.function.angular.error_handler, no manejada\n",
+		"- Request: https://app.example.com/\n",
+		"Mecanismo: auto.browser.browserapierrors.addEventListener, no manejada\n",
 		// Sin source maps los fotogramas no traen código: una línea cada uno, en el orden del SDK.
-		"- `https://app.example.com/chunk-A1B2C3D4.js:1:8546` en `t.handleSubmit` (app)\n" +
-			"- `https://app.example.com/chunk-A1B2C3D4.js:1:11129` en `t.failForFixture` (app)\n",
-		"- `https://app.example.com/polyfills-J9K8L7M6.js:1:2410` en `e.runTask` (app)\n",
-		`[navigation] {"to":"/auth/login","from":"/auth/login"}`,
+		"- `https://app.example.com/chunk-Z554BZQ6.js:1:442` en `c` (app)\n" +
+			"- `https://app.example.com/chunk-Z554BZQ6.js:1:383` en `a` (app)\n",
+		"- `https://app.example.com/main-3TO43VUM.js:15:31889` en `HTMLButtonElement.<anonymous>` (app)\n",
+		"- `<anonymous>` en `Array.map` (app)\n",
+		"[ui.click] body > button#enviar",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("falta %q en\n%s", want, md)
 		}
 	}
 
-	// Con el contexto que deja INT-247 al traducir el fotograma, sale el código.
+	// Con el contexto que deja la traducción con source maps, sale el código.
 	last := &ev.Exceptions[0].Frames[len(ev.Exceptions[0].Frames)-1]
-	last.Filename, last.Line, last.Column = "src/app/pages/pagina-de-ejemplo/pagina-de-ejemplo.ts", 268, 12
-	last.PreContext = []string{"  private failForFixture(data: Datos) {"}
-	last.ContextLine = "    return data.cuenta!.id;"
-	last.PostContext = []string{"  }"}
+	last.Filename, last.Line, last.Column = "src/carrito.ts", 7, 25
+	last.PreContext = []string{"function contarUnidades(pedido: Pedido): number {", "  // Un pedido recién creado aún no tiene líneas."}
+	last.ContextLine = "  return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);"
+	last.PostContext = []string{"}"}
 	e.db.AddEvent(t, p.ID, id, ev, time.Now().Add(time.Second))
 	md = e.markdown(t, id)
-	want := "#### `src/app/pages/pagina-de-ejemplo/pagina-de-ejemplo.ts:268:12` en `t.failForFixture` (app)\n\n```\n" +
-		"  267 |   private failForFixture(data: Datos) {\n" +
-		"> 268 |     return data.cuenta!.id;\n" +
-		"  269 |   }\n```\n"
+	want := "#### `src/carrito.ts:7:25` en `a` (app)\n\n```\n" +
+		"  5 | function contarUnidades(pedido: Pedido): number {\n" +
+		"  6 |   // Un pedido recién creado aún no tiene líneas.\n" +
+		"> 7 |   return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);\n" +
+		"  8 | }\n```\n"
 	if !strings.Contains(md, want) {
 		t.Errorf("falta %q en\n%s", want, md)
 	}
@@ -458,7 +473,7 @@ func TestStacktraceBreadcrumbs(t *testing.T) {
 	e := setup(t)
 	p := e.db.AddProject(t, "front")
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "x"})
-	ev := storetest.Fixture(t, "frontend-login-typeerror-1")
+	ev := storetest.Fixture(t, "web-typeerror-1")
 	var crumbs []map[string]any
 	for i := range 25 {
 		crumbs = append(crumbs, map[string]any{"timestamp": 1795090879 + i, "category": "console", "level": "warning", "message": "aviso " + itoa(int64(i))})
@@ -492,7 +507,7 @@ func TestSetStatus(t *testing.T) {
 	e := setup(t)
 	p := e.db.AddProject(t, "backend")
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "x"})
-	ev := storetest.Fixture(t, "backend-fastapi-zerodivision-1")
+	ev := storetest.Fixture(t, "api-excepcion-1")
 	now := time.Now()
 	ev.Release = "r-viejo"
 	e.db.AddEvent(t, p.ID, id, ev, now.Add(-time.Hour))

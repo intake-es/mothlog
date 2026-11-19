@@ -165,7 +165,7 @@ func (f *fakeLinear) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.creates++
-		is := &linearIssue{Identifier: fmt.Sprintf("INT-%d", 100+f.creates), Title: in.Input["title"].(string),
+		is := &linearIssue{Identifier: fmt.Sprintf("ERR-%d", 100+f.creates), Title: in.Input["title"].(string),
 			Description: in.Input["description"].(string), State: "state-triage"}
 		if ls, ok := in.Input["labelIds"].([]any); ok {
 			for _, l := range ls {
@@ -235,7 +235,7 @@ func (f *fakeLinear) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func linearURL(identifier string) string {
-	return "https://linear.app/example/issue/" + identifier
+	return "https://linear.app/ejemplo/issue/" + identifier
 }
 
 func mustJSON(v any) []byte {
@@ -387,7 +387,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	e := newEnv(t, nil)
 	ctx := context.Background()
 
-	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	first := e.ingest(t, "api-tarea-a-1")
 	if first.Outcome != ingest.New {
 		t.Fatalf("outcome = %v", first.Outcome)
 	}
@@ -399,13 +399,13 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("slack = %+v", msgs)
 	}
-	for _, want := range []string{"*Nuevo error* · backend · development", "*task failed id=43ed20e1ee514256b5fd6db53d2ad712",
-		"*Release*\nfixture-release-1", "Ver el error " + link, "INT-101 en Linear " + linearURL("INT-101")} {
+	for _, want := range []string{"*Nuevo error* · backend · production", "*task failed id=88dfc065281046dfa0098d0fa91bbdf4",
+		"*Release*\nfixture-release-1", "Ver el error " + link, "ERR-101 en Linear " + linearURL("ERR-101")} {
 		if got := flatten(msgs[0]); !strings.Contains(got, want) {
 			t.Errorf("slack sin %q:\n%s", want, got)
 		}
 	}
-	if !strings.HasPrefix(msgs[0].Text, "Nuevo error en backend: task failed id=43ed20e1ee514256b5fd6db53d2ad712") {
+	if !strings.HasPrefix(msgs[0].Text, "Nuevo error en backend: task failed id=88dfc065281046dfa0098d0fa91bbdf4") {
 		t.Errorf("text = %q", msgs[0].Text)
 	}
 	issues, order := e.linear.snapshot()
@@ -413,7 +413,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 		t.Fatalf("issues de Linear = %d", len(order))
 	}
 	li := issues[order[0]]
-	if !strings.HasPrefix(li.Title, "[backend] task failed id=43ed20e1ee514256b5fd6db53d2ad712") {
+	if !strings.HasPrefix(li.Title, "[backend] task failed id=88dfc065281046dfa0098d0fa91bbdf4") {
 		t.Errorf("título = %q", li.Title)
 	}
 	if !strings.Contains(li.Description, "("+link+")") || !strings.Contains(li.Description, "# task failed") || !strings.Contains(li.Description, "- Proyecto: backend") {
@@ -428,7 +428,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	}
 
 	// Repetir el error no avisa.
-	if res := e.ingest(t, "backend-ardiq-task-failed-a-1"); res.Outcome != ingest.Unchanged || res.IssueID != first.IssueID {
+	if res := e.ingest(t, "api-tarea-a-1"); res.Outcome != ingest.Unchanged || res.IssueID != first.IssueID {
 		t.Fatalf("repetido: %+v", res)
 	}
 	if n := e.send(t); n != 0 {
@@ -441,7 +441,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	if _, err := e.db.SetIssueStatus(ctx, first.IssueID, "resolved"); err != nil {
 		t.Fatal(err)
 	}
-	second := e.ingest(t, "backend-ardiq-task-failed-b-1")
+	second := e.ingest(t, "api-tarea-b-1")
 	if second.Outcome != ingest.Regressed || second.IssueID != first.IssueID {
 		t.Fatalf("regresión: %+v", second)
 	}
@@ -449,7 +449,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 		t.Fatalf("enviados = %d, quiero 2", n)
 	}
 	msgs = e.slack.payloads(t)
-	if len(msgs) != 2 || !strings.Contains(flatten(msgs[1]), "*Ha vuelto* · backend · development · se resolvió el ") ||
+	if len(msgs) != 2 || !strings.Contains(flatten(msgs[1]), "*Ha vuelto* · backend · production · se resolvió el ") ||
 		!strings.Contains(flatten(msgs[1]), "*Eventos*\n3 en total") {
 		t.Fatalf("slack = %+v", msgs)
 	}
@@ -474,7 +474,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 func TestRegressionWithoutLinearIssueCreatesAnother(t *testing.T) {
 	e := newEnv(t, nil)
 	ctx := context.Background()
-	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	first := e.ingest(t, "api-tarea-a-1")
 	e.send(t)
 	_, order := e.linear.snapshot()
 	e.linear.mu.Lock()
@@ -484,7 +484,7 @@ func TestRegressionWithoutLinearIssueCreatesAnother(t *testing.T) {
 	if _, err := e.db.SetIssueStatus(ctx, first.IssueID, "resolved"); err != nil {
 		t.Fatal(err)
 	}
-	e.ingest(t, "backend-ardiq-task-failed-b-1")
+	e.ingest(t, "api-tarea-b-1")
 	e.send(t)
 	issues, order := e.linear.snapshot()
 	if len(issues) != 1 || len(order) != 2 {
@@ -499,12 +499,12 @@ func TestRegressionWithoutLinearIssueCreatesAnother(t *testing.T) {
 func TestDeletedStateRetriesWithoutDuplicating(t *testing.T) {
 	e := newEnv(t, func(o *Options) { o.SlackWebhookURL = "" })
 	ctx := context.Background()
-	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	first := e.ingest(t, "api-tarea-a-1")
 	regress := func() {
 		if _, err := e.db.SetIssueStatus(ctx, first.IssueID, "resolved"); err != nil {
 			t.Fatal(err)
 		}
-		e.ingest(t, "backend-ardiq-task-failed-b-1")
+		e.ingest(t, "api-tarea-b-1")
 	}
 	regress()
 	e.send(t)
@@ -542,7 +542,7 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 		CREATE TRIGGER rompe BEFORE UPDATE OF linear_issue_id ON issues FOR EACH ROW EXECUTE FUNCTION rompe();`); err != nil {
 		t.Fatal(err)
 	}
-	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	first := e.ingest(t, "api-tarea-a-1")
 	if _, err := e.alerter.SendPending(ctx); err == nil {
 		t.Fatal("el guardado debería fallar")
 	}
@@ -580,7 +580,7 @@ func (f failAfter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event,
 func TestRollbackLeavesNothing(t *testing.T) {
 	e := newEnv(t, nil)
 	ing := ingest.NewIngester(e.db.Pool(), nil, failAfter{e.alerter}, quiet())
-	ev := storetest.Fixture(t, "backend-ardiq-task-failed-a-1")
+	ev := storetest.Fixture(t, "api-tarea-a-1")
 	if _, err := ing.Ingest(context.Background(), e.project, &ev); err == nil {
 		t.Fatal("la ingesta debería fallar")
 	}
@@ -597,7 +597,7 @@ func TestQueueFailureDoesNotFailIngest(t *testing.T) {
 	if _, err := e.db.Pool().Exec(context.Background(), `ALTER TABLE alert_outbox ADD CONSTRAINT rompe CHECK (false)`); err != nil {
 		t.Fatal(err)
 	}
-	if res := e.ingest(t, "backend-ardiq-task-failed-a-1"); res.Outcome != ingest.New {
+	if res := e.ingest(t, "api-tarea-a-1"); res.Outcome != ingest.New {
 		t.Fatalf("res = %+v", res)
 	}
 	var n int
@@ -610,7 +610,7 @@ func TestRetriesWithBackoffAndGivesUp(t *testing.T) {
 	e := newEnv(t, nil)
 	e.slack.setFail(http.StatusInternalServerError)
 	e.linear.setFail(http.StatusServiceUnavailable)
-	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	e.ingest(t, "api-tarea-a-1")
 	// Aquí se miden los reintentos de cada canal por separado: Slack no espera a Linear.
 	if _, err := e.db.Pool().Exec(context.Background(), `UPDATE alert_outbox SET waits_for = NULL`); err != nil {
 		t.Fatal(err)
@@ -661,7 +661,7 @@ func TestErrorDoesNotLeakWebhookURL(t *testing.T) {
 	url := dead.URL + "/services/T000/B000/secreto"
 	dead.Close()
 	e := newEnv(t, func(o *Options) { o.SlackWebhookURL = url; o.LinearAPIKey = "" })
-	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	e.ingest(t, "api-tarea-a-1")
 	e.send(t)
 	rows := e.outbox(t)
 	if len(rows) != 1 || rows[0].LastError == "" || strings.Contains(rows[0].LastError, "secreto") {
@@ -672,12 +672,12 @@ func TestErrorDoesNotLeakWebhookURL(t *testing.T) {
 func TestRegressionWaitsForPendingNew(t *testing.T) {
 	e := newEnv(t, func(o *Options) { o.SlackWebhookURL = "" })
 	e.linear.setFail(http.StatusInternalServerError)
-	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	first := e.ingest(t, "api-tarea-a-1")
 	e.send(t)
 	if _, err := e.db.SetIssueStatus(context.Background(), first.IssueID, "resolved"); err != nil {
 		t.Fatal(err)
 	}
-	e.ingest(t, "backend-ardiq-task-failed-b-1")
+	e.ingest(t, "api-tarea-b-1")
 	if n := e.send(t); n != 0 {
 		t.Fatalf("la regresión se ha enviado antes que el aviso de error nuevo")
 	}
@@ -739,7 +739,7 @@ func TestUnconfiguredChannelsAreNotQueued(t *testing.T) {
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := newEnv(t, c.configure)
-			e.ingest(t, "backend-ardiq-task-failed-a-1")
+			e.ingest(t, "api-tarea-a-1")
 			var got []string
 			for _, o := range e.outbox(t) {
 				got = append(got, o.Channel)
@@ -770,10 +770,10 @@ func TestExtraLabel(t *testing.T) {
 	if err := e.db.SetProjectExtraLabel(ctx, "backend", true); err != nil {
 		t.Fatal(err)
 	}
-	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	e.ingest(t, "api-tarea-a-1")
 
-	other := e.db.AddProject(t, "integrations")
-	ev := storetest.Fixture(t, "integrations-fastapi-typeerror-1")
+	other := e.db.AddProject(t, "web")
+	ev := storetest.Fixture(t, "web-typeerror-1")
 	if _, err := e.ing.Ingest(ctx, other.ID, &ev); err != nil {
 		t.Fatal(err)
 	}
@@ -808,7 +808,7 @@ func buttons(p slackPayload) []string {
 func TestSlackWaitsForLinear(t *testing.T) {
 	e := newEnv(t, nil)
 	e.linear.setFail(http.StatusInternalServerError)
-	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	e.ingest(t, "api-tarea-a-1")
 
 	if n := e.send(t); n != 1 {
 		t.Fatalf("enviados = %d; solo debería intentarse Linear", n)
@@ -822,7 +822,7 @@ func TestSlackWaitsForLinear(t *testing.T) {
 		t.Fatalf("enviados = %d", n)
 	}
 	msgs := e.slack.payloads(t)
-	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error", "INT-101 en Linear"}) {
+	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error", "ERR-101 en Linear"}) {
 		t.Fatalf("botones = %v", buttons(msgs[0]))
 	}
 }
@@ -831,7 +831,7 @@ func TestSlackStopsWaitingForLinear(t *testing.T) {
 	e := newEnv(t, nil)
 	e.linear.setFail(http.StatusInternalServerError)
 	start := e.clock.now()
-	e.ingest(t, "backend-ardiq-task-failed-a-1")
+	e.ingest(t, "api-tarea-a-1")
 	e.send(t)
 	e.clock.set(start.Add(time.Minute))
 	e.send(t)
@@ -853,7 +853,7 @@ func TestSlackStopsWaitingForLinear(t *testing.T) {
 func TestResolvedAt(t *testing.T) {
 	e := newEnv(t, nil)
 	ctx := context.Background()
-	id := e.ingest(t, "backend-ardiq-task-failed-a-1").IssueID
+	id := e.ingest(t, "api-tarea-a-1").IssueID
 	resolvedAt := func() *time.Time {
 		var at *time.Time
 		if err := e.db.Pool().QueryRow(ctx, `SELECT resolved_at FROM issues WHERE id = $1`, id).Scan(&at); err != nil {
@@ -883,25 +883,25 @@ func TestResolvedAt(t *testing.T) {
 		t.Error("reabrir no borra resolved_at")
 	}
 	set("resolved")
-	res := e.ingest(t, "backend-ardiq-task-failed-b-1")
+	res := e.ingest(t, "api-tarea-b-1")
 	if res.Outcome != ingest.Regressed || res.ResolvedAt == nil || resolvedAt() != nil {
 		t.Errorf("regresión: %+v, resolved_at = %v", res, resolvedAt())
 	}
 }
 
-// TestEndToEndArdiq repite el caso de INT-248: el primer task failed de ardiq
-// y, tras resolverlo, el segundo.
-func TestEndToEndArdiq(t *testing.T) {
+// TestEndToEndTaskFailed manda el primer task failed del worker y, tras
+// resolverlo, el segundo.
+func TestEndToEndTaskFailed(t *testing.T) {
 	e := newEnv(t, nil)
 	ctx := context.Background()
-	first := e.ingest(t, "backend-ardiq-task-failed-a-1")
+	first := e.ingest(t, "api-tarea-a-1")
 	if n := e.send(t); n != 2 {
 		t.Fatalf("enviados = %d", n)
 	}
 	if _, err := e.db.SetIssueStatus(ctx, first.IssueID, "resolved"); err != nil {
 		t.Fatal(err)
 	}
-	if res := e.ingest(t, "backend-ardiq-task-failed-b-1"); res.Outcome != ingest.Regressed {
+	if res := e.ingest(t, "api-tarea-b-1"); res.Outcome != ingest.Regressed {
 		t.Fatalf("res = %+v", res)
 	}
 	if n := e.send(t); n != 2 {
@@ -934,16 +934,16 @@ func TestEndToEndArdiq(t *testing.T) {
 		parts  []string
 	}{
 		{
-			"Nuevo error en backend: task failed id=43ed20e1ee514256b5fd6db53d2ad712",
+			"Nuevo error en backend: task failed id=88dfc065281046dfa0098d0fa91bbdf4",
 			[]string{"context", "section", "section", "actions"},
-			[]string{"*Nuevo error* · backend · development\n", "*task failed id=43ed20e1ee514256b5fd6db53d2ad712 name='enviar_factura'",
-				"*Release*\nfixture-release-1\n", "Ver el error " + link, "INT-101 en Linear " + linearURL("INT-101")},
+			[]string{"*Nuevo error* · backend · production\n", "*task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura'",
+				"*Release*\nfixture-release-1\n", "Ver el error " + link, "ERR-101 en Linear " + linearURL("ERR-101")},
 		},
 		{
-			"Ha vuelto un error en backend: task failed id=193d9a4704ab46469ffec6b691642810",
+			"Ha vuelto un error en backend: task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35",
 			[]string{"context", "section", "section", "actions"},
-			[]string{"*Ha vuelto* · backend · development · se resolvió el " + today + "\n", "*task failed id=193d9a4704ab46469ffec6b691642810",
-				"*Release*\nfixture-release-1\n", "*Eventos*\n2 en total\n", "Ver el error " + link, "INT-101 en Linear " + linearURL("INT-101")},
+			[]string{"*Ha vuelto* · backend · production · se resolvió el " + today + "\n", "*task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35",
+				"*Release*\nfixture-release-1\n", "*Eventos*\n2 en total\n", "Ver el error " + link, "ERR-101 en Linear " + linearURL("ERR-101")},
 		},
 	}
 	for i, m := range msgs {

@@ -3,9 +3,8 @@
 @import '@fontsource/inter/latin-600.css';
 @import '@fontsource/newsreader/latin-500.css';
 
-/* Los tokens del sistema visual del panel (styles.css, 13-10), con el
-   oscuro en light-dark(): sin clase sigue al sistema, y html.light o html.dark
-   lo fijan a mano. */
+/* Los tokens del sistema visual, con el oscuro en light-dark(): sin clase sigue
+   al sistema, y html.light o html.dark lo fijan a mano. */
 :root {
   color-scheme: light dark;
 

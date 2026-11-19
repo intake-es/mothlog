@@ -35,30 +35,26 @@ var fixtureProjects = []struct {
 	name string
 	key  string
 }{
-	{1, "backend", "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a"},
-	{2, "integrations", "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b"},
-	{3, "front", "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"},
+	{1, "api", "5b6d3a35fd6eb6e0f9d410fc5c0f6cbc"},
+	{2, "web", "ce01335f125960aa6957a133d15b5f3a"},
 }
 
 // Fixtures con un event y el issue que deben abrir, según tools/fixtures/README.md.
 var errorFixtures = map[string]struct{ title, culprit string }{
-	"backend-fastapi-zerodivision-1":   {"ZeroDivisionError: division by zero", "app.core.http.middlewares in __call__"},
-	"backend-validationerror-1":        {"ValidationError: 1 validation errors for Pedido", "app.core.http.middlewares in __call__"},
-	"backend-structlog-exception-1":    {"KeyError: 'pedido'", ""},
-	"backend-structlog-error-1":        {"ai.action_reported_failure", ""},
-	"backend-ardiq-task-failed-a-1":    {"task failed id=43ed20e1ee514256b5fd6db53d2ad712", ""},
-	"backend-ardiq-task-failed-b-1":    {"task failed id=193d9a4704ab46469ffec6b691642810", ""},
-	"integrations-fastapi-typeerror-1": {"TypeError: 'NoneType' object is not subscriptable", "app.core.http.middlewares in request_logging_middleware"},
-	"frontend-angular-typeerror-1":     {"TypeError: Cannot read properties of undefined (reading 'lineas')", "https://app.example.com/fixture-error.js in leerTotal"},
-	"frontend-login-typeerror-1":       {"TypeError: Cannot read properties of undefined (reading 'id')", "https://app.example.com/chunk-A1B2C3D4.js in t.failForFixture"},
+	"api-excepcion-1":     {"ZeroDivisionError: division by zero", "app in media"},
+	"api-validacion-1":    {"ValidationError: 1 validation error for Pedido", "app in importar"},
+	"api-log-exception-1": {"KeyError: 'oeste'", "app in sincronizar_stock"},
+	"api-log-error-1":     {"pagos.reembolso_rechazado", ""},
+	"api-tarea-a-1":       {"task failed id=88dfc065281046dfa0098d0fa91bbdf4", ""},
+	"api-tarea-b-1":       {"task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35", ""},
+	"web-typeerror-1":     {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
 }
 
 var noEventFixtures = []string{
-	"backend-fastapi-zerodivision-2", "backend-fastapi-zerodivision-3",
-	"backend-intakeerror-404-1", "backend-intakeerror-404-2",
-	"backend-validationerror-2", "backend-validationerror-3",
-	"integrations-fastapi-typeerror-2", "integrations-fastapi-typeerror-3",
-	"frontend-login-session-1", "frontend-login-session-2",
+	"api-excepcion-2",
+	"api-validacion-2",
+	"api-descartado-1", "api-descartado-2",
+	"web-sesion-1", "web-sesion-2",
 }
 
 type fixture struct {
@@ -136,6 +132,17 @@ func (f fixture) withEventID(t *testing.T, id string) []byte {
 	_, _ = zw.Write(data)
 	_ = zw.Close()
 	return buf.Bytes()
+}
+
+// withoutRelease devuelve el envío sin release. Solo vale para los del
+// navegador, que van sin comprimir y sin length en los items.
+func (f fixture) withoutRelease(t *testing.T) []byte {
+	t.Helper()
+	release := []byte(`"release":"fixture-release-1",`)
+	if f.Headers["Content-Encoding"] != "" || bytes.Contains(f.body, []byte(`"length":`)) || !bytes.Contains(f.body, release) {
+		t.Fatal("el envío no es del navegador o no lleva release")
+	}
+	return bytes.ReplaceAll(f.body, release, nil)
 }
 
 type call struct {
@@ -313,9 +320,9 @@ func TestErrorFixtureOpensIssue(t *testing.T) {
 	}
 }
 
-func TestArdiqTaskFailedSameIssue(t *testing.T) {
+func TestTaskFailedLogsSameIssue(t *testing.T) {
 	e := newTestEnv(t, 1000)
-	for _, name := range []string{"backend-ardiq-task-failed-a-1", "backend-ardiq-task-failed-b-1"} {
+	for _, name := range []string{"api-tarea-a-1", "api-tarea-b-1"} {
 		f := loadFixture(t, name)
 		e.sendOK(t, f, f.body)
 	}
@@ -349,20 +356,24 @@ func TestFixturesWithoutEventStoreNothing(t *testing.T) {
 func TestStatusOnNewEvent(t *testing.T) {
 	for _, tc := range []struct {
 		name, fixture, status string
+		noRelease             bool
 		resolvedIn            *string
 		wantStatus            string
 		want                  Outcome
 	}{
-		{"resolved", "backend-fastapi-zerodivision-1", "resolved", nil, "open", Regressed},
-		{"resolved_next mismo release", "backend-fastapi-zerodivision-1", "resolved_next", ptr("fixture-release-1"), "resolved_next", Unchanged},
-		{"resolved_next otro release", "backend-fastapi-zerodivision-1", "resolved_next", ptr("fixture-release-0"), "open", Regressed},
-		{"resolved_next sin release", "frontend-angular-typeerror-1", "resolved_next", ptr("fixture-release-0"), "resolved_next", Unchanged},
-		{"silenced", "backend-fastapi-zerodivision-1", "silenced", nil, "silenced", Unchanged},
-		{"open", "backend-fastapi-zerodivision-1", "open", nil, "open", Unchanged},
+		{"resolved", "api-excepcion-1", "resolved", false, nil, "open", Regressed},
+		{"resolved_next mismo release", "api-excepcion-1", "resolved_next", false, ptr("fixture-release-1"), "resolved_next", Unchanged},
+		{"resolved_next otro release", "api-excepcion-1", "resolved_next", false, ptr("fixture-release-0"), "open", Regressed},
+		{"resolved_next sin release", "web-typeerror-1", "resolved_next", true, ptr("fixture-release-0"), "resolved_next", Unchanged},
+		{"silenced", "api-excepcion-1", "silenced", false, nil, "silenced", Unchanged},
+		{"open", "api-excepcion-1", "open", false, nil, "open", Unchanged},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newTestEnv(t, 1000)
 			f := loadFixture(t, tc.fixture)
+			if tc.noRelease {
+				f.body = f.withoutRelease(t)
+			}
 			e.sendOK(t, f, f.body)
 			if _, err := e.s.Pool().Exec(context.Background(),
 				`UPDATE issues SET status = $1, resolved_in_release = $2`, tc.status, tc.resolvedIn); err != nil {
@@ -418,7 +429,7 @@ func (failingNotifier) IssueChanged(context.Context, pgx.Tx, *event.Event, Resul
 
 func TestConcurrentEventsOpenOneIssue(t *testing.T) {
 	e := newTestEnv(t, 1000)
-	f := loadFixture(t, "backend-fastapi-zerodivision-1")
+	f := loadFixture(t, "api-excepcion-1")
 	const n = 16
 	bodies := make([][]byte, n)
 	for i := range bodies {
@@ -452,8 +463,8 @@ func TestConcurrentEventsOpenOneIssue(t *testing.T) {
 
 func TestRejections(t *testing.T) {
 	e := newTestEnv(t, 1000)
-	f := loadFixture(t, "backend-fastapi-zerodivision-1")
-	front := loadFixture(t, "frontend-angular-typeerror-1")
+	f := loadFixture(t, "api-excepcion-1")
+	front := loadFixture(t, "web-typeerror-1")
 
 	gz := func(data []byte) []byte {
 		var buf bytes.Buffer
@@ -480,12 +491,12 @@ func TestRejections(t *testing.T) {
 		}, http.StatusUnauthorized},
 		{"clave de otro proyecto", func() *http.Request {
 			r := f.request(f.body)
-			r.Header.Set("X-Sentry-Auth", "Sentry sentry_key=2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b, sentry_version=7")
+			r.Header.Set("X-Sentry-Auth", "Sentry sentry_key=ce01335f125960aa6957a133d15b5f3a, sentry_version=7")
 			return r
 		}, http.StatusUnauthorized},
 		{"clave mala en la query", func() *http.Request {
 			g := front
-			g.Query = strings.Replace(g.Query, "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f", "00000000000000000000000000000000", 1)
+			g.Query = strings.Replace(g.Query, "ce01335f125960aa6957a133d15b5f3a", "00000000000000000000000000000000", 1)
 			return g.request(front.body)
 		}, http.StatusUnauthorized},
 		{"proyecto que no existe", func() *http.Request {
@@ -538,7 +549,7 @@ func TestRejections(t *testing.T) {
 
 func TestPreflight(t *testing.T) {
 	e := newTestEnv(t, 1000)
-	r := httptest.NewRequest(http.MethodOptions, "/api/3/envelope/?sentry_version=7", nil)
+	r := httptest.NewRequest(http.MethodOptions, "/api/2/envelope/?sentry_version=7", nil)
 	r.Header.Set("Origin", "https://app.example.com")
 	r.Header.Set("Access-Control-Request-Method", "POST")
 	r.Header.Set("Access-Control-Request-Headers", "content-type")
@@ -554,7 +565,7 @@ func TestPreflight(t *testing.T) {
 
 func TestRateLimit(t *testing.T) {
 	e := newTestEnv(t, 2)
-	f := loadFixture(t, "backend-fastapi-zerodivision-1")
+	f := loadFixture(t, "api-excepcion-1")
 	for range 2 {
 		e.sendOK(t, f, f.withEventID(t, newHexID()))
 	}
@@ -574,15 +585,15 @@ func TestRateLimit(t *testing.T) {
 	}
 
 	// Lo que no trae eventos y los demás proyectos siguen pasando.
-	s := loadFixture(t, "backend-fastapi-zerodivision-2")
+	s := loadFixture(t, "api-excepcion-2")
 	e.sendOK(t, s, s.body)
-	g := loadFixture(t, "integrations-fastapi-typeerror-1")
+	g := loadFixture(t, "web-typeerror-1")
 	e.sendOK(t, g, g.body)
 }
 
 func TestPurge(t *testing.T) {
 	e := newTestEnv(t, 1000)
-	for _, name := range []string{"backend-fastapi-zerodivision-1", "backend-structlog-error-1"} {
+	for _, name := range []string{"api-excepcion-1", "api-log-error-1"} {
 		f := loadFixture(t, name)
 		e.sendOK(t, f, f.body)
 	}
@@ -599,7 +610,7 @@ func TestPurge(t *testing.T) {
 		t.Fatalf("borrados %d eventos y %d issues, %v", evs, iss, err)
 	}
 	is := e.issues(t)
-	if len(is) != 1 || is[0].title != "ai.action_reported_failure" {
+	if len(is) != 1 || is[0].title != "pagos.reembolso_rechazado" {
 		t.Fatalf("issues = %+v", is)
 	}
 }
@@ -608,7 +619,7 @@ func TestPurge(t *testing.T) {
 // perderse ni bloquear la purga.
 func TestPurgeSkipsIssueBeingIngested(t *testing.T) {
 	e := newTestEnv(t, 1000)
-	f := loadFixture(t, "backend-fastapi-zerodivision-1")
+	f := loadFixture(t, "api-excepcion-1")
 	e.sendOK(t, f, f.body)
 	ctx := context.Background()
 	old := time.Now().AddDate(0, 0, -100)

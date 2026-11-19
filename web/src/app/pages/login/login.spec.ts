@@ -36,18 +36,18 @@ describe('LoginPage', () => {
 
   it('con GitHub enlaza al login conservando a dónde volver', async () => {
     const el = await render(
-      { user: null, methods: ['github'], org: 'intake-es' },
+      { user: null, methods: ['github'], org: 'example-org' },
       { next: '/issues/42' },
     );
     const a = el.querySelector<HTMLAnchorElement>('a.btn--primary');
     expect(a?.textContent).toContain('Entrar con GitHub');
     expect(a?.getAttribute('href')).toBe('/auth/github/login?next=%2Fissues%2F42');
-    expect(el.textContent).toContain('intake-es');
+    expect(el.textContent).toContain('example-org');
   });
 
   it('explica por qué no se pudo entrar', async () => {
     const el = await render(
-      { user: null, methods: ['github'], org: 'intake-es' },
+      { user: null, methods: ['github'], org: 'example-org' },
       { error: 'org' },
     );
     expect(el.querySelector('[role=alert]')?.textContent).toContain('no es miembro activo');

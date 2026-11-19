@@ -6,7 +6,7 @@ export interface PickOption {
   label: string;
 }
 
-/** El filtro en píldora del panel: icono de qué filtra, el valor elegido y un menú. */
+/** El filtro en píldora: icono de qué filtra, el valor elegido y un menú. */
 @Component({
   selector: 'app-pick',
   imports: [Icon],

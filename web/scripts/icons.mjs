@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Regenera src/app/ui/icons.ts con los iconos de Phosphor de ICONS, como el panel.
+// Regenera src/app/ui/icons.ts con los iconos de Phosphor de ICONS.
 // Al usar uno nuevo, se añade aquí y se vuelve a correr: icons.spec.ts falla si falta.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';

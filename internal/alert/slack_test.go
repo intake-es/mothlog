@@ -109,7 +109,7 @@ func TestSlackGoldenRegressionWithLinear(t *testing.T) {
 		issueID: 7, kind: "regressed", project: "backend", environment: "production",
 		release: "backend-2026.11.18", eventAt: at, count: 128, resolvedAt: &resolved,
 		title: "ZeroDivisionError: division by zero", culprit: "backend in division",
-		linear: "lin-1", linearIdentifier: "INT-123", linearURL: "https://linear.app/example/issue/INT-123",
+		linear: "lin-1", linearIdentifier: "ERR-123", linearURL: "https://linear.app/ejemplo/issue/ERR-123",
 	}
 	ev := &event.Event{
 		Release: p.release, Environment: p.environment,
@@ -190,7 +190,7 @@ func TestSlackEscapesAndTruncates(t *testing.T) {
 	long := strings.Repeat("x", 5000)
 	p := &pending{
 		issueID: 1, kind: "new", project: "a&b", environment: "<prod>", release: "<!channel>", eventAt: at,
-		linearIdentifier: "INT-" + strings.Repeat("9", 100), linearURL: "https://linear.app/x",
+		linearIdentifier: "ERR-" + strings.Repeat("9", 100), linearURL: "https://linear.app/x",
 	}
 	ev := &event.Event{
 		Exceptions: []event.Exception{{

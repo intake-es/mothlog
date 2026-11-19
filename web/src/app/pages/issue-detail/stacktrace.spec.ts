@@ -4,27 +4,30 @@ import { parseCrumbs } from './breadcrumbs';
 import { codeLines, exceptionViews, groupFrames, isOwn, Stacktrace } from './stacktrace';
 
 const lib = (fn: string): Frame => ({
-  filename: `node_modules/zone.js/${fn}.js`,
+  filename: `node_modules/mitt/${fn}.js`,
   function: fn,
   lineno: 1,
   in_app: false,
 });
 const app: Frame = {
-  filename: 'src/app/pages/pagina-de-ejemplo/pagina-de-ejemplo.ts',
-  function: 't.failForFixture',
-  lineno: 268,
+  filename: 'src/carrito.ts',
+  function: 'a',
+  lineno: 7,
   colno: 25,
   in_app: true,
-  pre_context: ['  private failForFixture(data: Respuesta): string {', '    if (!data.cuenta) {'],
-  context_line: '    return data.cuenta!.id;',
-  post_context: ['  }'],
-  minified: { filename: 'chunk-A1B2C3D4.js', lineno: 1, colno: 11129 },
+  pre_context: [
+    'function contarUnidades(pedido: Pedido): number {',
+    '  // Un pedido recién creado aún no tiene líneas.',
+  ],
+  context_line: '  return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);',
+  post_context: ['}'],
+  minified: { filename: 'chunk-Z554BZQ6.js', lineno: 1, colno: 383 },
 };
 const caller: Frame = {
   ...app,
-  function: 't.onSubmit',
-  lineno: 134,
-  context_line: '    this.failForFixture(r);',
+  function: 'l',
+  lineno: 19,
+  context_line: "  bus.emit('pedido', { id });",
   pre_context: [],
   post_context: [],
 };
@@ -32,10 +35,14 @@ const caller: Frame = {
 describe('stacktrace', () => {
   it('numera las líneas desde el contexto y marca la del error', () => {
     expect(codeLines(app)).toEqual([
-      { n: 266, text: '  private failForFixture(data: Respuesta): string {', error: false },
-      { n: 267, text: '    if (!data.cuenta) {', error: false },
-      { n: 268, text: '    return data.cuenta!.id;', error: true },
-      { n: 269, text: '  }', error: false },
+      { n: 5, text: 'function contarUnidades(pedido: Pedido): number {', error: false },
+      { n: 6, text: '  // Un pedido recién creado aún no tiene líneas.', error: false },
+      {
+        n: 7,
+        text: '  return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);',
+        error: true,
+      },
+      { n: 8, text: '}', error: false },
     ]);
     expect(codeLines({ filename: 'x.js' })).toEqual([]);
   });
@@ -44,9 +51,9 @@ describe('stacktrace', () => {
     // Orden del SDK: el más externo primero.
     const groups = groupFrames([lib('a'), lib('b'), caller, lib('c'), app]);
     expect(groups.map((g) => (g.kind === 'app' ? g.frame.fn : `libs:${g.frames.length}`))).toEqual([
-      't.failForFixture',
+      'a',
       'libs:1',
-      't.onSubmit',
+      'l',
       'libs:2',
     ]);
   });
@@ -55,8 +62,8 @@ describe('stacktrace', () => {
     expect(isOwn(app)).toBe(true);
     expect(
       isOwn({
-        filename: 'https://app.example.com/polyfills-J9K8L7M6.js',
-        function: 'f.invokeTask',
+        filename: 'https://app.example.com/main-3TO43VUM.js',
+        function: 'HTMLButtonElement.r',
         in_app: true,
       }),
     ).toBe(false);
@@ -86,8 +93,8 @@ describe('stacktrace', () => {
     const excs: ExceptionValue[] = [
       {
         type: 'TypeError',
-        value: "Cannot read properties of undefined (reading 'id')",
-        mechanism: { type: 'auto.function.angular.error_handler', handled: false },
+        value: "Cannot read properties of undefined (reading 'reduce')",
+        mechanism: { type: 'auto.browser.browserapierrors.addEventListener', handled: false },
         frames: [lib('a'), lib('b'), lib('c'), caller, app],
       },
     ];
@@ -99,12 +106,14 @@ describe('stacktrace', () => {
     expect(el.querySelector('.exc__type')?.textContent).toBe('TypeError');
     expect(el.querySelector('.exc__mech')?.textContent).toContain('No manejada');
     const heads = el.querySelectorAll('.frame--app .frame__head');
-    expect(heads[0].textContent).toContain('pagina-de-ejemplo.ts');
-    expect(heads[0].textContent).toContain(':268:25');
+    expect(heads[0].textContent).toContain('src/carrito.ts');
+    expect(heads[0].textContent).toContain(':7:25');
     const error = el.querySelector('.code__line--error');
-    expect(error?.querySelector('.code__n')?.textContent).toBe('268');
-    expect(error?.querySelector('.code__t')?.textContent).toBe('    return data.cuenta!.id;');
-    expect(el.querySelector('.frame__min')?.textContent).toContain('chunk-A1B2C3D4.js:1:11129');
+    expect(error?.querySelector('.code__n')?.textContent).toBe('7');
+    expect(error?.querySelector('.code__t')?.textContent).toBe(
+      '  return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);',
+    );
+    expect(el.querySelector('.frame__min')?.textContent).toContain('chunk-Z554BZQ6.js:1:383');
 
     const libs = el.querySelector<HTMLButtonElement>('.libs__toggle');
     expect(libs?.textContent).toContain('3 fotogramas de librerías');
@@ -117,7 +126,7 @@ describe('stacktrace', () => {
     (heads[0] as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(el.querySelector('.code__line--error')?.querySelector('.code__n')?.textContent).toBe(
-      '134',
+      '19',
     );
   });
 });

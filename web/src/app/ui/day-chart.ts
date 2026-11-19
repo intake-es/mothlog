@@ -3,7 +3,7 @@ import type { DayCount } from '../core/api';
 import { count, day } from '../core/format';
 
 /**
- * Los eventos por día del detalle, como las barras compactas del panel: grises,
+ * Los eventos por día del detalle, en barras compactas: grises,
  * con una línea base, y hoy abierto y discontinuo porque el día no ha acabado.
  */
 @Component({

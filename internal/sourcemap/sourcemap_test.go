@@ -23,11 +23,15 @@ import (
 )
 
 const (
-	testdata  = "../../testdata"
-	token     = "token-de-prueba"
-	frontID   = int64(3)
-	release1  = "fixture-release-1"
-	loginPage = "src/app/pages/pagina-de-ejemplo/pagina-de-ejemplo"
+	testdata = "../../testdata"
+	token    = "token-de-prueba"
+	webID    = int64(2)
+	release1 = "fixture-release-1"
+	chunkJS  = "chunk-Z554BZQ6.js"
+	mainJS   = "main-3TO43VUM.js"
+	carrito  = "src/carrito.ts"
+	// La línea 7 de src/carrito.ts, donde salta el TypeError.
+	failLine = "  return pedido.lineas!.reduce((total, linea) => total + linea.cantidad, 0);"
 )
 
 type stored struct {
@@ -157,11 +161,12 @@ func uploadOK(t *testing.T, s *Service, project int64, release string, files ...
 	}
 }
 
-func loginService(t *testing.T) (*Service, *memStore) {
+// webService tiene subido el mapa del chunk de los pedidos, no el de main.
+func webService(t *testing.T) (*Service, *memStore) {
 	t.Helper()
 	st := newMemStore()
 	s := New(st, quiet(), Options{UploadToken: token})
-	uploadOK(t, s, frontID, release1, mapFile(t, "login/chunk-A1B2C3D4.js.map"), mapFile(t, "login/chunk-E5F6G7H8.js.map"))
+	uploadOK(t, s, webID, release1, mapFile(t, chunkJS+".map"))
 	return s, st
 }
 
@@ -176,124 +181,137 @@ func findFrame(t *testing.T, ev *event.Event, file string, col int) event.Frame 
 	return event.Frame{}
 }
 
-func TestEnrichLogin(t *testing.T) {
-	s, _ := loginService(t)
-	ev := readEvent(t, "frontend-login-typeerror-1")
-	if err := s.Enrich(context.Background(), frontID, ev); err != nil {
+func TestEnrichWeb(t *testing.T) {
+	s, _ := webService(t)
+	ev := readEvent(t, "web-typeerror-1")
+	if err := s.Enrich(context.Background(), webID, ev); err != nil {
 		t.Fatal(err)
 	}
 	frames := ev.Exceptions[len(ev.Exceptions)-1].Frames
 
 	top := frames[len(frames)-1]
-	if top.Filename != loginPage+".ts" || top.Line != 268 {
-		t.Fatalf("primer fotograma = %s:%d", top.Filename, top.Line)
+	if top.Filename != carrito || top.Line != 7 || top.Column != 25 {
+		t.Fatalf("primer fotograma = %s:%d:%d", top.Filename, top.Line, top.Column)
 	}
-	if top.ContextLine != "    return data.cuenta!.id;" {
+	if top.ContextLine != failLine {
 		t.Errorf("context_line = %q", top.ContextLine)
 	}
-	if len(top.PreContext) != 5 || top.PreContext[4] != "  private failForFixture(data: { cuenta?: { id: string } }): string {" {
+	if len(top.PreContext) != 5 || top.PreContext[3] != "function contarUnidades(pedido: Pedido): number {" || top.PreContext[4] != "  // Un pedido recién creado aún no tiene líneas." {
 		t.Errorf("pre_context = %q", top.PreContext)
 	}
-	// Es casi el final del fichero: solo quedan tres líneas.
-	if !reflect.DeepEqual(top.PostContext, []string{"  }", "}", ""}) {
+	if len(top.PostContext) != 5 || top.PostContext[0] != "}" || top.PostContext[2] != "function pintarResumen(pedido: Pedido): void {" {
 		t.Errorf("post_context = %q", top.PostContext)
 	}
 	if top.InApp == nil || !*top.InApp {
 		t.Error("in_app debería ser verdadero")
 	}
-	if top.Function != "t.failForFixture" {
+	if top.Function != "a" {
 		t.Errorf("función = %q; debe quedar la del SDK", top.Function)
 	}
-	want := &event.Position{Filename: "https://app.example.com/chunk-A1B2C3D4.js", Line: 1, Column: 11129}
+	want := &event.Position{Filename: "https://app.example.com/" + chunkJS, Line: 1, Column: 383}
 	if !reflect.DeepEqual(top.Minified, want) {
 		t.Errorf("minified = %+v", top.Minified)
 	}
 
-	if f := findFrame(t, ev, "chunk-A1B2C3D4.js", 8546); f.Filename != loginPage+".ts" || f.Line != 134 {
-		t.Errorf("columna 8546 = %s:%d", f.Filename, f.Line)
+	if f := findFrame(t, ev, chunkJS, 442); f.Filename != carrito || f.Line != 12 {
+		t.Errorf("columna 442 = %s:%d", f.Filename, f.Line)
 	}
-	if f := findFrame(t, ev, "chunk-A1B2C3D4.js", 4939); f.Filename != loginPage+".html" || f.Line != 133 {
-		t.Errorf("columna 4939 = %s:%d", f.Filename, f.Line)
+	// Es casi el final del fichero: solo quedan dos líneas.
+	if f := findFrame(t, ev, chunkJS, 492); f.Filename != carrito || f.Line != 19 || !reflect.DeepEqual(f.PostContext, []string{"}", ""}) {
+		t.Errorf("columna 492 = %s:%d, post_context %q", f.Filename, f.Line, f.PostContext)
 	}
 
-	var angular int
+	var mitt int
 	for _, f := range frames {
-		if f.Minified == nil || !strings.HasSuffix(f.Minified.Filename, "/chunk-E5F6G7H8.js") {
+		if f.Minified == nil || !strings.HasPrefix(f.Filename, "node_modules/") {
 			continue
 		}
-		angular++
-		if !strings.HasPrefix(f.Filename, "node_modules/@angular/core/") {
-			t.Errorf("chunk-E5F6G7H8.js:%d = %s", f.Minified.Column, f.Filename)
+		mitt++
+		if f.Filename != "node_modules/mitt/src/index.ts" || f.ContextLine == "" {
+			t.Errorf("%s:%d = %s %q", chunkJS, f.Minified.Column, f.Filename, f.ContextLine)
 		}
 		if f.InApp == nil || *f.InApp {
 			t.Errorf("%s debería ser in_app falso", f.Filename)
 		}
 	}
-	if angular != 3 {
-		t.Errorf("%d fotogramas de chunk-E5F6G7H8.js traducidos, quiero 3", angular)
+	if mitt != 2 {
+		t.Errorf("%d fotogramas de mitt traducidos, quiero 2", mitt)
 	}
 
 	// Sin mapa subido para estos: se quedan igual.
+	var untouched int
 	for _, f := range frames {
-		if strings.Contains(f.Filename, "polyfills-") || strings.Contains(f.Filename, "chunk-DKRR2FIJ") || f.Filename == "<anonymous>" {
+		if strings.HasSuffix(f.Filename, "/"+mainJS) || f.Filename == "<anonymous>" {
+			untouched++
 			if f.Minified != nil {
 				t.Errorf("%s no debería cambiar", f.Filename)
 			}
 		}
 	}
+	if untouched != 3 {
+		t.Errorf("%d fotogramas sin mapa, quiero 3", untouched)
+	}
 }
 
-func TestEnrichPolyfills(t *testing.T) {
+func TestEnrichMain(t *testing.T) {
 	st := newMemStore()
 	s := New(st, quiet(), Options{UploadToken: token})
-	uploadOK(t, s, frontID, "r-polyfills", mapFile(t, "polyfills-J9K8L7M6.js.map"))
+	uploadOK(t, s, webID, "r-main", mapFile(t, mainJS+".map"))
 
-	ev := readEvent(t, "frontend-angular-typeerror-1")
-	ev.Release = "r-polyfills"
-	if err := s.Enrich(context.Background(), frontID, ev); err != nil {
+	ev := readEvent(t, "web-typeerror-1")
+	ev.Release = "r-main"
+	if err := s.Enrich(context.Background(), webID, ev); err != nil {
 		t.Fatal(err)
 	}
-	// Las mismas líneas que da source-map 0.7.6.
-	wantLines := []int{1778, 504, 515, 161, 431, 1809}
+	// Las mismas posiciones que da source-map 0.8.0 (tools/fixtures/navegador/posiciones.mjs).
+	want := []struct {
+		file   string
+		line   int
+		inApp  bool
+		source string
+	}{
+		{"node_modules/@sentry/browser/src/helpers.ts", 157, false, ""},
+		{"src/main.ts", 11, true, "  enviarPedido('p_1042');"},
+	}
 	var n int
 	for _, f := range ev.Exceptions[0].Frames {
 		if f.Minified == nil {
-			if strings.Contains(f.Filename, "polyfills-") {
+			if strings.HasSuffix(f.Filename, "/"+mainJS) {
 				t.Errorf("sin traducir: %+v", f)
 			}
 			continue
 		}
-		if n < len(wantLines) && f.Line != wantLines[n] {
-			t.Errorf("fotograma %d en la línea %d, quiero %d", n, f.Line, wantLines[n])
+		if n < len(want) {
+			w := want[n]
+			if f.Filename != w.file || f.Line != w.line || f.InApp == nil || *f.InApp != w.inApp || f.ContextLine == "" {
+				t.Errorf("fotograma %d = %s:%d in_app %v %q; quiero %s:%d in_app %v", n, f.Filename, f.Line, f.InApp != nil && *f.InApp, f.ContextLine, w.file, w.line, w.inApp)
+			}
+			if w.source != "" && f.ContextLine != w.source {
+				t.Errorf("context_line = %q, quiero %q", f.ContextLine, w.source)
+			}
 		}
 		n++
-		if f.Filename != "node_modules/zone.js/fesm2015/zone.js" || f.ContextLine == "" {
-			t.Errorf("fotograma = %s:%d %q", f.Filename, f.Line, f.ContextLine)
-		}
-		if f.InApp == nil || *f.InApp {
-			t.Errorf("zone.js debería ser in_app falso")
-		}
 	}
-	if n != 6 {
-		t.Errorf("%d fotogramas traducidos, quiero 6", n)
+	if n != len(want) {
+		t.Errorf("%d fotogramas traducidos, quiero %d", n, len(want))
 	}
 }
 
 func TestEnrichLeavesFramesAlone(t *testing.T) {
-	s, st := loginService(t)
-	original := readEvent(t, "frontend-login-typeerror-1")
+	s, st := webService(t)
+	original := readEvent(t, "web-typeerror-1")
 
 	for _, tc := range []struct {
 		name    string
 		release string
 		project int64
 	}{
-		{"sin release", "", frontID},
-		{"otro release", "otro-release", frontID},
+		{"sin release", "", webID},
+		{"otro release", "otro-release", webID},
 		{"otro proyecto", release1, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ev := readEvent(t, "frontend-login-typeerror-1")
+			ev := readEvent(t, "web-typeerror-1")
 			ev.Release = tc.release
 			if err := s.Enrich(context.Background(), tc.project, ev); err != nil {
 				t.Fatal(err)
@@ -306,13 +324,13 @@ func TestEnrichLeavesFramesAlone(t *testing.T) {
 
 	t.Run("mapa corrupto", func(t *testing.T) {
 		const rel = "release-roto"
-		_ = st.PutSourceMaps(context.Background(), frontID, rel, []store.SourceMapFile{
-			{File: "chunk-A1B2C3D4.js", Map: []byte(`{"version":3,"sources":["a.ts"],"mappings":"AAAA,!!!"}`)},
-			{File: "chunk-E5F6G7H8.js", Map: []byte(`{"version":3,"sources":[`)},
+		_ = st.PutSourceMaps(context.Background(), webID, rel, []store.SourceMapFile{
+			{File: chunkJS, Map: []byte(`{"version":3,"sources":["a.ts"],"mappings":"AAAA,!!!"}`)},
+			{File: mainJS, Map: []byte(`{"version":3,"sources":[`)},
 		})
-		ev := readEvent(t, "frontend-login-typeerror-1")
+		ev := readEvent(t, "web-typeerror-1")
 		ev.Release = rel
-		if err := s.Enrich(context.Background(), frontID, ev); err != nil {
+		if err := s.Enrich(context.Background(), webID, ev); err != nil {
 			t.Fatal(err)
 		}
 		if !reflect.DeepEqual(ev.Exceptions, original.Exceptions) {
@@ -322,21 +340,21 @@ func TestEnrichLeavesFramesAlone(t *testing.T) {
 }
 
 func TestEnrichCache(t *testing.T) {
-	s, st := loginService(t)
+	s, st := webService(t)
 	for range 3 {
-		ev := readEvent(t, "frontend-login-typeerror-1")
-		_ = s.Enrich(context.Background(), frontID, ev)
+		ev := readEvent(t, "web-typeerror-1")
+		_ = s.Enrich(context.Background(), webID, ev)
 	}
-	// chunk-A1B2C3D4, chunk-E5F6G7H8, polyfills y chunk-DKRR2FIJ, una vez cada uno.
-	if st.reads != 4 {
-		t.Errorf("%d lecturas del store, quiero 4", st.reads)
+	// El chunk y main, que no tiene mapa, una vez cada uno.
+	if st.reads != 2 {
+		t.Errorf("%d lecturas del store, quiero 2", st.reads)
 	}
 
 	small := New(st, quiet(), Options{CacheBytes: 1 << 10})
 	for range 2 {
-		ev := readEvent(t, "frontend-login-typeerror-1")
-		_ = small.Enrich(context.Background(), frontID, ev)
-		if ev.Exceptions[0].Frames[len(ev.Exceptions[0].Frames)-1].Line != 268 {
+		ev := readEvent(t, "web-typeerror-1")
+		_ = small.Enrich(context.Background(), webID, ev)
+		if ev.Exceptions[0].Frames[len(ev.Exceptions[0].Frames)-1].Line != 7 {
 			t.Fatal("sin caché también debe traducir")
 		}
 	}
@@ -348,15 +366,15 @@ func TestEnrichCache(t *testing.T) {
 func TestUploadAuth(t *testing.T) {
 	s := New(newMemStore(), quiet(), Options{UploadToken: token})
 	for _, auth := range []string{"", "Bearer ", "Bearer otro", token, "Basic " + token} {
-		body, ct := multipartBody(t, mapFile(t, "login/chunk-A1B2C3D4.js.map"))
-		if rec := post(t, s, uploadURL(frontID, release1), auth, body, ct); rec.Code != http.StatusUnauthorized {
+		body, ct := multipartBody(t, mapFile(t, chunkJS+".map"))
+		if rec := post(t, s, uploadURL(webID, release1), auth, body, ct); rec.Code != http.StatusUnauthorized {
 			t.Errorf("Authorization %q: %d", auth, rec.Code)
 		}
 	}
 
 	noToken := New(newMemStore(), quiet(), Options{})
-	body, ct := multipartBody(t, mapFile(t, "login/chunk-A1B2C3D4.js.map"))
-	if rec := post(t, noToken, uploadURL(frontID, release1), "Bearer ", body, ct); rec.Code != http.StatusUnauthorized {
+	body, ct := multipartBody(t, mapFile(t, chunkJS+".map"))
+	if rec := post(t, noToken, uploadURL(webID, release1), "Bearer ", body, ct); rec.Code != http.StatusUnauthorized {
 		t.Errorf("sin token configurado: %d", rec.Code)
 	}
 }
@@ -364,7 +382,7 @@ func TestUploadAuth(t *testing.T) {
 func TestUploadErrors(t *testing.T) {
 	st := newMemStore()
 	s := New(st, quiet(), Options{UploadToken: token})
-	good := mapFile(t, "login/chunk-A1B2C3D4.js.map")
+	good := mapFile(t, chunkJS+".map")
 
 	for _, tc := range []struct {
 		name  string
@@ -382,7 +400,7 @@ func TestUploadErrors(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, ct := multipartBody(t, tc.files...)
-			rec := post(t, s, uploadURL(frontID, release1), "Bearer "+token, body, ct)
+			rec := post(t, s, uploadURL(webID, release1), "Bearer "+token, body, ct)
 			if rec.Code != tc.want || !strings.Contains(rec.Body.String(), tc.msg) {
 				t.Errorf("= %d %s; quiero %d con %q", rec.Code, rec.Body, tc.want, tc.msg)
 			}
@@ -410,7 +428,7 @@ func TestUploadErrors(t *testing.T) {
 			}
 			_ = pw.CloseWithError(mw.Close())
 		}()
-		rec := post(t, s, uploadURL(frontID, release1), "Bearer "+token, pr, mw.FormDataContentType())
+		rec := post(t, s, uploadURL(webID, release1), "Bearer "+token, pr, mw.FormDataContentType())
 		_ = pr.Close()
 		if rec.Code != http.StatusRequestEntityTooLarge {
 			t.Errorf("= %d %s", rec.Code, rec.Body)
@@ -421,13 +439,13 @@ func TestUploadErrors(t *testing.T) {
 func TestUploadReplaces(t *testing.T) {
 	st := newMemStore()
 	s := New(st, quiet(), Options{UploadToken: token})
-	g := mapFile(t, "login/chunk-A1B2C3D4.js.map")
+	g := mapFile(t, chunkJS+".map")
 
-	// Primero un mapa del polyfills con el nombre del chunk: no traduce el login.
-	wrong := mapFile(t, "polyfills-J9K8L7M6.js.map")
+	// Primero el mapa de main con el nombre del chunk: no traduce el carrito.
+	wrong := mapFile(t, mainJS+".map")
 	wrong.name = g.name
 	body, ct := multipartBody(t, wrong)
-	rec := post(t, s, uploadURL(frontID, release1), "Bearer "+token, body, ct)
+	rec := post(t, s, uploadURL(webID, release1), "Bearer "+token, body, ct)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
@@ -438,37 +456,37 @@ func TestUploadReplaces(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Release != release1 || len(resp.Files) != 1 || resp.Files[0] != (savedFile{Name: g.name, File: "chunk-A1B2C3D4.js", Size: len(wrong.body)}) {
+	if resp.Release != release1 || len(resp.Files) != 1 || resp.Files[0] != (savedFile{Name: g.name, File: chunkJS, Size: len(wrong.body)}) {
 		t.Errorf("respuesta = %+v", resp)
 	}
-	ev := readEvent(t, "frontend-login-typeerror-1")
-	_ = s.Enrich(context.Background(), frontID, ev)
+	ev := readEvent(t, "web-typeerror-1")
+	_ = s.Enrich(context.Background(), webID, ev)
 	frames := ev.Exceptions[0].Frames
-	if top := frames[len(frames)-1]; top.Filename == loginPage+".ts" {
-		t.Fatal("con el mapa equivocado no debería salir el login")
+	if top := frames[len(frames)-1]; top.Filename == carrito {
+		t.Fatal("con el mapa equivocado no debería salir el carrito")
 	}
 
 	// Resubir sustituye y deja de usar el mapa viejo de la caché.
-	uploadOK(t, s, frontID, release1, g)
+	uploadOK(t, s, webID, release1, g)
 	if len(st.maps) != 1 {
 		t.Errorf("%d mapas, quiero 1", len(st.maps))
 	}
-	ev = readEvent(t, "frontend-login-typeerror-1")
-	_ = s.Enrich(context.Background(), frontID, ev)
+	ev = readEvent(t, "web-typeerror-1")
+	_ = s.Enrich(context.Background(), webID, ev)
 	frames = ev.Exceptions[0].Frames
-	if top := frames[len(frames)-1]; top.Filename != loginPage+".ts" || top.Line != 268 {
+	if top := frames[len(frames)-1]; top.Filename != carrito || top.Line != 7 {
 		t.Errorf("tras resubir = %s:%d", top.Filename, top.Line)
 	}
 }
 
 func TestPurge(t *testing.T) {
-	s, st := loginService(t)
-	old := key{frontID, "viejo", "chunk-A1B2C3D4.js"}
-	st.maps[old] = stored{st.maps[key{frontID, release1, "chunk-A1B2C3D4.js"}].b, time.Now().AddDate(0, 0, -91)}
+	s, st := webService(t)
+	old := key{webID, "viejo", chunkJS}
+	st.maps[old] = stored{st.maps[key{webID, release1, chunkJS}].b, time.Now().AddDate(0, 0, -91)}
 
-	ev := readEvent(t, "frontend-login-typeerror-1")
+	ev := readEvent(t, "web-typeerror-1")
 	ev.Release = "viejo"
-	_ = s.Enrich(context.Background(), frontID, ev)
+	_ = s.Enrich(context.Background(), webID, ev)
 
 	n, err := s.Purge(context.Background(), 90*24*time.Hour)
 	if err != nil || n != 1 {
@@ -477,44 +495,44 @@ func TestPurge(t *testing.T) {
 	if _, ok := st.maps[old]; ok {
 		t.Error("el viejo sigue")
 	}
-	ev = readEvent(t, "frontend-login-typeerror-1")
+	ev = readEvent(t, "web-typeerror-1")
 	ev.Release = "viejo"
-	_ = s.Enrich(context.Background(), frontID, ev)
+	_ = s.Enrich(context.Background(), webID, ev)
 	if ev.Exceptions[0].Frames[len(ev.Exceptions[0].Frames)-1].Minified != nil {
 		t.Error("tras borrarlo se sigue usando desde la caché")
 	}
-	if len(st.maps) != 2 {
-		t.Errorf("quedan %d mapas, quiero 2", len(st.maps))
+	if len(st.maps) != 1 {
+		t.Errorf("quedan %d mapas, quiero 1", len(st.maps))
 	}
 }
 
 func TestEnrichDoesNotShareCachedLines(t *testing.T) {
-	s, _ := loginService(t)
-	ev := readEvent(t, "frontend-login-typeerror-1")
-	_ = s.Enrich(context.Background(), frontID, ev)
+	s, _ := webService(t)
+	ev := readEvent(t, "web-typeerror-1")
+	_ = s.Enrich(context.Background(), webID, ev)
 	top := &ev.Exceptions[0].Frames[len(ev.Exceptions[0].Frames)-1]
 	top.PreContext[0] = "cambiado"
 	_ = append(top.PreContext[:1], "también cambiado")
 
-	ev = readEvent(t, "frontend-login-typeerror-1")
-	_ = s.Enrich(context.Background(), frontID, ev)
+	ev = readEvent(t, "web-typeerror-1")
+	_ = s.Enrich(context.Background(), webID, ev)
 	top = &ev.Exceptions[0].Frames[len(ev.Exceptions[0].Frames)-1]
-	if top.PreContext[0] == "cambiado" || top.PreContext[1] == "también cambiado" || top.ContextLine != "    return data.cuenta!.id;" {
+	if top.PreContext[0] == "cambiado" || top.PreContext[1] == "también cambiado" || top.ContextLine != failLine {
 		t.Errorf("la caché cambió con el fotograma: %q", top.PreContext)
 	}
 }
 
-func BenchmarkEnrichLogin(b *testing.B) {
+func BenchmarkEnrichWeb(b *testing.B) {
 	st := newMemStore()
-	for _, f := range []string{"chunk-A1B2C3D4.js", "chunk-E5F6G7H8.js"} {
-		body, err := os.ReadFile(filepath.Join(testdata, "sourcemaps", "login", f+".map"))
+	for _, f := range []string{chunkJS, mainJS} {
+		body, err := os.ReadFile(filepath.Join(testdata, "sourcemaps", f+".map"))
 		if err != nil {
 			b.Fatal(err)
 		}
-		st.maps[key{frontID, release1, f}] = stored{body, time.Now()}
+		st.maps[key{webID, release1, f}] = stored{body, time.Now()}
 	}
 	s := New(st, quiet(), Options{})
-	raw, err := os.ReadFile(filepath.Join(testdata, "envelopes", "frontend-login-typeerror-1.envelope"))
+	raw, err := os.ReadFile(filepath.Join(testdata, "envelopes", "web-typeerror-1.envelope"))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -526,6 +544,6 @@ func BenchmarkEnrichLogin(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		ev, _ := event.Parse(payload)
-		_ = s.Enrich(context.Background(), frontID, ev)
+		_ = s.Enrich(context.Background(), webID, ev)
 	}
 }
