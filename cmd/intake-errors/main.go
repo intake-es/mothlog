@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/intake-es/intake-errors/internal/alert"
 	"github.com/intake-es/intake-errors/internal/api"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
@@ -27,6 +29,7 @@ type config struct {
 	RetentionDays      int
 	// SourceMapUploadToken protege la subida de source maps; sin él se rechaza.
 	SourceMapUploadToken string
+	Alerts               alert.Options
 }
 
 func loadConfig() (config, error) {
@@ -36,7 +39,16 @@ func loadConfig() (config, error) {
 		PublicURL:   os.Getenv("PUBLIC_URL"),
 
 		SourceMapUploadToken: os.Getenv("SOURCEMAP_UPLOAD_TOKEN"),
+		Alerts: alert.Options{
+			SlackWebhookURL:    os.Getenv("SLACK_WEBHOOK_URL"),
+			LinearAPIKey:       os.Getenv("LINEAR_API_KEY"),
+			LinearAPIURL:       os.Getenv("LINEAR_API_URL"),
+			LinearTeamID:       os.Getenv("LINEAR_TEAM_ID"),
+			LinearLabelIDs:     splitList(os.Getenv("LINEAR_LABEL_IDS")),
+			LinearExtraLabelID: os.Getenv("LINEAR_EXTRA_LABEL_ID"),
+		},
 	}
+	c.Alerts.PublicURL = c.PublicURL
 	if c.DatabaseURL == "" {
 		return c, errors.New("falta DATABASE_URL")
 	}
@@ -56,6 +68,16 @@ func loadConfig() (config, error) {
 		return c, err
 	}
 	return c, nil
+}
+
+func splitList(s string) []string {
+	var out []string
+	for v := range strings.SplitSeq(s, ",") {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 func positiveEnv(name string, def int) (int, error) {
@@ -110,7 +132,15 @@ func run(args []string) error {
 	go maps.RunRetention(ctx, time.Duration(cfg.RetentionDays)*24*time.Hour, time.Hour)
 
 	go ingest.RunRetention(ctx, db.Pool(), cfg.RetentionDays, log)
-	ingester := ingest.NewIngester(db.Pool(), maps, nil, log)
+	alerts, err := alert.New(db, log, cfg.Alerts)
+	if err != nil {
+		return err
+	}
+	if len(alerts.Channels()) > 0 && cfg.PublicURL == "" {
+		log.Warn("sin PUBLIC_URL: los avisos van sin enlace a la interfaz")
+	}
+	go alerts.Run(ctx)
+	ingester := ingest.NewIngester(db.Pool(), maps, alerts, log)
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), log)
 
 	mux := routes(db, envelopes, maps.Register)

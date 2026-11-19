@@ -19,10 +19,16 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `DATABASE_URL` | Postgres | obligatoria |
 | `LISTEN_ADDR` | dirección HTTP | `:8080` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
-| `PUBLIC_URL` | URL pública del servicio, para escribir los DSN | obligatoria para `projects`; en `/api/0/projects/`, la de cada petición |
+| `PUBLIC_URL` | URL pública del servicio, para escribir los DSN y el enlace de los avisos | obligatoria para `projects create` y `list`; en `/api/0/projects/`, la de cada petición; sin ella, los avisos van sin enlace |
 | `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto | `60` |
 | `RETENTION_DAYS` | días que se guardan los eventos y los source maps | `90` |
 | `SOURCEMAP_UPLOAD_TOKEN` | token para subir source maps; sin él la subida responde 401 | vacío |
+| `SLACK_WEBHOOK_URL` | webhook entrante de Slack; sin él no se avisa en Slack | vacío |
+| `LINEAR_API_KEY` | clave de la API de Linear; sin ella no se crean issues en Linear | vacío |
+| `LINEAR_TEAM_ID` | equipo de Linear donde se crean las issues | obligatoria con `LINEAR_API_KEY` |
+| `LINEAR_LABEL_IDS` | ids de etiquetas de Linear para todas las issues, separados por comas | vacío |
+| `LINEAR_EXTRA_LABEL_ID` | id de la etiqueta extra, para los proyectos que la activan | vacío |
+| `LINEAR_API_URL` | endpoint GraphQL de Linear; solo para probar contra uno falso | `https://api.linear.app/graphql` |
 
 `GET /healthz` responde `ok` si Postgres contesta.
 
@@ -31,7 +37,17 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 ```sh
 intake-errors projects create backend   # imprime el DSN: https://<clave>@<host de PUBLIC_URL>/<id>
 intake-errors projects list
+intake-errors projects extra-label backend on   # sus issues de Linear llevan también LINEAR_EXTRA_LABEL_ID; off lo quita
 ```
+
+## Avisos
+
+Un error nuevo, o una regresión (un evento que reabre un issue resuelto), avisa en cada canal configurado. Un evento más de un issue abierto no avisa.
+
+- **Slack**: un mensaje que dice si es un error nuevo o una regresión, con el proyecto, el título enlazado a `<PUBLIC_URL>/issues/<id>`, el culprit, el release y el entorno del evento y el número de eventos.
+- **Linear**: con un error nuevo, una issue `[<proyecto>] <título>` en `LINEAR_TEAM_ID` con las etiquetas de `LINEAR_LABEL_IDS` (y la extra si el proyecto la tiene activada); su descripción es el enlace a la interfaz y el Markdown de `stacktrace.md`. Con una regresión, esa misma issue vuelve al primer estado de tipo `unstarted` del equipo (sea cual sea su nombre) y recibe un comentario con el release y la fecha; si se ha borrado en Linear, se crea otra. Hay una issue de Linear por error.
+
+La ingesta deja los avisos en `alert_outbox` dentro de su transacción, así que un evento que no se guarda no avisa, y si encolar falla, el evento se guarda igual. Cada 5 segundos se envía lo pendiente; cada réplica coge filas con `FOR UPDATE SKIP LOCKED`, así que ninguna manda lo que ya está mandando otra, y los avisos de un mismo issue y canal salen en orden. Si un envío falla se reintenta al cabo de 1 min, 5 min, 30 min, 2 h, 6 h, 12 h y luego cada 24 h; tras 10 intentos se abandona, con el último error en `last_error`.
 
 ## API y MCP
 
@@ -72,7 +88,7 @@ Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo 
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
 
-Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
+Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
 
 ```sh
 INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...

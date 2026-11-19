@@ -58,3 +58,36 @@ func TestTokensCommand(t *testing.T) {
 		t.Error("orden desconocida sin error")
 	}
 }
+
+func TestExtraLabelCommand(t *testing.T) {
+	db := storetest.NewDB(t)
+	ctx := context.Background()
+	p := db.AddProject(t, "backend")
+	extraOn := func() bool {
+		var on bool
+		if err := db.Pool().QueryRow(ctx, `SELECT linear_extra_label FROM projects WHERE id = $1`, p.ID).Scan(&on); err != nil {
+			t.Fatal(err)
+		}
+		return on
+	}
+	if extraOn() {
+		t.Fatal("la etiqueta extra viene activada por defecto")
+	}
+	var out bytes.Buffer
+	if err := extraLabelCommand(ctx, db.Store, "backend", "on", &out); err != nil || !extraOn() {
+		t.Fatalf("on: %v, %q", err, out.String())
+	}
+	if err := extraLabelCommand(ctx, db.Store, "backend", "off", &out); err != nil || extraOn() {
+		t.Fatalf("off: %v", err)
+	}
+	if err := extraLabelCommand(ctx, db.Store, "backend", "quizá", &out); err == nil {
+		t.Error("estado desconocido sin error")
+	}
+	if err := extraLabelCommand(ctx, db.Store, "nadie", "on", &out); err == nil {
+		t.Error("proyecto inexistente sin error")
+	}
+	db.AddProject(t, "backend")
+	if err := extraLabelCommand(ctx, db.Store, "backend", "on", &out); err == nil || extraOn() {
+		t.Errorf("con dos proyectos del mismo nombre: %v", err)
+	}
+}

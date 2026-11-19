@@ -41,3 +41,25 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	}
 	return ps, nil
 }
+
+// SetProjectExtraLabel activa o apaga la etiqueta extra en las issues de Linear
+// del proyecto con ese nombre.
+func (s *Store) SetProjectExtraLabel(ctx context.Context, name string, on bool) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE projects SET linear_extra_label = $2
+		WHERE name = $1 AND (SELECT count(*) FROM projects WHERE name = $1) = 1`, name, on)
+	if err != nil {
+		return fmt.Errorf("cambiar la etiqueta extra: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var n int
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE name = $1`, name).Scan(&n); err != nil {
+			return fmt.Errorf("buscar proyecto: %w", err)
+		}
+		if n > 1 {
+			return fmt.Errorf("%w: hay %d proyectos llamados %q", ErrInvalid, n, name)
+		}
+		return ErrNotFound
+	}
+	return nil
+}
