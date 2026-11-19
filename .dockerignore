@@ -3,3 +3,6 @@
 testdata
 tools
 *.md
+web/node_modules
+web/.angular
+internal/ui/dist/app

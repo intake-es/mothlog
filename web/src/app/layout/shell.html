@@ -1,0 +1,72 @@
+<nav class="rail" aria-label="Principal">
+  <a class="rail__brand" routerLink="/" aria-label="intake-errors">
+    <svg appIcon="bug" weight="fill"></svg>
+  </a>
+
+  <div class="rail__end">
+    <div class="rail__slot">
+      <button
+        type="button"
+        class="rail__btn"
+        aria-label="Tema"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="menu() === 'theme'"
+        (click)="toggle('theme')"
+      >
+        <svg [appIcon]="themeIcon()"></svg>
+      </button>
+      @if (menu() === 'theme') {
+        <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menu.set(null)"></button>
+        <div class="menu rail__menu" role="menu" aria-label="Tema">
+          <div class="menu__label">Tema</div>
+          @for (t of themes; track t.value) {
+            <button
+              type="button"
+              class="menu__item"
+              role="menuitemradio"
+              [attr.aria-checked]="theme.choice() === t.value"
+              (click)="setTheme(t.value)"
+            >
+              <svg [appIcon]="t.icon"></svg>
+              {{ t.label }}
+              @if (theme.choice() === t.value) {
+                <svg appIcon="check" class="menu__check"></svg>
+              }
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="rail__slot">
+      <button
+        type="button"
+        class="rail__avatar"
+        [attr.aria-label]="'Cuenta de ' + (user()?.login ?? '')"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="menu() === 'user'"
+        (click)="toggle('user')"
+      >
+        {{ initials() }}
+      </button>
+      @if (menu() === 'user') {
+        <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menu.set(null)"></button>
+        <div class="menu rail__menu" role="menu" aria-label="Cuenta">
+          <div class="rail__who">
+            <strong>{{ user()?.name }}</strong>
+            <span>{{ user()?.login }}</span>
+          </div>
+          <div class="menu__rule"></div>
+          <button type="button" class="menu__item" role="menuitem" (click)="logout()">
+            <svg appIcon="sign-out"></svg>
+            Salir
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+</nav>
+
+<main class="island">
+  <router-outlet />
+</main>

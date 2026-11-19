@@ -1,0 +1,132 @@
+:host {
+  display: block;
+  height: 100%;
+  overflow: auto;
+}
+
+.login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  padding: 2rem 1rem;
+}
+
+.login__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 25rem);
+  padding: 2.5rem 2rem 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-panel);
+  text-align: center;
+}
+
+.login__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text);
+}
+
+.login__mark svg {
+  width: 22px;
+  height: 22px;
+}
+
+.login__title {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--heading);
+}
+
+.login__lede {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.login__lede strong {
+  color: var(--text);
+}
+
+.login__skeleton {
+  width: 70%;
+  height: 0.75rem;
+  margin-top: 1rem;
+}
+
+.login__error {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.login__error svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.login__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 1.5rem;
+}
+
+.login__btn {
+  width: 100%;
+  min-height: 40px;
+  border-radius: var(--radius-sm);
+}
+
+.login__note {
+  margin-top: 1rem;
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+}
+
+.login__off {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+}
+
+.login__off svg {
+  width: 26px;
+  height: 26px;
+  color: var(--text-subtle);
+}
+
+.login__off-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.login__off-text {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}

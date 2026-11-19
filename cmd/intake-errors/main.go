@@ -18,6 +18,8 @@ import (
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/intake-errors/internal/ui"
+	"github.com/intake-es/intake-errors/internal/webauth"
 )
 
 type config struct {
@@ -116,6 +118,11 @@ func run(args []string) error {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
 
+	auth, err := webauth.New(webauth.LoadConfig(os.Getenv, cfg.Addr, cfg.PublicURL), log)
+	if err != nil {
+		return err
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -143,13 +150,14 @@ func run(args []string) error {
 	ingester := ingest.NewIngester(db.Pool(), maps, alerts, log)
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), log)
 
-	mux := routes(db, envelopes, maps.Register)
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL}); err != nil {
+	mux := routes(db, envelopes, maps.Register, auth.Register)
+	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth}); err != nil {
 		return err
 	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           ui.Handler(mux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

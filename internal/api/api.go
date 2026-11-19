@@ -99,7 +99,33 @@ func (h *handlers) issues(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, page)
+	if q.Get("daily") != "1" {
+		writeJSON(w, http.StatusOK, page)
+		return
+	}
+	ids := make([]int64, len(page.Issues))
+	for i, is := range page.Issues {
+		ids[i] = is.ID
+	}
+	daily, err := h.st.DailyCounts(r.Context(), ids, time.Now())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	items := make([]issueWithDaily, len(page.Issues))
+	for i, is := range page.Issues {
+		items[i] = issueWithDaily{Issue: is, Daily: daily[is.ID]}
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Issues     []issueWithDaily `json:"data"`
+		NextCursor string           `json:"next_cursor,omitempty"`
+	}{items, page.NextCursor})
+}
+
+// issueWithDaily es un issue de la lista con daily=1: sus eventos por día, como en el detalle.
+type issueWithDaily struct {
+	store.Issue
+	Daily []store.DayCount `json:"daily"`
 }
 
 func (h *handlers) issue(w http.ResponseWriter, r *http.Request) {

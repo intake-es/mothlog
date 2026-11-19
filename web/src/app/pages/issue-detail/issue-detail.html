@@ -1,0 +1,251 @@
+<header class="titlebar">
+  <a class="icon-btn" routerLink="/" aria-label="Volver a la lista">
+    <svg appIcon="arrow-left"></svg>
+  </a>
+  <h1 class="titlebar__title crumbs">
+    <a routerLink="/" class="crumbs__root">Errores</a>
+    <span class="crumbs__sep" aria-hidden="true">/</span>
+    <span class="tnum">#{{ id() }}</span>
+  </h1>
+
+  @if (detail(); as d) {
+    <div class="titlebar__actions">
+      <button type="button" class="btn" (click)="copyForClaude()">
+        <svg [appIcon]="copied() ? 'check' : 'copy'"></svg>
+        {{ copied() ? 'Copiado' : 'Copiar para Claude' }}
+      </button>
+      @if (primary(); as p) {
+        <button type="button" class="btn btn--primary" [disabled]="busy()" (click)="setStatus(p.status)">
+          <svg [appIcon]="p.icon"></svg>
+          {{ p.label }}
+        </button>
+      }
+      <div class="more">
+        <button
+          type="button"
+          class="btn btn--square"
+          aria-label="Más acciones"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="menuOpen()"
+          [disabled]="busy()"
+          (click)="menuOpen.set(!menuOpen())"
+        >
+          <svg appIcon="dots-three"></svg>
+        </button>
+        @if (menuOpen()) {
+          <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menuOpen.set(false)"></button>
+          <div class="menu more__menu" role="menu" aria-label="Cambiar el estado">
+            @for (a of secondary(); track a.status) {
+              <button
+                type="button"
+                class="menu__item more__item"
+                role="menuitem"
+                [disabled]="a.status === 'resolved_next' && noRelease()"
+                (click)="setStatus(a.status)"
+              >
+                <svg [appIcon]="a.icon"></svg>
+                <span>
+                  {{ a.label }}
+                  @if (a.hint) {
+                    <small>{{ a.hint }}</small>
+                  }
+                </span>
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  }
+</header>
+
+<div class="content">
+  @if (loading()) {
+    <div class="pad" aria-busy="true" aria-label="Cargando el error">
+      <span class="sp-skeleton" style="width: 6rem; height: 1.2rem; border-radius: 999px"></span>
+      <span class="sp-skeleton" style="width: 60%; height: 1.1rem; margin-top: 1rem"></span>
+      <span class="sp-skeleton" style="width: 35%; height: 0.8rem; margin-top: 0.6rem"></span>
+      <span class="sp-skeleton" style="width: 100%; height: 88px; margin-top: 2rem; border-radius: 12px"></span>
+    </div>
+  } @else if (notFound()) {
+    <div class="state">
+      <svg appIcon="magnifying-glass" weight="duotone"></svg>
+      <p class="state__title">Este error no existe</p>
+      <p class="state__text">Puede que se borrara al pasar los días de retención sin eventos nuevos.</p>
+      <a class="btn" routerLink="/">Ver la lista</a>
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">No se ha podido cargar el error</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="retry()">Reintentar</button>
+    </div>
+  } @else if (detail(); as d) {
+    <section class="head">
+      <div class="head__badges">
+        <span class="sp-badge" [class]="statusBadge[d.status]">{{ statusLabel[d.status] }}</span>
+        @if (d.status === 'open' && d.last_regression) {
+          <span class="sp-badge sp-badge--yellow">Regresión</span>
+        }
+        @if (d.level && d.level !== 'error') {
+          <span class="sp-badge sp-badge--gray">{{ d.level }}</span>
+        }
+      </div>
+      <h2 class="head__title">
+        @if (heading().type) {
+          <span class="head__type">{{ heading().type }}</span>
+        }
+        <span>{{ heading().message }}</span>
+      </h2>
+      @if (d.culprit) {
+        <p class="head__culprit">{{ d.culprit }}</p>
+      }
+    </section>
+
+    <div class="body">
+      <div class="main">
+        <section class="block">
+          <div class="block__head">
+            <h3 class="block__title">Últimos 14 días</h3>
+            <span class="block__aside tnum">{{ total14() }}</span>
+          </div>
+          <app-day-chart [days]="d.daily" />
+        </section>
+
+        <section class="block">
+          <div class="block__head block__head--event">
+            <h3 class="block__title">
+              Evento
+              @if (event(); as ev) {
+                <span class="block__aside tnum" [attr.title]="ev.event_id">{{ ev.event_id.slice(0, 8) }}</span>
+              }
+            </h3>
+            @if (events().length > 1) {
+              <div class="pager">
+                <button type="button" class="btn btn--ghost pager__btn" [disabled]="index() >= events().length - 1" (click)="select(index() + 1)">
+                  <svg appIcon="caret-left"></svg>
+                  Anterior
+                </button>
+                <span class="pager__pos tnum">{{ eventPosition() }}</span>
+                <button type="button" class="btn btn--ghost pager__btn" [disabled]="index() === 0" (click)="select(index() - 1)">
+                  Siguiente
+                  <svg appIcon="caret-right"></svg>
+                </button>
+              </div>
+            }
+          </div>
+          @if (event(); as ev) {
+            <p class="event-when">
+              <svg appIcon="clock"></svg>
+              <time [attr.datetime]="ev.occurred_at">{{ eventWhen(ev.occurred_at) }}</time>
+            </p>
+          }
+        </section>
+
+        <div class="event" [class.event--loading]="eventLoading()">
+          @if (event(); as ev) {
+            @if (ev.event.exceptions?.length) {
+              <section class="block">
+                <h3 class="block__title block__title--gap">Excepción</h3>
+                <app-stacktrace [exceptions]="ev.event.exceptions!" />
+              </section>
+            }
+            @if (ev.event.message) {
+              <section class="block">
+                <h3 class="block__title block__title--gap">Mensaje</h3>
+                <pre class="message">{{ ev.event.message }}</pre>
+              </section>
+            }
+            <section class="block">
+              <h3 class="block__title block__title--gap">Breadcrumbs</h3>
+              <app-breadcrumbs [raw]="ev.event.breadcrumbs" />
+            </section>
+          } @else {
+            <section class="block">
+              <p class="muted">Este error no tiene eventos guardados.</p>
+            </section>
+          }
+        </div>
+
+        @if (events().length > 0) {
+          <section class="block">
+            <div class="block__head">
+              <h3 class="block__title">Eventos</h3>
+              <span class="block__aside tnum">{{ count(d.count) }}</span>
+            </div>
+            <ol class="events">
+              @for (r of eventRows(); track r.e.id) {
+                <li>
+                  <button type="button" class="events__row" [class.events__row--on]="r.i === index()" [attr.aria-current]="r.i === index() ? 'true' : null" (click)="select(r.i)">
+                    <time class="events__when tnum" [attr.datetime]="r.e.occurred_at" [attr.title]="r.when">{{ r.ago }}</time>
+                    <code class="events__id">{{ r.e.event_id.slice(0, 8) }}</code>
+                    <span class="events__meta">
+                      @if (r.e.release) {
+                        <span><svg appIcon="tag"></svg>{{ r.e.release }}</span>
+                      }
+                      @if (r.e.environment) {
+                        <span><svg appIcon="globe-simple"></svg>{{ r.e.environment }}</span>
+                      }
+                      @if (r.e.user) {
+                        <span><svg appIcon="user"></svg>{{ r.e.user }}</span>
+                      }
+                    </span>
+                  </button>
+                </li>
+              }
+            </ol>
+          </section>
+        }
+      </div>
+
+      <aside class="side">
+        <section class="side__block">
+          <h3 class="block__title block__title--gap">Datos</h3>
+          <dl class="facts">
+            @for (f of facts(); track f.label) {
+              <div class="fact">
+                <dt>{{ f.label }}</dt>
+                <dd [class.mono]="f.mono" [attr.title]="f.title || f.value">{{ f.value }}</dd>
+              </div>
+            }
+          </dl>
+        </section>
+
+        @if (top().length) {
+          <section class="side__block">
+            <h3 class="block__title block__title--gap">Más frecuentes</h3>
+            @for (t of top(); track t.key) {
+              <div class="top">
+                <p class="top__label">{{ t.label }}</p>
+                @for (v of t.values; track v.value) {
+                  <div class="top__row">
+                    <span class="top__value" [attr.title]="v.value">{{ v.value }}</span>
+                    <span class="top__count tnum">{{ count(v.count) }}</span>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+        }
+
+        <section class="side__block">
+          <h3 class="block__title block__title--gap">Etiquetas</h3>
+          @if (tags().length) {
+            <ul class="tags">
+              @for (t of tags(); track t[0]) {
+                <li class="tag"><span class="tag__k">{{ t[0] }}</span><span class="tag__v">{{ t[1] }}</span></li>
+              }
+            </ul>
+          } @else {
+            <p class="muted">Sin etiquetas.</p>
+          }
+        </section>
+      </aside>
+    </div>
+  }
+</div>
+
+@if (toast()) {
+  <div class="toast" role="status">{{ toast() }}</div>
+}

@@ -326,27 +326,13 @@ func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (Issue
 		return IssueDetail{}, err
 	}
 
-	rows, err := s.pool.Query(ctx, `
-		SELECT to_char(d, 'YYYY-MM-DD'), count(e.id)
-		FROM generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - $3::int + 1)::timestamp,
-		                     ($2::timestamptz AT TIME ZONE 'UTC')::date::timestamp, interval '1 day') d
-		LEFT JOIN events e ON e.issue_id = $1
-			AND e.occurred_at >= d AT TIME ZONE 'UTC'
-			AND e.occurred_at < (d + interval '1 day') AT TIME ZONE 'UTC'
-		GROUP BY d ORDER BY d`, id, now, DailyDays)
+	daily, err := s.DailyCounts(ctx, []int64{id}, now)
 	if err != nil {
-		return IssueDetail{}, fmt.Errorf("eventos por día: %w", err)
+		return IssueDetail{}, err
 	}
-	d.Daily, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (DayCount, error) {
-		var c DayCount
-		err := r.Scan(&c.Date, &c.Count)
-		return c, err
-	})
-	if err != nil {
-		return IssueDetail{}, fmt.Errorf("eventos por día: %w", err)
-	}
+	d.Daily = daily[id]
 
-	rows, err = s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT v.key, v.value, count(*) AS n
 		FROM events e CROSS JOIN LATERAL (VALUES
 			('environment', e.environment),
@@ -374,6 +360,37 @@ func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (Issue
 		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
 	}
 	return d, nil
+}
+
+// DailyCounts son los eventos por día (UTC) de cada issue en los últimos
+// DailyDays días, del más viejo a hoy. Un id que no existe sale con ceros.
+func (s *Store) DailyCounts(ctx context.Context, ids []int64, now time.Time) (map[int64][]DayCount, error) {
+	out := make(map[int64][]DayCount, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT i.id, to_char(d, 'YYYY-MM-DD'), count(e.id)
+		FROM unnest($1::bigint[]) AS i(id)
+		CROSS JOIN generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - $3::int + 1)::timestamp,
+		                     ($2::timestamptz AT TIME ZONE 'UTC')::date::timestamp, interval '1 day') d
+		LEFT JOIN events e ON e.issue_id = i.id
+			AND e.occurred_at >= d AT TIME ZONE 'UTC'
+			AND e.occurred_at < (d + interval '1 day') AT TIME ZONE 'UTC'
+		GROUP BY i.id, d ORDER BY i.id, d`, ids, now, DailyDays)
+	if err != nil {
+		return nil, fmt.Errorf("eventos por día: %w", err)
+	}
+	var id int64
+	var c DayCount
+	_, err = pgx.ForEachRow(rows, []any{&id, &c.Date, &c.Count}, func() error {
+		out[id] = append(out[id], c)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("eventos por día: %w", err)
+	}
+	return out, nil
 }
 
 type EventSummary struct {

@@ -12,7 +12,7 @@ import (
 
 // Principal es quien hace la petición.
 type Principal struct {
-	Kind string // "token"
+	Kind string // "token" o "session"
 	Name string
 }
 
@@ -21,6 +21,10 @@ type Principal struct {
 type Authenticator func(r *http.Request) (p Principal, ok bool, err error)
 
 var errBadToken = errors.New("token no válido o revocado")
+
+// ErrForbidden envuelve el error de un Authenticator que reconoce la petición
+// pero no la acepta: es un 403 con su mensaje.
+var ErrForbidden = errors.New("prohibido")
 
 // BearerToken autentica con `Authorization: Bearer ie_…`.
 func BearerToken(st *store.Store) Authenticator {
@@ -59,6 +63,10 @@ func RequireAuth(auths ...Authenticator) func(http.Handler) http.Handler {
 				p, ok, err := auth(r)
 				if errors.Is(err, errBadToken) {
 					unauthorized(w, err.Error())
+					return
+				}
+				if errors.Is(err, ErrForbidden) {
+					writeError(w, http.StatusForbidden, err.Error())
 					return
 				}
 				if err != nil {

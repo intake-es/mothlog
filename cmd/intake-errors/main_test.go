@@ -109,3 +109,13 @@ func TestLoadConfigRetention(t *testing.T) {
 		}
 	}
 }
+
+func TestDevLoginOnlyLocal(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://127.0.0.1:1/nada")
+	t.Setenv("UI_DEV_LOGIN", "1")
+	t.Setenv("LISTEN_ADDR", ":8080")
+	err := run(nil)
+	if err == nil || !strings.Contains(err.Error(), "UI_DEV_LOGIN") {
+		t.Fatalf("con LISTEN_ADDR=:8080 = %v; quiero que se niegue a arrancar", err)
+	}
+}

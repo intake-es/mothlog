@@ -168,6 +168,47 @@ func TestListIssues(t *testing.T) {
 		}
 	})
 
+	t.Run("daily=1", func(t *testing.T) {
+		now := time.Now().UTC()
+		ev := storetest.Fixture(t, "backend-fastapi-zerodivision-1")
+		id := e.db.AddIssue(t, storetest.Issue{ProjectID: back.ID, Title: "Con serie", FirstSeen: now.Add(-72 * time.Hour), LastSeen: now, Count: 3})
+		e.db.AddEvent(t, back.ID, id, ev, now)
+		e.db.AddEvent(t, back.ID, id, ev, now)
+		e.db.AddEvent(t, back.ID, id, ev, now.AddDate(0, 0, -2))
+		e.db.AddEvent(t, back.ID, id, ev, now.AddDate(0, 0, -20))
+		t.Cleanup(func() {
+			_, _ = e.db.Pool().Exec(context.Background(), `DELETE FROM issues WHERE id = $1`, id)
+		})
+
+		var page struct {
+			Data []struct {
+				store.Issue
+				Daily []store.DayCount `json:"daily"`
+			} `json:"data"`
+			NextCursor string `json:"next_cursor"`
+		}
+		e.get(t, "/api/0/issues/?daily=1&limit=2", &page)
+		if len(page.Data) != 2 || page.Data[0].ID != id || page.NextCursor == "" {
+			t.Fatalf("= %+v", page)
+		}
+		d := page.Data[0].Daily
+		if len(d) != store.DailyDays || d[13].Date != now.Format("2006-01-02") || d[13].Count != 2 || d[11].Count != 1 {
+			t.Errorf("daily = %+v", d)
+		}
+		var sum int64
+		for _, c := range page.Data[1].Daily {
+			sum += c.Count
+		}
+		if len(page.Data[1].Daily) != store.DailyDays || sum != 0 {
+			t.Errorf("daily del segundo = %+v", page.Data[1].Daily)
+		}
+
+		code, b := e.do(t, http.MethodGet, "/api/0/issues/?limit=1", "")
+		if code != http.StatusOK || strings.Contains(string(b), `"daily"`) {
+			t.Errorf("sin daily=1 = %d %s", code, b)
+		}
+	})
+
 	for _, sort := range []string{"last_seen", "first_seen", "count"} {
 		t.Run("paginación por "+sort, func(t *testing.T) {
 			var all store.IssuePage

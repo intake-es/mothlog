@@ -29,8 +29,36 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `LINEAR_LABEL_IDS` | ids de etiquetas de Linear para todas las issues, separados por comas | vacío |
 | `LINEAR_EXTRA_LABEL_ID` | id de la etiqueta extra, para los proyectos que la activan | vacío |
 | `LINEAR_API_URL` | endpoint GraphQL de Linear; solo para probar contra uno falso | `https://api.linear.app/graphql` |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |
+| `GITHUB_ORG` | org cuyos miembros activos pueden entrar (`intake-es`) | vacía |
+| `SESSION_SECRET` | firma la cookie de sesión; 32 caracteres o más, obligatoria con GitHub | vacía |
+| `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
 
 `GET /healthz` responde `ok` si Postgres contesta.
+
+## Interfaz
+
+El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, y el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos y «Copiar para Claude», que copia el `stacktrace.md`. Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
+
+```sh
+cd web && npm ci && npm run build   # deja la app en internal/ui/dist/app; luego go build
+npm run lint && npm test            # Biome y Vitest
+npm start                           # ng serve en :4200, con /api y /auth contra 127.0.0.1:8080 (arrancado con PUBLIC_URL=http://localhost:4200)
+```
+
+Sin compilar la web, `go build` y `go test` funcionan y `/` es una página que explica cómo compilarla. El `Dockerfile` compila la web antes que Go. Los ficheros con hash van con un año de caché; `index.html`, sin caché y con CSP.
+
+Para entrar hace falta una OAuth App de GitHub con callback `<PUBLIC_URL>/auth/github/callback`. `/auth/github/login` pide el scope `read:org` con un `state` en una cookie firmada, y el callback deja entrar solo si `GET /user/memberships/orgs/<GITHUB_ORG>` dice `active`. La sesión es una cookie firmada con HMAC (`SESSION_SECRET`): `HttpOnly`, `SameSite=Lax`, `Secure` si `PUBLIC_URL` es https, de 7 días, sin tabla; `POST /auth/logout` la borra. Del usuario de GitHub solo se guarda en la cookie el login y el nombre; el token de GitHub no se guarda.
+
+La cookie vale para `/api/0/` y `/mcp` igual que un token (los tokens siguen igual), y en lo que cambia algo exige que `Origin` sea el de `PUBLIC_URL`; si no, 403. Sin las variables de GitHub ni `UI_DEV_LOGIN`, la interfaz dice que el login no está configurado.
+
+Para probar en local:
+
+```sh
+UI_DEV_LOGIN=1 LISTEN_ADDR=127.0.0.1:8080 DATABASE_URL=... intake-errors
+```
+
+Sin `PUBLIC_URL`, la interfaz se puede abrir por `http://127.0.0.1:8080` o por `http://localhost:8080`: en el modo de desarrollo valen las dos como `Origin`. Con `UI_DEV_LOGIN=1` y otra `LISTEN_ADDR` (por ejemplo `:8080`), el binario se niega a arrancar.
 
 ## Proyectos
 
@@ -70,7 +98,7 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events
 | Ruta | Qué devuelve |
 |---|---|
 | `GET /api/0/projects/` | id, nombre y DSN de cada proyecto |
-| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=` | issues; `status` es `open` (por defecto), `resolved`, `resolved_next`, `silenced` o `all`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `query` busca en título y culprit; `project`, id o nombre |
+| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=&daily=` | issues; `status` es `open` (por defecto), `resolved`, `resolved_next`, `silenced` o `all`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `query` busca en título y culprit; `project`, id o nombre; con `daily=1`, cada issue lleva `daily`, sus eventos por día de los últimos 14 días como en el detalle |
 | `GET /api/0/issues/{id}/` | el issue con su último evento, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y `organization_id` |
 | `GET /api/0/issues/{id}/events/` | sus eventos, del más nuevo al más viejo |
 | `GET /api/0/issues/{id}/stacktrace.md` | el último evento en Markdown, pensado para un modelo |

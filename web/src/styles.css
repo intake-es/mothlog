@@ -1,0 +1,492 @@
+@import '@fontsource/inter/latin-400.css';
+@import '@fontsource/inter/latin-500.css';
+@import '@fontsource/inter/latin-600.css';
+@import '@fontsource/newsreader/latin-500.css';
+
+/* Los tokens del sistema visual del panel (styles.css, 13-10), con el
+   oscuro en light-dark(): sin clase sigue al sistema, y html.light o html.dark
+   lo fijan a mano. */
+:root {
+  color-scheme: light dark;
+
+  --bg-app: light-dark(#f3f2ee, #141413);
+  --bg-panel: light-dark(#ffffff, #1c1c1b);
+  --bg-surface: light-dark(#fbfbf9, #232322);
+  --bg-input: light-dark(#f8f8f7, #232322);
+  --bg-hover: light-dark(#f0f1ef, #2a2a28);
+  --bg-selected: light-dark(#ffffff, #2c2c2a);
+  --border: light-dark(#e9eae6, #2e2e2c);
+  --border-strong: light-dark(#d9dad4, #3a3a37);
+
+  --text: light-dark(#1a1a1a, #f0f0ec);
+  --text-muted: light-dark(#646462, #a3a39e);
+  --text-subtle: light-dark(#6b6b67, #96968f);
+  --heading: light-dark(#000000, #ffffff);
+
+  --primary: light-dark(#222222, #f0f0ec);
+  --primary-hover: light-dark(#383836, #ffffff);
+  --on-primary: light-dark(#fafaf7, #141413);
+
+  --accent: light-dark(#ed621d, #f27a3e);
+  --focus-ring: color-mix(in srgb, var(--accent) 28%, transparent);
+
+  --success: light-dark(#137511, #5cb85b);
+  --success-soft: light-dark(#ecf6eb, #1d2e1d);
+  --warning: light-dark(#b7791f, #e0a955);
+  --warning-text: light-dark(#926119, #e0a955);
+  --warning-soft: light-dark(#feecaf, #3b321d);
+  --danger: light-dark(#c81c1c, #ef6b6b);
+  --danger-soft: light-dark(#fdeeee, #3a1f1f);
+  --info: light-dark(#1f5bb5, #8db8f5);
+  --info-soft: light-dark(#d7e7fe, #1f2a3a);
+
+  --chart-bar: light-dark(#b9c2cf, #3d4659);
+  --chart-bar-hover: light-dark(#8792a6, #59647d);
+  --chart-bar-strong: light-dark(#1e293b, #dee1ea);
+  --chart-bar-current: light-dark(#eef1f5, rgba(222, 225, 234, 0.06));
+  --chart-grid: light-dark(#eef0f2, #1e2330);
+  --chart-base: light-dark(#dfe3e8, #2b3242);
+  --chart-axis: light-dark(#94a3b8, #6f7485);
+
+  /* Las líneas de código: el fondo del bloque y el de la línea que falló. */
+  --code-bg: light-dark(#fbfbf9, #191918);
+  --code-gutter: light-dark(#a3a39e, #6b6b67);
+
+  --font-sans: 'Inter', 'Segoe UI', sans-serif;
+  --font-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-mono: 'SF Mono', ui-monospace, 'Fira Code', Menlo, Consolas, monospace;
+
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --radius-pick: 9px;
+  --control-h: 34px;
+
+  --shadow-popover:
+    0 8px 24px light-dark(rgba(26, 26, 26, 0.12), rgba(0, 0, 0, 0.45)),
+    0 2px 6px light-dark(rgba(26, 26, 26, 0.06), rgba(0, 0, 0, 0.3));
+
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  accent-color: var(--accent);
+}
+
+html.light {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  color: var(--text);
+  background: var(--bg-app);
+  font: 400 14px/20px var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+app-root {
+  display: block;
+  height: 100%;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:where(button, a, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--font-mono);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── Botones: uno principal por vista, casi negro; el resto con borde o sin él ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: var(--control-h);
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.btn:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+}
+
+.btn--primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.btn--primary:hover:not(:disabled) {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+.btn--ghost {
+  border-color: transparent;
+  background: transparent;
+}
+
+.btn--square {
+  min-width: var(--control-h);
+  padding: 0;
+}
+
+.btn svg {
+  flex: 0 0 auto;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+}
+
+/* ── Chips de estado: el color solo por lo que significa ── */
+.sp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.sp-badge--sm {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.sp-badge--green {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.sp-badge--red {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.sp-badge--yellow {
+  background: var(--warning-soft);
+  color: var(--warning-text);
+}
+
+.sp-badge--gray {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.sp-badge--blue {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.sp-code {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-hover);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text);
+}
+
+/* ── Esperas ── */
+.sp-skeleton {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--border) 50%, var(--bg-hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* ── Vacío y error: icono, una línea y una explicación ── */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 320px;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.state svg {
+  width: 26px;
+  height: 26px;
+  color: var(--text-subtle);
+}
+
+.state--error svg {
+  color: var(--danger);
+}
+
+.state__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.state__text {
+  max-width: 44ch;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+
+/* ── El panel de contenido y su barra de título de 64px ── */
+.titlebar {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 64px;
+  padding: 0 1.5rem 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.titlebar__title {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--heading);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: -0.01em;
+}
+
+.titlebar__count {
+  margin-left: 0.35rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.titlebar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .titlebar {
+    flex-wrap: wrap;
+    min-height: 3.5rem;
+    padding: 0.6rem 0.9rem;
+  }
+
+  .titlebar__actions {
+    justify-content: flex-start;
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* ── Menús flotantes (filtros en píldora y acciones) ── */
+.menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 12rem;
+  max-height: min(22rem, 70vh);
+  overflow: auto;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-popover);
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  min-height: 32px;
+  padding: 0.35rem 0.6rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8125rem;
+  text-align: left;
+}
+
+.menu__item:hover,
+.menu__item:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+}
+
+.menu__item svg {
+  color: var(--text-muted);
+}
+
+.menu__item--danger,
+.menu__item--danger svg {
+  color: var(--danger);
+}
+
+.menu__label {
+  padding: 0.45rem 0.6rem 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.menu__rule {
+  height: 1px;
+  margin: 0.25rem 0.35rem;
+  background: var(--border);
+}
+
+.menu__item .menu__check {
+  margin-left: auto;
+  color: var(--text);
+}
+
+.menu__veil {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+/* Todo el movimiento sale de estas variables: sin ellas, nada se mueve. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+  }
+
+  .sp-skeleton {
+    animation: none;
+  }
+}

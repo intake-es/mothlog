@@ -1,0 +1,54 @@
+<main class="login">
+  <div class="login__card">
+    <div class="login__mark" aria-hidden="true">
+      <svg appIcon="bug" weight="fill"></svg>
+    </div>
+    <h1 class="login__title">intake-errors</h1>
+
+    @if (!loaded()) {
+      <span class="sp-skeleton login__skeleton"></span>
+    } @else if (configured()) {
+      <p class="login__lede">
+        @if (github()) {
+          Entra con tu cuenta de GitHub de <strong>{{ info()?.org }}</strong>.
+        } @else {
+          Este servidor está en modo de desarrollo.
+        }
+      </p>
+
+      @if (message()) {
+        <p class="login__error" role="alert">
+          <svg appIcon="warning-circle"></svg>
+          <span>{{ message() }}</span>
+        </p>
+      }
+
+      <div class="login__actions">
+        @if (github()) {
+          <a class="btn btn--primary login__btn" [href]="href('/auth/github/login')">
+            <svg appIcon="github-logo"></svg>
+            Entrar con GitHub
+          </a>
+        }
+        @if (dev()) {
+          <a class="btn login__btn" [class.btn--primary]="!github()" [href]="href('/auth/dev/login')">
+            Entrar como dev
+          </a>
+        }
+      </div>
+      @if (dev()) {
+        <p class="login__note">El modo de desarrollo deja entrar sin GitHub y solo funciona escuchando en 127.0.0.1 o localhost.</p>
+      }
+    } @else {
+      <div class="login__off" role="status">
+        <svg appIcon="lock-key" weight="duotone"></svg>
+        <p class="login__off-title">El login no está configurado</p>
+        <p class="login__off-text">
+          Faltan <code class="sp-code">GITHUB_CLIENT_ID</code>, <code class="sp-code">GITHUB_CLIENT_SECRET</code>,
+          <code class="sp-code">GITHUB_ORG</code> y <code class="sp-code">SESSION_SECRET</code> en el servidor. La API y el MCP
+          con tokens siguen funcionando.
+        </p>
+      </div>
+    }
+  </div>
+</main>

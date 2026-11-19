@@ -1,0 +1,90 @@
+@for (x of views(); track x.key; let first = $first) {
+  <section class="exc">
+    @if (!first) {
+      <p class="exc__caused">Causada por</p>
+    }
+    <header class="exc__head">
+      <h3 class="exc__title">
+        @if (x.type) {
+          <span class="exc__type">{{ x.type }}</span>
+        }
+        @if (x.value) {
+          <span class="exc__value">{{ x.value }}</span>
+        }
+      </h3>
+      @if (x.mechanism || x.handled !== undefined) {
+        <div class="exc__mech">
+          @if (x.handled === false) {
+            <span class="sp-badge sp-badge--sm sp-badge--gray">No manejada</span>
+          } @else if (x.handled === true) {
+            <span class="sp-badge sp-badge--sm sp-badge--gray">Manejada</span>
+          }
+          @if (x.mechanism) {
+            <code>{{ x.mechanism }}</code>
+          }
+        </div>
+      }
+    </header>
+
+    @if (x.empty) {
+      <p class="exc__empty">Sin fotogramas.</p>
+    } @else {
+      <ol class="frames">
+        @for (g of x.groups; track g.key) {
+          @if (g.kind === 'app') {
+            <li class="frame frame--app">
+              <ng-container *ngTemplateOutlet="frameTpl; context: { $implicit: g.frame, byDefault: g.frame.lines.length > 0 }" />
+            </li>
+          } @else {
+            <li class="libs">
+              <button
+                type="button"
+                class="libs__toggle"
+                [attr.aria-expanded]="open(g.key, false)"
+                (click)="toggle(g.key)"
+              >
+                <svg [appIcon]="open(g.key, false) ? 'caret-down' : 'caret-right'"></svg>
+                <svg appIcon="package"></svg>
+                {{ g.frames.length }} {{ g.frames.length === 1 ? 'fotograma de librerías' : 'fotogramas de librerías' }}
+              </button>
+              @if (open(g.key, false)) {
+                <ol class="libs__frames">
+                  @for (f of g.frames; track f.key) {
+                    <li class="frame frame--lib">
+                      <ng-container *ngTemplateOutlet="frameTpl; context: { $implicit: f, byDefault: false }" />
+                    </li>
+                  }
+                </ol>
+              }
+            </li>
+          }
+        }
+      </ol>
+    }
+  </section>
+}
+
+<ng-template #frameTpl let-f let-byDefault="byDefault">
+  <button
+    type="button"
+    class="frame__head"
+    [disabled]="f.lines.length === 0"
+    [attr.aria-expanded]="f.lines.length > 0 ? open(f.key, byDefault) : null"
+    (click)="toggle(f.key)"
+  >
+    <svg class="frame__caret" [appIcon]="open(f.key, byDefault) ? 'caret-down' : 'caret-right'" [class.frame__caret--none]="f.lines.length === 0"></svg>
+    <span class="frame__label"
+      ><span class="frame__file">{{ f.file }}</span
+      >@if (f.position) {<span class="frame__pos">:{{ f.position }}</span>}
+      @if (f.fn) {<span class="frame__in">en</span> <span class="frame__fn">{{ f.fn }}</span>}</span
+    >
+  </button>
+  @if (f.lines.length > 0 && open(f.key, byDefault)) {
+    <div class="code" role="region" [attr.aria-label]="'Código de ' + f.file">
+      <pre><code>@for (l of f.lines; track $index) {<span class="code__line" [class.code__line--error]="l.error"><span class="code__n" aria-hidden="true">{{ l.n }}</span><span class="code__t">{{ l.text || ' ' }}</span></span>}</code></pre>
+    </div>
+  }
+  @if (f.frame.minified; as m) {
+    <p class="frame__min">Minificado: {{ m.filename }}:{{ m.lineno }}:{{ m.colno }}</p>
+  }
+</ng-template>
