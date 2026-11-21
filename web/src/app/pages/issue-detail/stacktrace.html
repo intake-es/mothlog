@@ -1,7 +1,7 @@
 @for (x of views(); track x.key; let first = $first) {
   <section class="exc">
     @if (!first) {
-      <p class="exc__caused">Causada por</p>
+      <p class="exc__caused">{{ t('stack.causedBy') }}</p>
     }
     <header class="exc__head">
       <h3 class="exc__title">
@@ -15,9 +15,9 @@
       @if (x.mechanism || x.handled !== undefined) {
         <div class="exc__mech">
           @if (x.handled === false) {
-            <span class="sp-badge sp-badge--sm sp-badge--gray">No manejada</span>
+            <span class="sp-badge sp-badge--sm sp-badge--gray">{{ t('stack.unhandled') }}</span>
           } @else if (x.handled === true) {
-            <span class="sp-badge sp-badge--sm sp-badge--gray">Manejada</span>
+            <span class="sp-badge sp-badge--sm sp-badge--gray">{{ t('stack.handled') }}</span>
           }
           @if (x.mechanism) {
             <code>{{ x.mechanism }}</code>
@@ -27,7 +27,7 @@
     </header>
 
     @if (x.empty) {
-      <p class="exc__empty">Sin fotogramas.</p>
+      <p class="exc__empty">{{ t('stack.noFrames') }}</p>
     } @else {
       <ol class="frames">
         @for (g of x.groups; track g.key) {
@@ -45,7 +45,7 @@
               >
                 <svg [appIcon]="open(g.key, false) ? 'caret-down' : 'caret-right'"></svg>
                 <svg appIcon="package"></svg>
-                {{ g.frames.length }} {{ g.frames.length === 1 ? 'fotograma de librerías' : 'fotogramas de librerías' }}
+                {{ plural('stack.libs', g.frames.length) }}
               </button>
               @if (open(g.key, false)) {
                 <ol class="libs__frames">
@@ -76,15 +76,15 @@
     <span class="frame__label"
       ><span class="frame__file">{{ f.file }}</span
       >@if (f.position) {<span class="frame__pos">:{{ f.position }}</span>}
-      @if (f.fn) {<span class="frame__in">en</span> <span class="frame__fn">{{ f.fn }}</span>}</span
+      @if (f.fn) {<span class="frame__in">{{ t('stack.in') }}</span> <span class="frame__fn">{{ f.fn }}</span>}</span
     >
   </button>
   @if (f.lines.length > 0 && open(f.key, byDefault)) {
-    <div class="code" role="region" [attr.aria-label]="'Código de ' + f.file">
+    <div class="code" role="region" [attr.aria-label]="t('stack.code', { file: f.file })">
       <pre><code>@for (l of f.lines; track $index) {<span class="code__line" [class.code__line--error]="l.error"><span class="code__n" aria-hidden="true">{{ l.n }}</span><span class="code__t">{{ l.text || ' ' }}</span></span>}</code></pre>
     </div>
   }
   @if (f.frame.minified; as m) {
-    <p class="frame__min">Minificado: {{ m.filename }}:{{ m.lineno }}:{{ m.colno }}</p>
+    <p class="frame__min">{{ t('stack.minified', { location: m.filename + ':' + m.lineno + ':' + m.colno }) }}</p>
   }
 </ng-template>

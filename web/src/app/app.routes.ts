@@ -1,24 +1,26 @@
 import type { Routes } from '@angular/router';
+import type { Key } from './core/i18n';
 import { authGuard, loginGuard } from './core/session';
 import { Shell } from './layout/shell';
 import { IssueDetailPage } from './pages/issue-detail/issue-detail';
 import { IssueListPage } from './pages/issue-list/issue-list';
 import { LoginPage } from './pages/login/login';
 
+// Los títulos son claves de las traducciones: los escribe PageTitle en el idioma elegido.
 export const routes: Routes = [
   {
     path: 'login',
     component: LoginPage,
     canActivate: [loginGuard],
-    title: 'Entrar · intake-errors',
+    title: 'title.login' satisfies Key,
   },
   {
     path: '',
     component: Shell,
     canActivate: [authGuard],
     children: [
-      { path: '', component: IssueListPage, title: 'Errores · intake-errors' },
-      { path: 'issues/:id', component: IssueDetailPage, title: 'Error · intake-errors' },
+      { path: '', component: IssueListPage, title: 'title.list' satisfies Key },
+      { path: 'issues/:id', component: IssueDetailPage, title: 'title.issue' satisfies Key },
     ],
   },
   { path: '**', redirectTo: '' },

@@ -2,12 +2,15 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { lang } from '../../core/i18n';
+import { spanishLeft } from '../../core/i18n.testing';
 import { LoginPage } from './login';
 
 describe('LoginPage', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
+    lang.set('es');
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
@@ -58,5 +61,43 @@ describe('LoginPage', () => {
     const a = el.querySelector<HTMLAnchorElement>('a.btn--primary');
     expect(a?.getAttribute('href')).toBe('/auth/dev/login');
     expect(el.textContent).toContain('modo de desarrollo');
+  });
+
+  describe('en inglés', () => {
+    beforeEach(() => lang.set('en'));
+
+    it('dice que el login no está configurado y enumera lo que falta', async () => {
+      const el = await render({ user: null, methods: [] });
+      expect(el.querySelector('.login__off-title')?.textContent).toBe('Sign-in is not configured');
+      expect(el.querySelector('.login__off-text')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'The server is missing GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_ORG, and SESSION_SECRET. The API and the MCP still work with tokens.',
+      );
+      expect(el.querySelectorAll('.login__off-text code').length).toBe(4);
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('con GitHub, el botón, la organización y el error', async () => {
+      const el = await render(
+        { user: null, methods: ['github', 'dev'], org: 'example-org' },
+        { error: 'org' },
+      );
+      expect(el.querySelector('.login__lede')?.textContent?.trim()).toBe(
+        'Sign in with your GitHub account in example-org.',
+      );
+      expect(el.querySelector('.login__lede strong')?.textContent).toBe('example-org');
+      expect(el.querySelector('a.btn--primary')?.textContent?.trim()).toBe('Sign in with GitHub');
+      expect(el.querySelector('[role=alert]')?.textContent).toContain('not an active member');
+      expect(el.textContent).toContain('Sign in as dev');
+      expect(el.textContent).toContain('Development mode lets you in without GitHub');
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('en español, la lista de variables lleva «y»', async () => {
+      lang.set('es');
+      const el = await render({ user: null, methods: [] });
+      expect(el.querySelector('.login__off-text')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'Faltan GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_ORG y SESSION_SECRET en el servidor. La API y el MCP con tokens siguen funcionando.',
+      );
+    });
   });
 });

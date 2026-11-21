@@ -9,7 +9,6 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { Title } from '@angular/platform-browser';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom, type Subscription } from 'rxjs';
 import {
@@ -22,6 +21,8 @@ import {
 } from '../../core/api';
 import { copyText } from '../../core/clipboard';
 import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
+import { I18n, type Key, plural } from '../../core/i18n';
+import { PageTitle } from '../../core/page-title';
 import { DayChart } from '../../ui/day-chart';
 import { Icon } from '../../ui/icon';
 import { Breadcrumbs } from './breadcrumbs';
@@ -29,23 +30,30 @@ import { Stacktrace } from './stacktrace';
 
 interface Action {
   status: IssueStatus;
-  label: string;
+  label: Key;
   icon: string;
   hint?: string;
 }
 
 interface Fact {
-  label: string;
+  key: Key;
   value: string;
   title?: string;
   mono?: boolean;
 }
 
-const TOP_LABELS: Record<string, string> = {
-  release: 'Releases',
-  environment: 'Entornos',
-  organization_id: 'Espacios',
-  user: 'Usuarios',
+const TOP_LABELS: Record<string, Key> = {
+  release: 'top.release',
+  environment: 'top.environment',
+  organization_id: 'top.organization_id',
+  user: 'top.user',
+};
+
+const STATUS_TOAST: Record<IssueStatus, Key> = {
+  open: 'toast.reopened',
+  resolved: 'toast.resolved',
+  resolved_next: 'toast.resolved_next',
+  silenced: 'toast.silenced',
 };
 
 @Component({
@@ -60,14 +68,18 @@ export class IssueDetailPage {
   readonly id = input.required<string>();
 
   private readonly api = inject(Api);
-  private readonly title = inject(Title);
+  private readonly pageTitle = inject(PageTitle);
+  protected readonly t = inject(I18n).t;
 
   protected readonly statusLabel = STATUS_LABEL;
   protected readonly statusBadge = STATUS_BADGE;
 
   protected readonly detail = signal<IssueDetail | null>(null);
   protected readonly loading = signal(true);
-  protected readonly error = signal('');
+  private readonly failure = signal<unknown>(null);
+  protected readonly error = computed(() =>
+    this.failure() === null ? '' : apiError(this.failure()),
+  );
   protected readonly notFound = signal(false);
 
   protected readonly events = signal<EventSummary[]>([]);
@@ -92,7 +104,7 @@ export class IssueDetailPage {
 
   protected readonly total14 = computed(() => {
     const n = (this.detail()?.daily ?? []).reduce((sum, d) => sum + d.count, 0);
-    return `${count(n)} ${n === 1 ? 'evento' : 'eventos'}`;
+    return plural('events', n);
   });
 
   protected readonly primary = computed<Action | null>(() => {
@@ -101,8 +113,8 @@ export class IssueDetailPage {
       return null;
     }
     return d.status === 'open'
-      ? { status: 'resolved', label: 'Resolver', icon: 'check-circle' }
-      : { status: 'open', label: 'Reabrir', icon: 'arrow-counter-clockwise' };
+      ? { status: 'resolved', label: 'action.resolve', icon: 'check-circle' }
+      : { status: 'open', label: 'action.reopen', icon: 'arrow-counter-clockwise' };
   });
 
   protected readonly secondary = computed<Action[]>(() => {
@@ -112,20 +124,20 @@ export class IssueDetailPage {
     }
     const noRelease = !d.latest_event?.event.release;
     const all: Action[] = [
-      { status: 'resolved', label: 'Resolver', icon: 'check-circle' },
+      { status: 'resolved', label: 'action.resolve', icon: 'check-circle' },
       {
         status: 'resolved_next',
-        label: 'Resolver en la siguiente versión',
+        label: 'action.resolveNext',
         icon: 'rocket-launch',
         hint: noRelease
-          ? 'El último evento no trae release.'
-          : `Vuelve a abrirse si llega con otro release que no sea ${d.latest_event?.event.release}.`,
+          ? this.t('action.hint.noRelease')
+          : this.t('action.hint.next', { release: d.latest_event?.event.release ?? '' }),
       },
       {
         status: 'silenced',
-        label: 'Silenciar',
+        label: 'action.silence',
         icon: 'bell-slash',
-        hint: 'Sigue contando, pero no avisa.',
+        hint: this.t('action.hint.silence'),
       },
     ];
     return all.filter((a) => a.status !== d.status && a.status !== this.primary()?.status);
@@ -143,35 +155,35 @@ export class IssueDetailPage {
     const user = u ? u.email || u.username || u.id || u.ip_address || '' : '';
     const req = e?.request ? [e.request.method, e.request.url].filter(Boolean).join(' ') : '';
     const facts: Fact[] = [
-      { label: 'Proyecto', value: d.project },
-      { label: 'Primera vez', value: ago(d.first_seen), title: fullDate(d.first_seen) },
-      { label: 'Última vez', value: ago(d.last_seen), title: fullDate(d.last_seen) },
-      { label: 'Eventos', value: count(d.count) },
-      { label: 'Release', value: e?.release || '—', mono: !!e?.release },
-      { label: 'Entorno', value: e?.environment || '—' },
+      { key: 'fact.project', value: d.project },
+      { key: 'fact.firstSeen', value: ago(d.first_seen), title: fullDate(d.first_seen) },
+      { key: 'fact.lastSeen', value: ago(d.last_seen), title: fullDate(d.last_seen) },
+      { key: 'fact.events', value: count(d.count) },
+      { key: 'fact.release', value: e?.release || '—', mono: !!e?.release },
+      { key: 'fact.environment', value: e?.environment || '—' },
       {
-        label: 'Espacio',
+        key: 'fact.space',
         value: e?.tags?.['organization_id'] || '—',
         mono: !!e?.tags?.['organization_id'],
       },
-      { label: 'Usuario', value: user || '—' },
-      { label: 'Request', value: req || '—', mono: !!req },
+      { key: 'fact.user', value: user || '—' },
+      { key: 'fact.request', value: req || '—', mono: !!req },
     ];
     if (d.last_regression) {
       facts.splice(3, 0, {
-        label: 'Regresión',
+        key: 'fact.regression',
         value: ago(d.last_regression),
         title: fullDate(d.last_regression),
       });
     }
     if (d.status === 'resolved_next' && d.resolved_in_release) {
-      facts.push({ label: 'Resuelto en', value: d.resolved_in_release, mono: true });
+      facts.push({ key: 'fact.resolvedIn', value: d.resolved_in_release, mono: true });
     }
     if (e?.server_name) {
-      facts.push({ label: 'Servidor', value: e.server_name, mono: true });
+      facts.push({ key: 'fact.server', value: e.server_name, mono: true });
     }
     if (e?.sdk?.name) {
-      facts.push({ label: 'SDK', value: `${e.sdk.name} ${e.sdk.version}`, mono: true });
+      facts.push({ key: 'fact.sdk', value: `${e.sdk.name} ${e.sdk.version}`, mono: true });
     }
     return facts;
   });
@@ -189,7 +201,12 @@ export class IssueDetailPage {
 
   protected readonly eventPosition = computed(() => {
     const n = this.events().length;
-    return n ? `${count(this.index() + 1)} de ${count(n)}${this.eventsMore() ? '+' : ''}` : '';
+    return n
+      ? this.t('detail.position', {
+          i: count(this.index() + 1),
+          n: `${count(n)}${this.eventsMore() ? '+' : ''}`,
+        })
+      : '';
   });
 
   protected readonly eventRows = computed(() =>
@@ -207,6 +224,12 @@ export class IssueDetailPage {
       const id = Number(this.id());
       untracked(() => this.load(id));
     });
+    effect(() => {
+      const d = this.detail();
+      if (d) {
+        this.pageTitle.set(() => this.t('title.issueNamed', { title: d.title }));
+      }
+    });
     inject(DestroyRef).onDestroy(() => {
       for (const s of this.subs) {
         s.unsubscribe();
@@ -223,7 +246,7 @@ export class IssueDetailPage {
       s.unsubscribe();
     }
     this.loading.set(true);
-    this.error.set('');
+    this.failure.set(null);
     this.notFound.set(false);
     this.index.set(0);
     if (!Number.isInteger(id) || id <= 0) {
@@ -237,13 +260,12 @@ export class IssueDetailPage {
           this.detail.set(d);
           this.event.set(d.latest_event);
           this.loading.set(false);
-          this.title.setTitle(`${d.title} · Errores`);
         },
         error: (err) => {
           if (err?.status === 404) {
             this.notFound.set(true);
           } else {
-            this.error.set(apiError(err));
+            this.failure.set(err);
           }
           this.loading.set(false);
         },
@@ -294,9 +316,7 @@ export class IssueDetailPage {
       next: (issue) => {
         this.detail.set({ ...d, ...issue });
         this.busy.set(false);
-        this.notify(
-          status === 'open' ? 'Reabierto' : `Marcado como ${STATUS_LABEL[status].toLowerCase()}`,
-        );
+        this.notify(this.t(STATUS_TOAST[status]));
       },
       error: (err) => {
         this.busy.set(false);
@@ -315,12 +335,12 @@ export class IssueDetailPage {
     copyText(md).then(
       () => {
         this.copied.set(true);
-        this.notify('Copiado: pégalo en Claude');
+        this.notify(this.t('toast.copied'));
         this.later(() => this.copied.set(false), 2000);
       },
       () =>
         md.then(
-          () => this.notify('El navegador no ha dejado copiar.'),
+          () => this.notify(this.t('toast.copyFailed')),
           (err) => this.notify(apiError(err)),
         ),
     );

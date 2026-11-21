@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { clock } from '../../core/format';
+import { I18n } from '../../core/i18n';
 
 export interface Crumb {
   time: string;
@@ -52,7 +53,7 @@ export function parseCrumbs(raw: unknown): Crumb[] {
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     @if (crumbs().length === 0) {
-      <p class="none">Este evento no trae breadcrumbs.</p>
+      <p class="none">{{ t('crumbs.none') }}</p>
     } @else {
       <ol class="crumbs">
         @for (c of crumbs(); track $index) {
@@ -122,5 +123,6 @@ export function parseCrumbs(raw: unknown): Crumb[] {
 })
 export class Breadcrumbs {
   readonly raw = input<unknown>();
+  protected readonly t = inject(I18n).t;
   protected readonly crumbs = computed(() => parseCrumbs(this.raw()));
 }

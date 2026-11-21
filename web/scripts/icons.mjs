@@ -37,6 +37,7 @@ const ICONS = {
     'stack',
     'sun',
     'tag',
+    'translate',
     'user',
     'warning-circle',
     'x',

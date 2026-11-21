@@ -1,6 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import type { DayCount } from '../core/api';
-import { count, day } from '../core/format';
+import { day } from '../core/format';
+import { I18n, plural, t } from '../core/i18n';
 
 /**
  * Los eventos por día del detalle, en barras compactas: grises,
@@ -20,7 +21,7 @@ import { count, day } from '../core/format';
     </div>
     <div class="axis" aria-hidden="true">
       <span>{{ first() }}</span>
-      <span>Hoy</span>
+      <span>{{ t('chart.today') }}</span>
     </div>
   `,
   styles: `
@@ -106,6 +107,7 @@ import { count, day } from '../core/format';
 })
 export class DayChart {
   readonly days = input<DayCount[]>([]);
+  protected readonly t = inject(I18n).t;
 
   protected readonly bars = computed(() => {
     const days = this.days();
@@ -116,8 +118,8 @@ export class DayChart {
       // Hoy sin eventos se ve igual, abierto y bajo, para que se note que el día sigue.
       height: d.count === 0 ? (i === days.length - 1 ? '6px' : '0') : `${(d.count / max) * 100}%`,
       today: i === days.length - 1,
-      label: i === days.length - 1 ? 'Hoy' : day(d.date),
-      text: `${count(d.count)} ${d.count === 1 ? 'evento' : 'eventos'}`,
+      label: i === days.length - 1 ? t('chart.today') : day(d.date),
+      text: plural('events', d.count),
     }));
   });
 
@@ -128,6 +130,6 @@ export class DayChart {
 
   protected readonly label = computed(() => {
     const total = this.days().reduce((sum, d) => sum + d.count, 0);
-    return `${count(total)} eventos en los últimos 14 días`;
+    return plural('chart.last14', total);
   });
 }

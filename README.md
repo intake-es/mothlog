@@ -39,6 +39,8 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 
 El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, y el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos y «Copiar para Claude», que copia el `stacktrace.md`. Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
 
+La interfaz está en español y en inglés: empieza en español si el idioma del navegador empieza por `es` y en inglés en el resto, y se cambia desde el raíl, junto al tema, sin recargar; la elección se guarda en el navegador. Los textos están en `web/src/app/core/i18n/` (`es.ts` y `en.ts`, con las mismas claves); lo que viene del servidor, como los mensajes de error de la API o el Markdown de `stacktrace.md`, no se traduce.
+
 ```sh
 cd web && npm ci && npm run build   # deja la app en internal/ui/dist/app; luego go build
 npm run lint && npm test            # Biome y Vitest

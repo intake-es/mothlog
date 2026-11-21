@@ -1,14 +1,17 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { around, I18n, type Key, locale } from '../../core/i18n';
 import { Session } from '../../core/session';
 import { Icon } from '../../ui/icon';
 
-const ERRORS: Record<string, string> = {
-  org: 'Tu cuenta de GitHub no es miembro activo de la organización. Pide acceso a quien la administra.',
-  state: 'El intento de entrar caducó o no venía de aquí. Vuelve a probar.',
-  denied: 'Has cancelado el acceso en GitHub.',
-  github: 'GitHub no ha respondido como se esperaba. Vuelve a probar en un momento.',
-  config: 'El login con GitHub no está configurado en este servidor.',
+const ERRORS: Record<string, Key> = {
+  org: 'login.error.org',
+  state: 'login.error.state',
+  denied: 'login.error.denied',
+  github: 'login.error.github',
+  config: 'login.error.config',
 };
+
+const SERVER_VARS = ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_ORG', 'SESSION_SECRET'];
 
 @Component({
   selector: 'app-login',
@@ -22,6 +25,7 @@ export class LoginPage {
   readonly next = input<string>();
 
   private readonly session = inject(Session);
+  protected readonly t = inject(I18n).t;
 
   protected readonly info = this.session.info;
   protected readonly loaded = computed(() => this.info() !== null);
@@ -30,8 +34,14 @@ export class LoginPage {
   protected readonly configured = computed(() => this.github() || this.dev());
   protected readonly message = computed(() => {
     const e = this.error();
-    return e ? (ERRORS[e] ?? 'No se ha podido entrar. Vuelve a probar.') : '';
+    return e ? this.t(ERRORS[e] ?? 'login.error.other') : '';
   });
+  protected readonly orgLede = computed(() => around('login.lede.github', 'org'));
+  /** Las variables que faltan, en <code> y unidas como se enumera en cada idioma. */
+  protected readonly missing = computed(() => ({
+    ...around('login.off.text', 'vars'),
+    vars: new Intl.ListFormat(locale(), { type: 'conjunction' }).formatToParts(SERVER_VARS),
+  }));
 
   constructor() {
     void this.session.load();

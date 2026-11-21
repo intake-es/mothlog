@@ -1,9 +1,9 @@
 <header class="titlebar">
-  <a class="icon-btn" routerLink="/" aria-label="Volver a la lista">
+  <a class="icon-btn" routerLink="/" [attr.aria-label]="t('detail.back')">
     <svg appIcon="arrow-left"></svg>
   </a>
   <h1 class="titlebar__title crumbs">
-    <a routerLink="/" class="crumbs__root">Errores</a>
+    <a routerLink="/" class="crumbs__root">{{ t('list.title') }}</a>
     <span class="crumbs__sep" aria-hidden="true">/</span>
     <span class="tnum">#{{ id() }}</span>
   </h1>
@@ -12,19 +12,19 @@
     <div class="titlebar__actions">
       <button type="button" class="btn" (click)="copyForClaude()">
         <svg [appIcon]="copied() ? 'check' : 'copy'"></svg>
-        {{ copied() ? 'Copiado' : 'Copiar para Claude' }}
+        {{ copied() ? t('detail.copied') : t('detail.copy') }}
       </button>
       @if (primary(); as p) {
         <button type="button" class="btn btn--primary" [disabled]="busy()" (click)="setStatus(p.status)">
           <svg [appIcon]="p.icon"></svg>
-          {{ p.label }}
+          {{ t(p.label) }}
         </button>
       }
       <div class="more">
         <button
           type="button"
           class="btn btn--square"
-          aria-label="Más acciones"
+          [attr.aria-label]="t('detail.more')"
           aria-haspopup="menu"
           [attr.aria-expanded]="menuOpen()"
           [disabled]="busy()"
@@ -34,7 +34,7 @@
         </button>
         @if (menuOpen()) {
           <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menuOpen.set(false)"></button>
-          <div class="menu more__menu" role="menu" aria-label="Cambiar el estado">
+          <div class="menu more__menu" role="menu" [attr.aria-label]="t('detail.statusMenu')">
             @for (a of secondary(); track a.status) {
               <button
                 type="button"
@@ -45,7 +45,7 @@
               >
                 <svg [appIcon]="a.icon"></svg>
                 <span>
-                  {{ a.label }}
+                  {{ t(a.label) }}
                   @if (a.hint) {
                     <small>{{ a.hint }}</small>
                   }
@@ -61,7 +61,7 @@
 
 <div class="content">
   @if (loading()) {
-    <div class="pad" aria-busy="true" aria-label="Cargando el error">
+    <div class="pad" aria-busy="true" [attr.aria-label]="t('detail.loading')">
       <span class="sp-skeleton" style="width: 6rem; height: 1.2rem; border-radius: 999px"></span>
       <span class="sp-skeleton" style="width: 60%; height: 1.1rem; margin-top: 1rem"></span>
       <span class="sp-skeleton" style="width: 35%; height: 0.8rem; margin-top: 0.6rem"></span>
@@ -70,23 +70,23 @@
   } @else if (notFound()) {
     <div class="state">
       <svg appIcon="magnifying-glass" weight="duotone"></svg>
-      <p class="state__title">Este error no existe</p>
-      <p class="state__text">Puede que se borrara al pasar los días de retención sin eventos nuevos.</p>
-      <a class="btn" routerLink="/">Ver la lista</a>
+      <p class="state__title">{{ t('detail.notFound.title') }}</p>
+      <p class="state__text">{{ t('detail.notFound.text') }}</p>
+      <a class="btn" routerLink="/">{{ t('detail.notFound.back') }}</a>
     </div>
   } @else if (error()) {
     <div class="state state--error" role="alert">
       <svg appIcon="warning-circle" weight="duotone"></svg>
-      <p class="state__title">No se ha podido cargar el error</p>
+      <p class="state__title">{{ t('detail.error') }}</p>
       <p class="state__text">{{ error() }}</p>
-      <button type="button" class="btn" (click)="retry()">Reintentar</button>
+      <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
     </div>
   } @else if (detail(); as d) {
     <section class="head">
       <div class="head__badges">
-        <span class="sp-badge" [class]="statusBadge[d.status]">{{ statusLabel[d.status] }}</span>
+        <span class="sp-badge" [class]="statusBadge[d.status]">{{ t(statusLabel[d.status]) }}</span>
         @if (d.status === 'open' && d.last_regression) {
-          <span class="sp-badge sp-badge--yellow">Regresión</span>
+          <span class="sp-badge sp-badge--yellow">{{ t('issue.regression') }}</span>
         }
         @if (d.level && d.level !== 'error') {
           <span class="sp-badge sp-badge--gray">{{ d.level }}</span>
@@ -107,7 +107,7 @@
       <div class="main">
         <section class="block">
           <div class="block__head">
-            <h3 class="block__title">Últimos 14 días</h3>
+            <h3 class="block__title">{{ t('detail.last14') }}</h3>
             <span class="block__aside tnum">{{ total14() }}</span>
           </div>
           <app-day-chart [days]="d.daily" />
@@ -116,7 +116,7 @@
         <section class="block">
           <div class="block__head block__head--event">
             <h3 class="block__title">
-              Evento
+              {{ t('detail.event') }}
               @if (event(); as ev) {
                 <span class="block__aside tnum" [attr.title]="ev.event_id">{{ ev.event_id.slice(0, 8) }}</span>
               }
@@ -125,11 +125,11 @@
               <div class="pager">
                 <button type="button" class="btn btn--ghost pager__btn" [disabled]="index() >= events().length - 1" (click)="select(index() + 1)">
                   <svg appIcon="caret-left"></svg>
-                  Anterior
+                  {{ t('detail.prev') }}
                 </button>
                 <span class="pager__pos tnum">{{ eventPosition() }}</span>
                 <button type="button" class="btn btn--ghost pager__btn" [disabled]="index() === 0" (click)="select(index() - 1)">
-                  Siguiente
+                  {{ t('detail.next') }}
                   <svg appIcon="caret-right"></svg>
                 </button>
               </div>
@@ -147,23 +147,23 @@
           @if (event(); as ev) {
             @if (ev.event.exceptions?.length) {
               <section class="block">
-                <h3 class="block__title block__title--gap">Excepción</h3>
+                <h3 class="block__title block__title--gap">{{ t('detail.exception') }}</h3>
                 <app-stacktrace [exceptions]="ev.event.exceptions!" />
               </section>
             }
             @if (ev.event.message) {
               <section class="block">
-                <h3 class="block__title block__title--gap">Mensaje</h3>
+                <h3 class="block__title block__title--gap">{{ t('detail.message') }}</h3>
                 <pre class="message">{{ ev.event.message }}</pre>
               </section>
             }
             <section class="block">
-              <h3 class="block__title block__title--gap">Breadcrumbs</h3>
+              <h3 class="block__title block__title--gap">{{ t('detail.breadcrumbs') }}</h3>
               <app-breadcrumbs [raw]="ev.event.breadcrumbs" />
             </section>
           } @else {
             <section class="block">
-              <p class="muted">Este error no tiene eventos guardados.</p>
+              <p class="muted">{{ t('detail.noEvents') }}</p>
             </section>
           }
         </div>
@@ -171,7 +171,7 @@
         @if (events().length > 0) {
           <section class="block">
             <div class="block__head">
-              <h3 class="block__title">Eventos</h3>
+              <h3 class="block__title">{{ t('detail.events') }}</h3>
               <span class="block__aside tnum">{{ count(d.count) }}</span>
             </div>
             <ol class="events">
@@ -201,11 +201,11 @@
 
       <aside class="side">
         <section class="side__block">
-          <h3 class="block__title block__title--gap">Datos</h3>
+          <h3 class="block__title block__title--gap">{{ t('detail.facts') }}</h3>
           <dl class="facts">
-            @for (f of facts(); track f.label) {
+            @for (f of facts(); track f.key) {
               <div class="fact">
-                <dt>{{ f.label }}</dt>
+                <dt>{{ t(f.key) }}</dt>
                 <dd [class.mono]="f.mono" [attr.title]="f.title || f.value">{{ f.value }}</dd>
               </div>
             }
@@ -214,11 +214,11 @@
 
         @if (top().length) {
           <section class="side__block">
-            <h3 class="block__title block__title--gap">Más frecuentes</h3>
-            @for (t of top(); track t.key) {
+            <h3 class="block__title block__title--gap">{{ t('detail.top') }}</h3>
+            @for (group of top(); track group.key) {
               <div class="top">
-                <p class="top__label">{{ t.label }}</p>
-                @for (v of t.values; track v.value) {
+                <p class="top__label">{{ t(group.label) }}</p>
+                @for (v of group.values; track v.value) {
                   <div class="top__row">
                     <span class="top__value" [attr.title]="v.value">{{ v.value }}</span>
                     <span class="top__count tnum">{{ count(v.count) }}</span>
@@ -230,15 +230,15 @@
         }
 
         <section class="side__block">
-          <h3 class="block__title block__title--gap">Etiquetas</h3>
+          <h3 class="block__title block__title--gap">{{ t('detail.tags') }}</h3>
           @if (tags().length) {
             <ul class="tags">
-              @for (t of tags(); track t[0]) {
-                <li class="tag"><span class="tag__k">{{ t[0] }}</span><span class="tag__v">{{ t[1] }}</span></li>
+              @for (tag of tags(); track tag[0]) {
+                <li class="tag"><span class="tag__k">{{ tag[0] }}</span><span class="tag__v">{{ tag[1] }}</span></li>
               }
             </ul>
           } @else {
-            <p class="muted">Sin etiquetas.</p>
+            <p class="muted">{{ t('detail.noTags') }}</p>
           }
         </section>
       </aside>

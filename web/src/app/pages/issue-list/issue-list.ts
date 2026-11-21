@@ -22,24 +22,25 @@ import {
   type StatusFilter,
 } from '../../core/api';
 import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
+import { I18n, type Key, plural } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
 import { Pick, type PickOption } from '../../ui/pick';
 import { Sparkline } from '../../ui/sparkline';
 
 const PAGE = 50;
 
-const STATUS_OPTIONS: PickOption[] = [
-  { value: 'open', label: 'Abiertos' },
-  { value: 'resolved', label: 'Resueltos' },
-  { value: 'resolved_next', label: 'En la siguiente versión' },
-  { value: 'silenced', label: 'Silenciados' },
-  { value: 'all', label: 'Todos los estados' },
+const STATUS_OPTIONS: { value: StatusFilter; label: Key }[] = [
+  { value: 'open', label: 'filter.open' },
+  { value: 'resolved', label: 'filter.resolved' },
+  { value: 'resolved_next', label: 'filter.resolved_next' },
+  { value: 'silenced', label: 'filter.silenced' },
+  { value: 'all', label: 'filter.all' },
 ];
 
-const SORT_OPTIONS: PickOption[] = [
-  { value: 'last_seen', label: 'Última vez' },
-  { value: 'first_seen', label: 'Primera vez' },
-  { value: 'count', label: 'Eventos' },
+const SORT_OPTIONS: { value: IssueSort; label: Key }[] = [
+  { value: 'last_seen', label: 'sort.last_seen' },
+  { value: 'first_seen', label: 'sort.first_seen' },
+  { value: 'count', label: 'sort.count' },
 ];
 
 interface Row {
@@ -51,6 +52,7 @@ interface Row {
   first: string;
   firstTitle: string;
   count: string;
+  unit: string;
   regression: boolean;
 }
 
@@ -71,8 +73,13 @@ export class IssueListPage {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
 
-  protected readonly statusOptions = STATUS_OPTIONS;
-  protected readonly sortOptions = SORT_OPTIONS;
+  protected readonly t = inject(I18n).t;
+  protected readonly statusOptions = computed<PickOption[]>(() =>
+    STATUS_OPTIONS.map((o) => ({ value: o.value, label: this.t(o.label) })),
+  );
+  protected readonly sortOptions = computed<PickOption[]>(() =>
+    SORT_OPTIONS.map((o) => ({ value: o.value, label: this.t(o.label) })),
+  );
   protected readonly statusLabel = STATUS_LABEL;
   protected readonly statusBadge = STATUS_BADGE;
 
@@ -81,7 +88,11 @@ export class IssueListPage {
   protected readonly nextCursor = signal<string | undefined>(undefined);
   protected readonly loading = signal(true);
   protected readonly loadingMore = signal(false);
-  protected readonly error = signal('');
+  /** El fallo tal cual, para escribir su mensaje en el idioma de cada momento. */
+  private readonly failure = signal<unknown>(null);
+  protected readonly error = computed(() =>
+    this.failure() === null ? '' : apiError(this.failure()),
+  );
 
   protected readonly searchOpen = signal(false);
   protected readonly searchText = signal('');
@@ -96,7 +107,7 @@ export class IssueListPage {
     return SORT_OPTIONS.some((o) => o.value === s) ? (s as IssueSort) : 'last_seen';
   });
   protected readonly projectOptions = computed<PickOption[]>(() => [
-    { value: '', label: 'Todos los proyectos' },
+    { value: '', label: this.t('list.allProjects') },
     ...this.projects().map((p) => ({ value: p.name, label: p.name })),
   ]);
   protected readonly filtered = computed(
@@ -119,14 +130,15 @@ export class IssueListPage {
         type,
         message,
         seen: ago(issue.last_seen, now),
-        seenTitle: `Última vez: ${fullDate(issue.last_seen)}`,
+        seenTitle: this.t('list.lastSeenAt', { date: fullDate(issue.last_seen) }),
         // La primera vez solo si no es la misma que la última: «hace 1 h · hace 1 h» no dice nada.
         first:
           Math.abs(Date.parse(issue.last_seen) - Date.parse(issue.first_seen)) >= 60_000
-            ? `1.ª vez ${ago(issue.first_seen, now)}`
+            ? this.t('list.firstAgo', { ago: ago(issue.first_seen, now) })
             : '',
-        firstTitle: `Primera vez: ${fullDate(issue.first_seen)}`,
+        firstTitle: this.t('list.firstSeenAt', { date: fullDate(issue.first_seen) }),
         count: count(issue.count),
+        unit: plural('list.unit', issue.count),
         regression: issue.status === 'open' && !!issue.last_regression,
       };
     });
@@ -175,7 +187,7 @@ export class IssueListPage {
   private load(params: ReturnType<IssueListPage['params']>): void {
     this.sub?.unsubscribe();
     this.loading.set(true);
-    this.error.set('');
+    this.failure.set(null);
     this.sub = this.api.issues({ ...params, limit: PAGE }).subscribe({
       next: (page) => {
         this.issues.set(page.data);
@@ -183,7 +195,7 @@ export class IssueListPage {
         this.loading.set(false);
       },
       error: (err) => {
-        this.error.set(apiError(err));
+        this.failure.set(err);
         this.loading.set(false);
       },
     });
@@ -206,7 +218,7 @@ export class IssueListPage {
         this.loadingMore.set(false);
       },
       error: (err) => {
-        this.error.set(apiError(err));
+        this.failure.set(err);
         this.loadingMore.set(false);
       },
     });

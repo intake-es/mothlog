@@ -1,6 +1,7 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import type { ExceptionValue, Frame } from '../../core/api';
+import { I18n, t } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
 
 export interface CodeLine {
@@ -50,7 +51,7 @@ export function codeLines(f: Frame): CodeLine[] {
 }
 
 function frameView(f: Frame, key: string, inApp: boolean): FrameView {
-  const file = f.filename || f.abs_path || f.module || '(fichero desconocido)';
+  const file = f.filename || f.abs_path || f.module || t('stack.unknownFile');
   const pos = [f.lineno, f.colno].filter((n) => n !== undefined && n !== null).join(':');
   return {
     key,
@@ -126,6 +127,9 @@ export function exceptionViews(excs: ExceptionValue[]): ExceptionView[] {
 })
 export class Stacktrace {
   readonly exceptions = input.required<ExceptionValue[]>();
+
+  protected readonly t = inject(I18n).t;
+  protected readonly plural = inject(I18n).plural;
 
   protected readonly views = computed(() => exceptionViews(this.exceptions()));
 

@@ -1,6 +1,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type { Observable } from 'rxjs';
+import { t } from './i18n';
 
 export type IssueStatus = 'open' | 'resolved' | 'resolved_next' | 'silenced';
 export type StatusFilter = IssueStatus | 'all';
@@ -169,7 +170,7 @@ export class Api {
   }
 }
 
-/** El mensaje de un error de la API, que responde {"error": "..."}. */
+/** El mensaje de un error de la API, que responde {"error": "..."} y se pinta tal cual. */
 export function apiError(err: unknown): string {
   const e = err as { status?: number; error?: { error?: string } | string };
   if (e?.error && typeof e.error === 'object' && e.error.error) {
@@ -187,7 +188,7 @@ export function apiError(err: unknown): string {
     }
   }
   if (e?.status === 0) {
-    return 'No hay conexión con el servidor.';
+    return t('api.offline');
   }
-  return 'Algo ha fallado en el servidor.';
+  return t('api.failed');
 }

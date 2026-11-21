@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import type { ExceptionValue, Frame } from '../../core/api';
-import { parseCrumbs } from './breadcrumbs';
+import { lang } from '../../core/i18n';
+import { spanishLeft } from '../../core/i18n.testing';
+import { Breadcrumbs, parseCrumbs } from './breadcrumbs';
 import { codeLines, exceptionViews, groupFrames, isOwn, Stacktrace } from './stacktrace';
 
 const lib = (fn: string): Frame => ({
@@ -33,6 +35,8 @@ const caller: Frame = {
 };
 
 describe('stacktrace', () => {
+  beforeEach(() => lang.set('es'));
+
   it('numera las líneas desde el contexto y marca la del error', () => {
     expect(codeLines(app)).toEqual([
       { n: 5, text: 'function contarUnidades(pedido: Pedido): number {', error: false },
@@ -148,5 +152,42 @@ describe('breadcrumbs', () => {
     });
     expect(parseCrumbs({ values: [] })).toEqual([]);
     expect(parseCrumbs(undefined)).toEqual([]);
+  });
+});
+
+describe('stacktrace y breadcrumbs en inglés', () => {
+  beforeEach(() => lang.set('en'));
+  afterEach(() => lang.set('es'));
+
+  it('marcas, librerías, minificado y la región del código', () => {
+    const fixture = TestBed.createComponent(Stacktrace);
+    fixture.componentRef.setInput('exceptions', [
+      { type: 'Error', value: 'outer', mechanism: { handled: true }, frames: [] },
+      {
+        type: 'TypeError',
+        value: 'x',
+        mechanism: { type: 'generic', handled: false },
+        frames: [lib('a'), lib('b'), lib('c'), { function: 'f', in_app: true }, app],
+      },
+    ] satisfies ExceptionValue[]);
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('.exc__mech')?.textContent).toContain('Unhandled');
+    expect(el.querySelectorAll('.exc__mech')[1]?.textContent).toContain('Handled');
+    expect(el.querySelector('.exc__caused')?.textContent).toBe('Caused by');
+    expect(el.querySelector('.exc__empty')?.textContent).toBe('No frames.');
+    expect(el.querySelector('.libs__toggle')?.textContent).toContain('3 library frames');
+    expect(el.querySelector('.frame__in')?.textContent).toBe('in');
+    expect(el.querySelector('.frame__min')?.textContent).toBe('Minified: chunk-Z554BZQ6.js:1:383');
+    expect(el.querySelector('.code')?.getAttribute('aria-label')).toBe('Code of src/carrito.ts');
+    expect(el.textContent).toContain('(unknown file)');
+    expect(spanishLeft(el)).toEqual([]);
+  });
+
+  it('sin breadcrumbs lo dice en inglés', () => {
+    const fixture = TestBed.createComponent(Breadcrumbs);
+    fixture.componentRef.setInput('raw', []);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent.trim()).toBe('This event has no breadcrumbs.');
   });
 });

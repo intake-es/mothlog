@@ -1,6 +1,9 @@
 import { ago, day, splitTitle } from './format';
+import { lang } from './i18n';
 
 describe('format', () => {
+  beforeEach(() => lang.set('es'));
+
   const now = Date.parse('2026-11-19T12:00:00Z');
 
   it('dice hace cuánto', () => {

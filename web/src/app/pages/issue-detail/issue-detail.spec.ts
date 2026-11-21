@@ -3,6 +3,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { IssueDetail, StoredEvent } from '../../core/api';
+import { I18n, lang } from '../../core/i18n';
+import { spanishLeft } from '../../core/i18n.testing';
 import { IssueDetailPage } from './issue-detail';
 
 const stored = (id: number, release: string, line: number): StoredEvent => ({
@@ -89,6 +91,7 @@ describe('IssueDetailPage', () => {
   let http: HttpTestingController;
 
   beforeEach(() => {
+    lang.set('es');
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
@@ -291,5 +294,123 @@ describe('IssueDetailPage', () => {
     expect(fixture.nativeElement.querySelector('.state__title')?.textContent).toBe(
       'Este error no existe',
     );
+  });
+
+  describe('en inglés', () => {
+    const factsOf = (el: HTMLElement) =>
+      Object.fromEntries(
+        Array.from(el.querySelectorAll('.fact')).map((f) => [
+          f.querySelector('dt')?.textContent,
+          f.querySelector('dd')?.textContent,
+        ]),
+      );
+
+    it('pinta la cabecera, los bloques, los datos y el menú en inglés', async () => {
+      lang.set('en');
+      const fixture = await render(detail({ last_regression: new Date().toISOString() }));
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.crumbs__root')?.textContent).toBe('Errors');
+      expect(el.querySelector('[aria-label="Back to the list"]')).not.toBeNull();
+      expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Open');
+      expect(el.querySelector('.head .sp-badge--yellow')?.textContent).toBe('Regression');
+      expect(el.querySelector('.btn--primary')?.textContent?.trim()).toBe('Resolve');
+      const titles = Array.from(el.querySelectorAll('.block__title')).map((h) =>
+        h.childNodes[0]?.textContent?.trim(),
+      );
+      expect(titles).toEqual([
+        'Last 14 days',
+        'Event',
+        'Exception',
+        'Breadcrumbs',
+        'Events',
+        'Details',
+        'Most frequent',
+        'Tags',
+      ]);
+      expect(el.querySelector('.block__aside')?.textContent).toBe('2 events');
+      expect(el.querySelector('.pager__pos')?.textContent).toBe('1 of 2');
+      expect(el.querySelector('.libs__toggle')?.textContent).toContain('1 library frame');
+      expect(el.querySelector('.top__label')?.textContent).toBe('Releases');
+      expect(el.querySelector('app-day-chart .axis')?.textContent).toContain('Today');
+      const facts = factsOf(el);
+      expect(Object.keys(facts)).toEqual([
+        'Project',
+        'First seen',
+        'Last seen',
+        'Regression',
+        'Events',
+        'Release',
+        'Environment',
+        'Workspace',
+        'User',
+        'Request',
+        'SDK',
+      ]);
+      expect(facts['First seen']).toBe('yesterday');
+      expect(facts['Environment']).toBe('production');
+
+      el.querySelector<HTMLButtonElement>('[aria-label="More actions"]')?.click();
+      fixture.detectChanges();
+      const items = Array.from(el.querySelectorAll<HTMLButtonElement>('.more__item'));
+      expect(items[0].textContent).toContain('Resolve in the next release');
+      expect(items[0].textContent).toContain(
+        'Reopens if it comes back with any release other than fixture-release-1.',
+      );
+      expect(items[1].textContent).toContain('Silence');
+      expect(items[1].textContent).toContain('Keeps counting, but doesn’t alert.');
+      expect(el.querySelector('[role=menu]')?.getAttribute('aria-label')).toBe('Change status');
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('el aviso al cambiar de estado y el botón de copiar, en inglés', async () => {
+      lang.set('en');
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      const fixture = await render();
+      const el: HTMLElement = fixture.nativeElement;
+      el.querySelector<HTMLButtonElement>('.btn--primary')?.click();
+      http.expectOne('/api/0/issues/5/status').flush({ ...detail(), status: 'silenced' });
+      await fixture.whenStable();
+      expect(el.querySelector('.toast')?.textContent).toBe('Marked as resolved');
+      expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Silenced');
+      expect(el.querySelector('.btn--primary')?.textContent?.trim()).toBe('Reopen');
+
+      const copy = Array.from(el.querySelectorAll<HTMLButtonElement>('.titlebar .btn')).find((b) =>
+        b.textContent?.includes('Copy for Claude'),
+      );
+      copy?.click();
+      http.expectOne('/api/0/issues/5/stacktrace.md').flush('# md');
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+      expect(copy?.textContent?.trim()).toBe('Copied');
+      expect(el.querySelector('.toast')?.textContent).toBe('Copied: paste it into Claude');
+    });
+
+    it('un id que no existe, en inglés', async () => {
+      lang.set('en');
+      const fixture = TestBed.createComponent(IssueDetailPage);
+      fixture.componentRef.setInput('id', 'x');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.state__title')?.textContent).toBe('This error doesn’t exist');
+      expect(el.querySelector('.state .btn')?.textContent).toBe('Go to the list');
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('cambia de idioma sin recargar el error', async () => {
+      const fixture = await render();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(factsOf(el)['Proyecto']).toBe('front');
+      TestBed.inject(I18n).set('en');
+      await fixture.whenStable();
+      expect(factsOf(el)['Project']).toBe('front');
+      expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Open');
+      expect(el.querySelector('.pager__pos')?.textContent).toBe('1 of 2');
+      expect(spanishLeft(el)).toEqual([]);
+      TestBed.inject(I18n).set('es');
+      await fixture.whenStable();
+      expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Abierto');
+    });
   });
 });

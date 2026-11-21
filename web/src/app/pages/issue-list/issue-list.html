@@ -1,6 +1,6 @@
 <header class="titlebar">
   <h1 class="titlebar__title">
-    Errores
+    {{ t('list.title') }}
     @if (title(); as n) {
       <span class="titlebar__count">({{ n }})</span>
     }
@@ -9,7 +9,7 @@
   <div class="titlebar__actions">
     <app-pick
       icon="squares-four"
-      label="Proyecto"
+      [label]="t('list.project')"
       [options]="projectOptions()"
       [value]="project() ?? ''"
       [highlight]="!!project()"
@@ -17,39 +17,39 @@
     />
     <app-pick
       icon="circle-dashed"
-      label="Estado"
-      [options]="statusOptions"
+      [label]="t('list.status')"
+      [options]="statusOptions()"
       [value]="statusValue()"
       [highlight]="statusValue() !== 'open'"
       (changed)="setFilter('status', $event)"
     />
     <app-pick
       icon="sort-descending"
-      label="Orden"
+      [label]="t('list.sort')"
       align="end"
-      [options]="sortOptions"
+      [options]="sortOptions()"
       [value]="sortValue()"
       (changed)="setFilter('sort', $event)"
     />
     @if (searchOpen()) {
       <label class="search">
         <svg appIcon="magnifying-glass"></svg>
-        <span class="visually-hidden">Buscar en el título y el culprit</span>
+        <span class="visually-hidden">{{ t('list.search') }}</span>
         <input
           #search
           type="search"
-          placeholder="Buscar en el título y el culprit"
+          [placeholder]="t('list.search')"
           autocomplete="off"
           [value]="searchText()"
           (input)="onSearch($any($event.target).value)"
           (keydown.escape)="closeSearch()"
         />
-        <button type="button" class="search__clear" aria-label="Cerrar la búsqueda" (click)="closeSearch()">
+        <button type="button" class="search__clear" [attr.aria-label]="t('list.closeSearch')" (click)="closeSearch()">
           <svg appIcon="x"></svg>
         </button>
       </label>
     } @else {
-      <button type="button" class="btn btn--square" aria-label="Buscar" (click)="openSearch()">
+      <button type="button" class="btn btn--square" [attr.aria-label]="t('list.openSearch')" (click)="openSearch()">
         <svg appIcon="magnifying-glass"></svg>
       </button>
     }
@@ -58,7 +58,7 @@
 
 <div class="content">
   @if (loading()) {
-    <div class="skeleton" aria-busy="true" aria-label="Cargando errores">
+    <div class="skeleton" aria-busy="true" [attr.aria-label]="t('list.loading')">
       @for (i of [1, 2, 3, 4, 5, 6]; track i) {
         <div class="skeleton__row">
           <span class="sp-skeleton" style="width: 46%; height: 0.8rem"></span>
@@ -69,30 +69,30 @@
   } @else if (error()) {
     <div class="state state--error" role="alert">
       <svg appIcon="warning-circle" weight="duotone"></svg>
-      <p class="state__title">No se han podido cargar los errores</p>
+      <p class="state__title">{{ t('list.error') }}</p>
       <p class="state__text">{{ error() }}</p>
-      <button type="button" class="btn" (click)="retry()">Reintentar</button>
+      <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
     </div>
   } @else if (rows().length === 0) {
     <div class="state">
       @if (filtered()) {
         <svg appIcon="magnifying-glass" weight="duotone"></svg>
-        <p class="state__title">Ningún error con estos filtros</p>
-        <p class="state__text">Prueba con otro proyecto, otro estado u otra búsqueda.</p>
-        <button type="button" class="btn" (click)="clearFilters()">Quitar los filtros</button>
+        <p class="state__title">{{ t('list.noMatch.title') }}</p>
+        <p class="state__text">{{ t('list.noMatch.text') }}</p>
+        <button type="button" class="btn" (click)="clearFilters()">{{ t('list.clearFilters') }}</button>
       } @else {
         <svg appIcon="check-circle" weight="duotone"></svg>
-        <p class="state__title">No hay errores abiertos</p>
-        <p class="state__text">Cuando una aplicación mande un error nuevo, aparecerá aquí.</p>
+        <p class="state__title">{{ t('list.empty.title') }}</p>
+        <p class="state__text">{{ t('list.empty.text') }}</p>
       }
     </div>
   } @else {
     <div class="list" role="list">
       <div class="list__head" aria-hidden="true">
-        <span>Error</span>
-        <span class="list__spark">14 días</span>
-        <span class="list__num">Eventos</span>
-        <span class="list__num">Visto</span>
+        <span>{{ t('list.col.error') }}</span>
+        <span class="list__spark">{{ t('list.col.days') }}</span>
+        <span class="list__num">{{ t('list.col.events') }}</span>
+        <span class="list__num">{{ t('list.col.seen') }}</span>
       </div>
       @for (row of rows(); track row.issue.id) {
         <a class="row" role="listitem" [routerLink]="['/issues', row.issue.id]">
@@ -105,10 +105,10 @@
             </div>
             <div class="row__meta">
               @if (row.regression) {
-                <span class="sp-badge sp-badge--sm sp-badge--yellow">Regresión</span>
+                <span class="sp-badge sp-badge--sm sp-badge--yellow">{{ t('issue.regression') }}</span>
               }
               @if (row.issue.status !== 'open') {
-                <span class="sp-badge sp-badge--sm" [class]="statusBadge[row.issue.status]">{{ statusLabel[row.issue.status] }}</span>
+                <span class="sp-badge sp-badge--sm" [class]="statusBadge[row.issue.status]">{{ t(statusLabel[row.issue.status]) }}</span>
               }
               @if (row.issue.culprit) {
                 <span class="row__culprit">{{ row.issue.culprit }}</span>
@@ -120,7 +120,7 @@
             </div>
           </div>
           <app-sparkline class="row__spark" [days]="row.issue.daily" />
-          <div class="row__count tnum">{{ row.count }}<span class="row__unit"> {{ row.issue.count === 1 ? 'evento' : 'eventos' }}</span></div>
+          <div class="row__count tnum">{{ row.count }}<span class="row__unit"> {{ row.unit }}</span></div>
           <div class="row__seen tnum">
             <time [attr.datetime]="row.issue.last_seen" [attr.title]="row.seenTitle">{{ row.seen }}</time>
             @if (row.first) {
@@ -133,7 +133,7 @@
     @if (nextCursor()) {
       <div class="more">
         <button type="button" class="btn" [disabled]="loadingMore()" (click)="more()">
-          {{ loadingMore() ? 'Cargando…' : 'Cargar más' }}
+          {{ loadingMore() ? t('list.loadingMore') : t('list.more') }}
         </button>
       </div>
     }

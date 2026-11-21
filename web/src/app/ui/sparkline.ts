@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import type { DayCount } from '../core/api';
-import { count } from '../core/format';
+import { plural } from '../core/i18n';
 
 const BAR = 4;
 const GAP = 2;
@@ -67,6 +67,6 @@ export class Sparkline {
 
   protected readonly label = computed(() => {
     const total = (this.days() ?? []).reduce((sum, d) => sum + d.count, 0);
-    return `${count(total)} ${total === 1 ? 'evento' : 'eventos'} en los últimos 14 días`;
+    return plural('chart.last14', total);
   });
 }

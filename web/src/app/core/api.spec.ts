@@ -2,12 +2,14 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { Api, apiError } from './api';
+import { lang } from './i18n';
 
 describe('Api', () => {
   let api: Api;
   let http: HttpTestingController;
 
   beforeEach(() => {
+    lang.set('es');
     TestBed.configureTestingModule({
       providers: [provideHttpClient(), provideHttpClientTesting()],
     });

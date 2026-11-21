@@ -3,6 +3,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import type { Issue } from '../../core/api';
+import { I18n, lang } from '../../core/i18n';
+import { spanishLeft } from '../../core/i18n.testing';
 import { IssueListPage } from './issue-list';
 
 const now = Date.now();
@@ -50,6 +52,7 @@ describe('IssueListPage', () => {
   }
 
   beforeEach(() => {
+    lang.set('es');
     TestBed.configureTestingModule({
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
@@ -174,5 +177,116 @@ describe('IssueListPage', () => {
     await fixture.whenStable();
     expect(el.querySelectorAll('a.row').length).toBe(2);
     expect(el.querySelector('.more')).toBeNull();
+  });
+
+  describe('en inglés', () => {
+    const rowsData = () => [
+      issue({}),
+      issue({
+        id: 2,
+        title: 'ai.action_reported_failure',
+        type: '',
+        culprit: '',
+        count: 12345,
+        last_release: null,
+        last_regression: iso(1000),
+      }),
+      issue({ id: 3, status: 'resolved_next', count: 1 }),
+    ];
+
+    it('pinta la cabecera, los filtros, las filas y las fechas en inglés', async () => {
+      lang.set('en');
+      const fixture = await render({ status: 'all' });
+      http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: rowsData() });
+      await fixture.whenStable();
+      const el: HTMLElement = fixture.nativeElement;
+
+      expect(el.querySelector('.titlebar__title')?.textContent).toContain('Errors');
+      const picks = Array.from(el.querySelectorAll('app-pick .pick')).map((p) =>
+        p.getAttribute('aria-label'),
+      );
+      expect(picks).toEqual(['Project: All projects', 'Status: All statuses', 'Sort: Last seen']);
+      expect(el.querySelector('[aria-label="Search"]')).not.toBeNull();
+      expect(Array.from(el.querySelectorAll('.list__head span')).map((s) => s.textContent)).toEqual(
+        ['Error', '14 days', 'Events', 'Seen'],
+      );
+      const rows = el.querySelectorAll('a.row');
+      expect(rows[0].querySelector('.row__seen time')?.textContent).toBe('5m ago');
+      expect(rows[0].querySelector('.row__first')?.textContent).toBe('first 3d ago');
+      expect(rows[0].querySelector('.row__seen time')?.getAttribute('title')).toMatch(
+        /^Last seen: /,
+      );
+      expect(rows[1].querySelector('.row__count')?.textContent).toBe('12,345 events');
+      expect(rows[1].querySelector('.sp-badge--yellow')?.textContent).toBe('Regression');
+      expect(rows[2].querySelector('.row__count')?.textContent).toBe('1 event');
+      expect(rows[2].querySelector('.sp-badge')?.textContent).toBe('Resolved in the next release');
+      expect(rows[0].querySelector('app-sparkline svg')?.getAttribute('aria-label')).toBe(
+        '3 events in the last 14 days',
+      );
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('los estados vacíos y el error, en inglés', async () => {
+      lang.set('en');
+      const fixture = await render({ query: 'nada' });
+      http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: [] });
+      await fixture.whenStable();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.state__title')?.textContent).toBe('No errors match these filters');
+      expect(el.querySelector('.state .btn')?.textContent).toBe('Clear filters');
+      expect(el.querySelector('.search input')?.getAttribute('placeholder')).toBe(
+        'Search the title and culprit',
+      );
+      expect(spanishLeft(el)).toEqual([]);
+
+      fixture.componentRef.setInput('query', '');
+      await fixture.whenStable();
+      http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: [] });
+      await fixture.whenStable();
+      expect(el.querySelector('.state__title')?.textContent).toBe('No open errors');
+
+      (el.querySelector('.search__clear') as HTMLButtonElement | null)?.click();
+      fixture.componentRef.setInput('status', 'resolved');
+      await fixture.whenStable();
+      http
+        .expectOne((r) => r.url === '/api/0/issues/')
+        .error(new ProgressEvent('error'), { status: 0, statusText: '' });
+      await fixture.whenStable();
+      expect(el.querySelector('[role=alert] .state__title')?.textContent).toBe(
+        'Couldn’t load the errors',
+      );
+      expect(el.querySelector('[role=alert] .state__text')?.textContent).toBe(
+        'Can’t reach the server.',
+      );
+      expect(el.querySelector('[role=alert] button')?.textContent).toBe('Retry');
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('cambia de idioma sin recargar ni volver a pedir la lista', async () => {
+      const fixture = await render();
+      http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: rowsData() });
+      await fixture.whenStable();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.titlebar__title')?.textContent).toContain('Errores');
+      expect(el.querySelectorAll('a.row')[1].querySelector('.row__count')?.textContent).toBe(
+        '12.345 eventos',
+      );
+
+      TestBed.inject(I18n).set('en');
+      await fixture.whenStable();
+      expect(el.querySelector('.titlebar__title')?.textContent).toContain('Errors');
+      expect(el.querySelectorAll('a.row')[1].querySelector('.row__count')?.textContent).toBe(
+        '12,345 events',
+      );
+      expect(el.querySelector('a.row .row__seen time')?.textContent).toBe('5m ago');
+      expect(el.querySelectorAll('app-pick .pick')[1].textContent).toContain('Open');
+      expect(spanishLeft(el)).toEqual([]);
+
+      TestBed.inject(I18n).set('es');
+      await fixture.whenStable();
+      expect(el.querySelector('a.row .row__seen time')?.textContent).toBe('hace 5 min');
+      expect(el.querySelectorAll('app-pick .pick')[1].textContent).toContain('Abiertos');
+      // http.verify() en afterEach: ningún cambio de idioma ha pedido nada al servidor.
+    });
   });
 });

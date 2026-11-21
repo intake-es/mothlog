@@ -1,4 +1,4 @@
-<nav class="rail" aria-label="Principal">
+<nav class="rail" [attr.aria-label]="t('shell.nav')">
   <a class="rail__brand" routerLink="/" aria-label="intake-errors">
     <svg appIcon="bug" weight="fill"></svg>
   </a>
@@ -8,7 +8,41 @@
       <button
         type="button"
         class="rail__btn"
-        aria-label="Tema"
+        [attr.aria-label]="t('shell.language')"
+        aria-haspopup="menu"
+        [attr.aria-expanded]="menu() === 'lang'"
+        (click)="toggle('lang')"
+      >
+        <svg appIcon="translate"></svg>
+      </button>
+      @if (menu() === 'lang') {
+        <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menu.set(null)"></button>
+        <div class="menu rail__menu" role="menu" [attr.aria-label]="t('shell.language')">
+          <div class="menu__label">{{ t('shell.language') }}</div>
+          @for (l of langs; track l.value) {
+            <button
+              type="button"
+              class="menu__item"
+              role="menuitemradio"
+              [attr.lang]="l.value"
+              [attr.aria-checked]="i18n.lang() === l.value"
+              (click)="setLang(l.value)"
+            >
+              {{ l.label }}
+              @if (i18n.lang() === l.value) {
+                <svg appIcon="check" class="menu__check"></svg>
+              }
+            </button>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="rail__slot">
+      <button
+        type="button"
+        class="rail__btn"
+        [attr.aria-label]="t('shell.theme')"
         aria-haspopup="menu"
         [attr.aria-expanded]="menu() === 'theme'"
         (click)="toggle('theme')"
@@ -17,19 +51,19 @@
       </button>
       @if (menu() === 'theme') {
         <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menu.set(null)"></button>
-        <div class="menu rail__menu" role="menu" aria-label="Tema">
-          <div class="menu__label">Tema</div>
-          @for (t of themes; track t.value) {
+        <div class="menu rail__menu" role="menu" [attr.aria-label]="t('shell.theme')">
+          <div class="menu__label">{{ t('shell.theme') }}</div>
+          @for (th of themes; track th.value) {
             <button
               type="button"
               class="menu__item"
               role="menuitemradio"
-              [attr.aria-checked]="theme.choice() === t.value"
-              (click)="setTheme(t.value)"
+              [attr.aria-checked]="theme.choice() === th.value"
+              (click)="setTheme(th.value)"
             >
-              <svg [appIcon]="t.icon"></svg>
-              {{ t.label }}
-              @if (theme.choice() === t.value) {
+              <svg [appIcon]="th.icon"></svg>
+              {{ t(th.label) }}
+              @if (theme.choice() === th.value) {
                 <svg appIcon="check" class="menu__check"></svg>
               }
             </button>
@@ -42,7 +76,7 @@
       <button
         type="button"
         class="rail__avatar"
-        [attr.aria-label]="'Cuenta de ' + (user()?.login ?? '')"
+        [attr.aria-label]="t('shell.account', { login: user()?.login ?? '' })"
         aria-haspopup="menu"
         [attr.aria-expanded]="menu() === 'user'"
         (click)="toggle('user')"
@@ -51,7 +85,7 @@
       </button>
       @if (menu() === 'user') {
         <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menu.set(null)"></button>
-        <div class="menu rail__menu" role="menu" aria-label="Cuenta">
+        <div class="menu rail__menu" role="menu" [attr.aria-label]="t('shell.accountMenu')">
           <div class="rail__who">
             <strong>{{ user()?.name }}</strong>
             <span>{{ user()?.login }}</span>
@@ -59,7 +93,7 @@
           <div class="menu__rule"></div>
           <button type="button" class="menu__item" role="menuitem" (click)="logout()">
             <svg appIcon="sign-out"></svg>
-            Salir
+            {{ t('shell.logout') }}
           </button>
         </div>
       }

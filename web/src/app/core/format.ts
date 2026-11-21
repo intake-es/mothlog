@@ -1,10 +1,27 @@
 import type { IssueStatus } from './api';
+import { type Key, locale } from './i18n';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** «ahora», «hace 5 min», «hace 3 h», «hace 4 d», y la fecha a partir de un mes. */
+const cache = new Map<string, Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>();
+
+function cached<T extends Intl.DateTimeFormat | Intl.NumberFormat | Intl.RelativeTimeFormat>(
+  name: string,
+  make: (loc: string) => T,
+): T {
+  const loc = locale();
+  const key = `${name}|${loc}`;
+  let f = cache.get(key);
+  if (!f) {
+    f = make(loc);
+    cache.set(key, f);
+  }
+  return f as T;
+}
+
+/** «ahora», «hace 5 min», «hace 3 h», «hace 4 d» en el idioma elegido, y la fecha a partir de un mes. */
 export function ago(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) {
     return '—';
@@ -14,67 +31,72 @@ export function ago(iso: string | null | undefined, now = Date.now()): string {
     return '—';
   }
   const d = Math.max(0, now - t);
+  if (d >= 30 * DAY) {
+    return shortDate(iso);
+  }
+  const rel = cached(
+    'ago',
+    (loc) => new Intl.RelativeTimeFormat(loc, { numeric: 'auto', style: 'narrow' }),
+  );
   if (d < MINUTE) {
-    return 'ahora';
+    return rel.format(0, 'second');
   }
   if (d < HOUR) {
-    return `hace ${Math.floor(d / MINUTE)} min`;
+    return rel.format(-Math.floor(d / MINUTE), 'minute');
   }
   if (d < DAY) {
-    return `hace ${Math.floor(d / HOUR)} h`;
+    return rel.format(-Math.floor(d / HOUR), 'hour');
   }
-  if (d < 30 * DAY) {
-    return `hace ${Math.floor(d / DAY)} d`;
-  }
-  return shortDate(iso);
+  return rel.format(-Math.floor(d / DAY), 'day');
 }
 
-const dateTime = new Intl.DateTimeFormat('es-ES', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
-
-const dateOnly = new Intl.DateTimeFormat('es-ES', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-});
-const dayMonth = new Intl.DateTimeFormat('es-ES', {
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'UTC',
-});
-const timeOnly = new Intl.DateTimeFormat('es-ES', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-});
-
 export function fullDate(iso: string | null | undefined): string {
-  return iso ? dateTime.format(new Date(iso)) : '';
+  if (!iso) {
+    return '';
+  }
+  const f = cached(
+    'full',
+    (loc) =>
+      new Intl.DateTimeFormat(loc, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      }),
+  );
+  return f.format(new Date(iso));
 }
 
 export function shortDate(iso: string): string {
-  return dateOnly.format(new Date(iso));
+  const f = cached(
+    'short',
+    (loc) => new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short', year: 'numeric' }),
+  );
+  return f.format(new Date(iso));
 }
 
-/** Un día de la serie diaria (YYYY-MM-DD, en UTC): «19 nov». */
+/** Un día de la serie diaria (YYYY-MM-DD, en UTC): «19 nov», «Nov 19». */
 export function day(date: string): string {
-  return dayMonth.format(new Date(`${date}T00:00:00Z`)).replace('.', '');
+  const f = cached(
+    'day',
+    (loc) => new Intl.DateTimeFormat(loc, { day: 'numeric', month: 'short', timeZone: 'UTC' }),
+  );
+  return f.format(new Date(`${date}T00:00:00Z`)).replace('.', '');
 }
 
 export function clock(iso: string | number): string {
-  return timeOnly.format(new Date(iso));
+  const f = cached(
+    'clock',
+    (loc) =>
+      new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+  );
+  return f.format(new Date(iso));
 }
 
-const numbers = new Intl.NumberFormat('es-ES');
-
 export function count(n: number): string {
-  return numbers.format(n);
+  return cached('count', (loc) => new Intl.NumberFormat(loc)).format(n);
 }
 
 /** Separa «TypeError: mensaje» en el tipo y el mensaje para pintarlos distinto. */
@@ -88,11 +110,12 @@ export function splitTitle(title: string, type: string): { type: string; message
   return { type: '', message: title };
 }
 
-export const STATUS_LABEL: Record<IssueStatus, string> = {
-  open: 'Abierto',
-  resolved: 'Resuelto',
-  resolved_next: 'Resuelto en la siguiente versión',
-  silenced: 'Silenciado',
+/** La clave del nombre de cada estado; el valor de la API no cambia. */
+export const STATUS_LABEL: Record<IssueStatus, Key> = {
+  open: 'status.open',
+  resolved: 'status.resolved',
+  resolved_next: 'status.resolved_next',
+  silenced: 'status.silenced',
 };
 
 /** El chip de cada estado: rojo lo que falla, gris lo que no pide nada. */
