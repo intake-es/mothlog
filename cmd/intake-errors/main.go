@@ -42,12 +42,11 @@ func loadConfig() (config, error) {
 
 		SourceMapUploadToken: os.Getenv("SOURCEMAP_UPLOAD_TOKEN"),
 		Alerts: alert.Options{
-			SlackWebhookURL:    os.Getenv("SLACK_WEBHOOK_URL"),
-			LinearAPIKey:       os.Getenv("LINEAR_API_KEY"),
-			LinearAPIURL:       os.Getenv("LINEAR_API_URL"),
-			LinearTeamID:       os.Getenv("LINEAR_TEAM_ID"),
-			LinearLabelIDs:     splitList(os.Getenv("LINEAR_LABEL_IDS")),
-			LinearExtraLabelID: os.Getenv("LINEAR_EXTRA_LABEL_ID"),
+			SlackWebhookURL: os.Getenv("SLACK_WEBHOOK_URL"),
+			LinearAPIKey:    os.Getenv("LINEAR_API_KEY"),
+			LinearAPIURL:    os.Getenv("LINEAR_API_URL"),
+			LinearTeamID:    os.Getenv("LINEAR_TEAM_ID"),
+			LinearLabelIDs:  splitList(os.Getenv("LINEAR_LABEL_IDS")),
 		},
 	}
 	c.Alerts.PublicURL = c.PublicURL

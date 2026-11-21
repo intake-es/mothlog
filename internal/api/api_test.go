@@ -86,17 +86,28 @@ func ids(issues []store.Issue) []int64 {
 func TestProjects(t *testing.T) {
 	e := setup(t)
 	p := e.db.AddProject(t, "backend")
+	e.db.AddProject(t, "web")
+	if err := e.db.SetProjectLabels(context.Background(), "backend", []string{"label-equipo", "label-prioridad"}); err != nil {
+		t.Fatal(err)
+	}
 	var got struct {
 		Data []struct {
-			ID   int64  `json:"id"`
-			Name string `json:"name"`
-			DSN  string `json:"dsn"`
+			ID             int64     `json:"id"`
+			Name           string    `json:"name"`
+			DSN            string    `json:"dsn"`
+			LinearLabelIDs *[]string `json:"linear_label_ids"`
 		} `json:"data"`
 	}
 	e.get(t, "/api/0/projects/", &got)
 	want := "https://" + p.PublicKey + "@errors.example.com/" + itoa(p.ID)
-	if len(got.Data) != 1 || got.Data[0].Name != "backend" || got.Data[0].DSN != want {
+	if len(got.Data) != 2 || got.Data[0].Name != "backend" || got.Data[0].DSN != want {
 		t.Fatalf("= %+v; quiero dsn %s", got, want)
+	}
+	if l := got.Data[0].LinearLabelIDs; l == nil || !slices.Equal(*l, []string{"label-equipo", "label-prioridad"}) {
+		t.Errorf("etiquetas de backend = %v", l)
+	}
+	if l := got.Data[1].LinearLabelIDs; l == nil || len(*l) != 0 {
+		t.Errorf("etiquetas de web = %v; quiero []", l)
 	}
 }
 

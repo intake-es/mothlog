@@ -22,7 +22,7 @@ CREATE INDEX alert_outbox_pending_idx ON alert_outbox (issue_id, channel, id)
 
 ALTER TABLE issues ADD COLUMN linear_issue_id text;
 
--- Si la issue de Linear lleva también la etiqueta extra.
+-- Si la issue de Linear lleva también una etiqueta más; la sustituye 00007.
 ALTER TABLE projects ADD COLUMN linear_extra_label boolean NOT NULL DEFAULT false;
 
 -- +goose Down

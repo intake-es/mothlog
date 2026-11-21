@@ -10,19 +10,20 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
-const projectsUsage = "uso: intake-errors projects create <nombre> | projects list | projects extra-label <nombre> on|off"
+const projectsUsage = "uso: intake-errors projects create <nombre> | projects list | projects labels <nombre> [<id>[,<id>…] | --clear]"
 
 func projects(cfg config, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(projectsUsage)
 	}
-	if args[0] != "extra-label" {
+	if args[0] != "labels" {
 		if _, err := dsn(cfg.PublicURL, store.Project{}); err != nil {
 			return err
 		}
@@ -65,8 +66,8 @@ func projects(cfg config, args []string, out io.Writer) error {
 			_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\n", p.ID, p.Name, d)
 		}
 		return tw.Flush()
-	case args[0] == "extra-label" && len(args) == 3:
-		return extraLabelCommand(ctx, db, args[1], args[2], out)
+	case args[0] == "labels" && (len(args) == 2 || len(args) == 3):
+		return labelsCommand(ctx, db, args[1:], out)
 	default:
 		return errors.New(projectsUsage)
 	}
@@ -91,26 +92,61 @@ func dsn(publicURL string, p store.Project) (string, error) {
 	return fmt.Sprintf("%s://%s@%s/%d", u.Scheme, p.PublicKey, u.Host, p.ID), nil
 }
 
-func extraLabelCommand(ctx context.Context, db *store.Store, name, state string, out io.Writer) error {
-	var on bool
-	switch state {
-	case "on":
-		on = true
-	case "off":
-	default:
-		return errors.New(projectsUsage)
-	}
-	err := db.SetProjectExtraLabel(ctx, name, on)
-	if errors.Is(err, store.ErrNotFound) {
-		return fmt.Errorf("no hay ningún proyecto llamado %q", name)
-	}
-	if err != nil {
+// labelsCommand enseña, sustituye o quita las etiquetas de Linear propias de
+// un proyecto: args es <nombre> [<id>[,<id>…] | --clear].
+func labelsCommand(ctx context.Context, db *store.Store, args []string, out io.Writer) error {
+	name := args[0]
+	notFound := func(err error) error {
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("no hay ningún proyecto llamado %q", name)
+		}
 		return err
 	}
-	if on {
-		_, err = fmt.Fprintf(out, "las issues de Linear de %q llevan la etiqueta extra\n", name)
+	if len(args) == 1 {
+		p, err := db.ProjectByName(ctx, name)
+		if err != nil {
+			return notFound(err)
+		}
+		if len(p.LinearLabelIDs) == 0 {
+			_, err = fmt.Fprintf(out, "las issues de Linear de %q no llevan etiquetas propias, solo las de LINEAR_LABEL_IDS\n", name)
+			return err
+		}
+		_, err = fmt.Fprintln(out, strings.Join(p.LinearLabelIDs, "\n"))
+		return err
+	}
+
+	var ids []string
+	if args[1] != "--clear" {
+		var err error
+		if ids, err = parseLabelIDs(args[1]); err != nil {
+			return err
+		}
+	}
+	if err := db.SetProjectLabels(ctx, name, ids); err != nil {
+		return notFound(err)
+	}
+	var err error
+	if len(ids) == 0 {
+		_, err = fmt.Fprintf(out, "las issues de Linear de %q ya no llevan etiquetas propias\n", name)
 	} else {
-		_, err = fmt.Fprintf(out, "las issues de Linear de %q ya no llevan la etiqueta extra\n", name)
+		_, err = fmt.Fprintf(out, "las issues de Linear de %q llevan además: %s\n", name, strings.Join(ids, ", "))
 	}
 	return err
+}
+
+func parseLabelIDs(s string) ([]string, error) {
+	var ids []string
+	for _, id := range strings.Split(s, ",") {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil, fmt.Errorf("id de etiqueta vacío en %q", s)
+		}
+		if strings.HasPrefix(id, "-") || strings.ContainsAny(id, " \t") {
+			return nil, fmt.Errorf("id de etiqueta no válido: %q", id)
+		}
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }

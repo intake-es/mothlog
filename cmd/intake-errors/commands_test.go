@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -59,35 +60,67 @@ func TestTokensCommand(t *testing.T) {
 	}
 }
 
-func TestExtraLabelCommand(t *testing.T) {
+func TestLabelsCommand(t *testing.T) {
 	db := storetest.NewDB(t)
 	ctx := context.Background()
 	p := db.AddProject(t, "backend")
-	extraOn := func() bool {
-		var on bool
-		if err := db.Pool().QueryRow(ctx, `SELECT linear_extra_label FROM projects WHERE id = $1`, p.ID).Scan(&on); err != nil {
+	stored := func() []string {
+		var ids []string
+		if err := db.Pool().QueryRow(ctx, `SELECT linear_label_ids FROM projects WHERE id = $1`, p.ID).Scan(&ids); err != nil {
 			t.Fatal(err)
 		}
-		return on
+		return ids
 	}
-	if extraOn() {
-		t.Fatal("la etiqueta extra viene activada por defecto")
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := labelsCommand(ctx, db.Store, args, &out)
+		return out.String(), err
 	}
-	var out bytes.Buffer
-	if err := extraLabelCommand(ctx, db.Store, "backend", "on", &out); err != nil || !extraOn() {
-		t.Fatalf("on: %v, %q", err, out.String())
+
+	if ids := stored(); len(ids) != 0 {
+		t.Fatalf("etiquetas por defecto = %v", ids)
 	}
-	if err := extraLabelCommand(ctx, db.Store, "backend", "off", &out); err != nil || extraOn() {
-		t.Fatalf("off: %v", err)
+	if out, err := run("backend"); err != nil || !strings.Contains(out, "no llevan etiquetas propias") {
+		t.Fatalf("enseñar sin etiquetas: %q, %v", out, err)
 	}
-	if err := extraLabelCommand(ctx, db.Store, "backend", "quizá", &out); err == nil {
-		t.Error("estado desconocido sin error")
+
+	if out, err := run("backend", "label-equipo, label-prioridad,label-equipo"); err != nil || !strings.Contains(out, "label-equipo, label-prioridad") {
+		t.Fatalf("sustituir: %q, %v", out, err)
 	}
-	if err := extraLabelCommand(ctx, db.Store, "nadie", "on", &out); err == nil {
-		t.Error("proyecto inexistente sin error")
+	if ids := stored(); !slices.Equal(ids, []string{"label-equipo", "label-prioridad"}) {
+		t.Fatalf("guardadas = %v", ids)
 	}
+	if out, err := run("backend"); err != nil || out != "label-equipo\nlabel-prioridad\n" {
+		t.Fatalf("enseñar: %q, %v", out, err)
+	}
+	if _, err := run("backend", "label-otra"); err != nil || !slices.Equal(stored(), []string{"label-otra"}) {
+		t.Fatalf("sustituir otra vez: %v, %v", err, stored())
+	}
+
+	for _, bad := range []string{"", ",", "label-a,", "label-a,,label-b", " ", "--clean", "label a"} {
+		if _, err := run("backend", bad); err == nil {
+			t.Errorf("%q sin error", bad)
+		}
+		if ids := stored(); !slices.Equal(ids, []string{"label-otra"}) {
+			t.Fatalf("tras %q, guardadas = %v", bad, ids)
+		}
+	}
+
+	for _, args := range [][]string{{"nadie"}, {"nadie", "label-a"}, {"nadie", "--clear"}} {
+		if _, err := run(args...); err == nil || !strings.Contains(err.Error(), `no hay ningún proyecto llamado "nadie"`) {
+			t.Errorf("%v: err = %v", args, err)
+		}
+	}
+
+	if out, err := run("backend", "--clear"); err != nil || !strings.Contains(out, "ya no llevan") {
+		t.Fatalf("quitar: %q, %v", out, err)
+	}
+	if ids := stored(); ids == nil || len(ids) != 0 {
+		t.Fatalf("tras quitar = %#v", ids)
+	}
+
 	db.AddProject(t, "backend")
-	if err := extraLabelCommand(ctx, db.Store, "backend", "on", &out); err == nil || extraOn() {
+	if _, err := run("backend", "label-a"); err == nil || len(stored()) != 0 {
 		t.Errorf("con dos proyectos del mismo nombre: %v", err)
 	}
 }

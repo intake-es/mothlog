@@ -42,12 +42,11 @@ type Options struct {
 	SlackWebhookURL string
 	LinearAPIKey    string
 	// LinearAPIURL es el endpoint GraphQL; vacío, el de Linear.
-	LinearAPIURL       string
-	LinearTeamID       string
-	LinearLabelIDs     []string
-	LinearExtraLabelID string
-	Interval           time.Duration
-	HTTPClient         *http.Client
+	LinearAPIURL   string
+	LinearTeamID   string
+	LinearLabelIDs []string
+	Interval       time.Duration
+	HTTPClient     *http.Client
 }
 
 type Alerter struct {
@@ -75,7 +74,7 @@ type pending struct {
 	resolvedAt  *time.Time
 
 	project          string
-	linear_extra_label            bool
+	labels           []string
 	title            string
 	culprit          string
 	count            int64
@@ -108,7 +107,7 @@ func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 		}
 		a.channels[channelLinear] = &linear{
 			st: st, base: base, endpoint: endpoint, key: o.LinearAPIKey, client: client,
-			team: o.LinearTeamID, labels: o.LinearLabelIDs, extraLabel: o.LinearExtraLabelID,
+			team: o.LinearTeamID, labels: o.LinearLabelIDs,
 		}
 		a.order = append(a.order, channelLinear)
 	}
@@ -225,11 +224,11 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("coger aviso: %w", err)
 	}
 	err = tx.QueryRow(ctx, `
-		SELECT p.name, p.linear_extra_label, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
+		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
 			COALESCE(i.linear_issue_identifier, ''), COALESCE(i.linear_issue_url, '')
 		FROM issues i JOIN projects p ON p.id = i.project_id
 		WHERE i.id = $1`, p.issueID).
-		Scan(&p.project, &p.linear_extra_label, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
+		Scan(&p.project, &p.labels, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
 	if err != nil {
 		return false, fmt.Errorf("leer issue %d: %w", p.issueID, err)
 	}

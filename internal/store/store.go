@@ -28,6 +28,8 @@ type Project struct {
 	Name      string
 	PublicKey string
 	CreatedAt time.Time
+	// LinearLabelIDs son las etiquetas de Linear propias del proyecto.
+	LinearLabelIDs []string
 }
 
 // Open conecta con Postgres y aplica las migraciones pendientes.
@@ -71,7 +73,7 @@ func (s *Store) Close() { s.pool.Close() }
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
 func (s *Store) CreateProject(ctx context.Context, name, publicKey string) (Project, error) {
-	p := Project{Name: name, PublicKey: publicKey}
+	p := Project{Name: name, PublicKey: publicKey, LinearLabelIDs: []string{}}
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO projects (name, public_key) VALUES ($1, $2) RETURNING id, created_at`,
 		name, publicKey).Scan(&p.ID, &p.CreatedAt)
@@ -84,8 +86,8 @@ func (s *Store) CreateProject(ctx context.Context, name, publicKey string) (Proj
 func (s *Store) ProjectByPublicKey(ctx context.Context, publicKey string) (Project, error) {
 	var p Project
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, name, public_key, created_at FROM projects WHERE public_key = $1`,
-		publicKey).Scan(&p.ID, &p.Name, &p.PublicKey, &p.CreatedAt)
+		`SELECT `+projectColumns+` FROM projects WHERE public_key = $1`,
+		publicKey).Scan(p.fields()...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Project{}, ErrNotFound
 	}

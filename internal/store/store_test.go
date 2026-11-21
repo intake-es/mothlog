@@ -25,9 +25,9 @@ func randomHex(t *testing.T, n int) string {
 	return hex.EncodeToString(b)
 }
 
-// testStore abre un Store en un esquema propio de la base de pruebas, que se
-// borra al acabar.
-func testStore(t *testing.T) *Store {
+// testSchemaURL crea un esquema propio en la base de pruebas, que se borra al
+// acabar, y devuelve la URL que lo usa.
+func testSchemaURL(t *testing.T) string {
 	t.Helper()
 	base := os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL")
 	if base == "" {
@@ -55,16 +55,24 @@ func testStore(t *testing.T) *Store {
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// testStore abre un Store en un esquema propio de la base de pruebas.
+func testStore(t *testing.T) *Store {
+	t.Helper()
+	ctx := context.Background()
+	u := testSchemaURL(t)
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s, err := Open(ctx, u.String(), log)
+	s, err := Open(ctx, u, log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
 
 	// Volver a abrir no debe fallar: las migraciones ya están aplicadas.
-	again, err := Open(ctx, u.String(), log)
+	again, err := Open(ctx, u, log)
 	if err != nil {
 		t.Fatalf("segunda apertura: %v", err)
 	}

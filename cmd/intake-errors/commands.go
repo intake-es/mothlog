@@ -17,7 +17,9 @@ const usage = `uso:
   intake-errors                        arranca el servicio
   intake-errors projects create <nombre> crea un proyecto e imprime su DSN
   intake-errors projects list           lista los proyectos y sus DSN
-  intake-errors projects extra-label <nombre> on|off  etiqueta extra en sus issues de Linear
+  intake-errors projects labels <nombre> enseña las etiquetas de Linear propias del proyecto
+  intake-errors projects labels <nombre> <id>[,<id>…]  las sustituye
+  intake-errors projects labels <nombre> --clear  las quita
   intake-errors tokens create <nombre>  crea un token de la API y lo imprime una sola vez
   intake-errors tokens list             lista los tokens
   intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre`

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,14 +24,13 @@ const LinearEndpoint = "https://api.linear.app/graphql"
 const maxLinearTitle = 255
 
 type linear struct {
-	st         *store.Store
-	base       string
-	endpoint   string
-	key        string
-	client     *http.Client
-	team       string
-	labels     []string
-	extraLabel string
+	st       *store.Store
+	base     string
+	endpoint string
+	key      string
+	client   *http.Client
+	team     string
+	labels   []string
 
 	mu        sync.Mutex
 	unstarted string
@@ -67,10 +67,13 @@ func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
 	return err
 }
 
+// labelIDs son las etiquetas de LINEAR_LABEL_IDS más las del proyecto, sin repetir.
 func (l *linear) labelIDs(p *pending) []string {
-	ids := append([]string(nil), l.labels...)
-	if p.linear_extra_label && l.extraLabel != "" {
-		ids = append(ids, l.extraLabel)
+	var ids []string
+	for _, id := range slices.Concat(l.labels, p.labels) {
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
 	}
 	return ids
 }
@@ -140,8 +143,8 @@ func (l *linear) reopenAndComment(ctx context.Context, p *pending) error {
 		return err
 	}
 	input := map[string]any{"stateId": state}
-	if p.linear_extra_label && l.extraLabel != "" {
-		input["addedLabelIds"] = []string{l.extraLabel}
+	if len(p.labels) > 0 {
+		input["addedLabelIds"] = p.labels
 	}
 	var upd struct{ IssueUpdate struct{ Success bool } }
 	err = l.do(ctx, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,

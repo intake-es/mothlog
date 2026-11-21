@@ -55,9 +55,10 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 }
 
 type projectJSON struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-	DSN  string `json:"dsn"`
+	ID             int64    `json:"id"`
+	Name           string   `json:"name"`
+	DSN            string   `json:"dsn"`
+	LinearLabelIDs []string `json:"linear_label_ids"`
 }
 
 func (h *handlers) projects(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +77,11 @@ func (h *handlers) projects(w http.ResponseWriter, r *http.Request) {
 	out := make([]projectJSON, len(ps))
 	for i, p := range ps {
 		dsn := url.URL{Scheme: base.Scheme, User: url.User(p.PublicKey), Host: base.Host, Path: "/" + strconv.FormatInt(p.ID, 10)}
-		out[i] = projectJSON{ID: p.ID, Name: p.Name, DSN: dsn.String()}
+		labels := p.LinearLabelIDs
+		if labels == nil {
+			labels = []string{}
+		}
+		out[i] = projectJSON{ID: p.ID, Name: p.Name, DSN: dsn.String(), LinearLabelIDs: labels}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }

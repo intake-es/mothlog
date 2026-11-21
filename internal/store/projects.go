@@ -12,11 +12,17 @@ import (
 // Pool da acceso al pool para quien necesita sus propias transacciones.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
+const projectColumns = `id, name, public_key, created_at, linear_label_ids`
+
+func (p *Project) fields() []any {
+	return []any{&p.ID, &p.Name, &p.PublicKey, &p.CreatedAt, &p.LinearLabelIDs}
+}
+
 func (s *Store) ProjectByID(ctx context.Context, id int64) (Project, error) {
 	var p Project
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, name, public_key, created_at FROM projects WHERE id = $1`,
-		id).Scan(&p.ID, &p.Name, &p.PublicKey, &p.CreatedAt)
+		`SELECT `+projectColumns+` FROM projects WHERE id = $1`,
+		id).Scan(p.fields()...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Project{}, ErrNotFound
 	}
@@ -27,13 +33,13 @@ func (s *Store) ProjectByID(ctx context.Context, id int64) (Project, error) {
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, name, public_key, created_at FROM projects ORDER BY id`)
+	rows, err := s.pool.Query(ctx, `SELECT `+projectColumns+` FROM projects ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("listar proyectos: %w", err)
 	}
 	ps, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Project, error) {
 		var p Project
-		err := r.Scan(&p.ID, &p.Name, &p.PublicKey, &p.CreatedAt)
+		err := r.Scan(p.fields()...)
 		return p, err
 	})
 	if err != nil {
@@ -42,24 +48,43 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	return ps, nil
 }
 
-// SetProjectExtraLabel activa o apaga la etiqueta extra en las issues de Linear
-// del proyecto con ese nombre.
-func (s *Store) SetProjectExtraLabel(ctx context.Context, name string, on bool) error {
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE projects SET linear_extra_label = $2
-		WHERE name = $1 AND (SELECT count(*) FROM projects WHERE name = $1) = 1`, name, on)
+// ProjectByName busca el proyecto con ese nombre; si hay más de uno, es
+// ErrInvalid, porque no se sabe a cuál se refiere.
+func (s *Store) ProjectByName(ctx context.Context, name string) (Project, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+projectColumns+` FROM projects WHERE name = $1 ORDER BY id`, name)
 	if err != nil {
-		return fmt.Errorf("cambiar la etiqueta extra: %w", err)
+		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		var n int
-		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM projects WHERE name = $1`, name).Scan(&n); err != nil {
-			return fmt.Errorf("buscar proyecto: %w", err)
-		}
-		if n > 1 {
-			return fmt.Errorf("%w: hay %d proyectos llamados %q", ErrInvalid, n, name)
-		}
-		return ErrNotFound
+	ps, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Project, error) {
+		var p Project
+		err := r.Scan(p.fields()...)
+		return p, err
+	})
+	if err != nil {
+		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
+	}
+	switch len(ps) {
+	case 0:
+		return Project{}, ErrNotFound
+	case 1:
+		return ps[0], nil
+	default:
+		return Project{}, fmt.Errorf("%w: hay %d proyectos llamados %q", ErrInvalid, len(ps), name)
+	}
+}
+
+// SetProjectLabels sustituye las etiquetas de Linear propias del proyecto con
+// ese nombre; ids vacío las quita.
+func (s *Store) SetProjectLabels(ctx context.Context, name string, ids []string) error {
+	p, err := s.ProjectByName(ctx, name)
+	if err != nil {
+		return err
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE projects SET linear_label_ids = $2 WHERE id = $1`, p.ID, ids); err != nil {
+		return fmt.Errorf("cambiar etiquetas: %w", err)
 	}
 	return nil
 }

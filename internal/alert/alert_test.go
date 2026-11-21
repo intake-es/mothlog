@@ -26,11 +26,10 @@ import (
 )
 
 const (
-	publicURL  = "https://errores.test"
-	linearKey  = "lin_api_prueba"
-	teamID     = "team-1"
-	todoState  = "state-todo"
-	extraLabel = "label-extra"
+	publicURL = "https://errores.test"
+	linearKey = "lin_api_prueba"
+	teamID    = "team-1"
+	todoState = "state-todo"
 )
 
 var baseLabels = []string{"label-bug", "label-errores"}
@@ -309,13 +308,12 @@ func newEnv(t *testing.T, configure func(*Options)) *env {
 	linearSrv := httptest.NewServer(e.linear)
 	t.Cleanup(linearSrv.Close)
 	e.opts = Options{
-		PublicURL:          publicURL + "/",
-		SlackWebhookURL:    slackSrv.URL + "/services/T000/B000/secreto",
-		LinearAPIKey:       linearKey,
-		LinearAPIURL:       linearSrv.URL,
-		LinearTeamID:       teamID,
-		LinearLabelIDs:     baseLabels,
-		LinearExtraLabelID: extraLabel,
+		PublicURL:       publicURL + "/",
+		SlackWebhookURL: slackSrv.URL + "/services/T000/B000/secreto",
+		LinearAPIKey:    linearKey,
+		LinearAPIURL:    linearSrv.URL,
+		LinearTeamID:    teamID,
+		LinearLabelIDs:  baseLabels,
 	}
 	if configure != nil {
 		configure(&e.opts)
@@ -764,10 +762,11 @@ func TestLinearNeedsTeam(t *testing.T) {
 	}
 }
 
-func TestExtraLabel(t *testing.T) {
+func TestProjectLabels(t *testing.T) {
 	e := newEnv(t, nil)
 	ctx := context.Background()
-	if err := e.db.SetProjectExtraLabel(ctx, "backend", true); err != nil {
+	// label-errores ya está en LINEAR_LABEL_IDS: no se repite.
+	if err := e.db.SetProjectLabels(ctx, "backend", []string{"label-equipo", "label-errores", "label-prioridad"}); err != nil {
 		t.Fatal(err)
 	}
 	e.ingest(t, "api-tarea-a-1")
@@ -783,11 +782,57 @@ func TestExtraLabel(t *testing.T) {
 	if len(order) != 2 {
 		t.Fatalf("issues = %d", len(order))
 	}
-	if l := issues[order[0]].Labels; !slices.Equal(l, append(slices.Clone(baseLabels), extraLabel)) {
-		t.Errorf("con etiqueta extra: etiquetas = %v", l)
+	want := []string{"label-bug", "label-errores", "label-equipo", "label-prioridad"}
+	if l := issues[order[0]].Labels; !slices.Equal(l, want) {
+		t.Errorf("con etiquetas propias: etiquetas = %v; quiero %v", l, want)
 	}
 	if l := issues[order[1]].Labels; !slices.Equal(l, baseLabels) {
-		t.Errorf("sin etiqueta extra: etiquetas = %v", l)
+		t.Errorf("sin etiquetas propias: etiquetas = %v", l)
+	}
+}
+
+func TestProjectLabelsWithoutGlobal(t *testing.T) {
+	e := newEnv(t, func(o *Options) { o.LinearLabelIDs = nil })
+	if err := e.db.SetProjectLabels(context.Background(), "backend", []string{"label-equipo"}); err != nil {
+		t.Fatal(err)
+	}
+	e.ingest(t, "api-tarea-a-1")
+	e.send(t)
+	issues, order := e.linear.snapshot()
+	if len(order) != 1 || !slices.Equal(issues[order[0]].Labels, []string{"label-equipo"}) {
+		t.Fatalf("issues = %+v", issues)
+	}
+}
+
+func TestRegressionAddsProjectLabels(t *testing.T) {
+	e := newEnv(t, nil)
+	ctx := context.Background()
+	first := e.ingest(t, "api-tarea-a-1")
+	e.send(t)
+	issues, order := e.linear.snapshot()
+	if len(order) != 1 || !slices.Equal(issues[order[0]].Labels, baseLabels) {
+		t.Fatalf("issue nueva: %+v", issues)
+	}
+
+	if err := e.db.SetProjectLabels(ctx, "backend", []string{"label-equipo", "label-bug"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.db.SetIssueStatus(ctx, first.IssueID, "resolved"); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.ingest(t, "api-tarea-b-1"); res.Outcome != ingest.Regressed {
+		t.Fatalf("res = %+v", res)
+	}
+	e.send(t)
+
+	issues, order = e.linear.snapshot()
+	if len(order) != 1 {
+		t.Fatalf("la regresión ha creado otra issue: %d", len(order))
+	}
+	li := issues[order[0]]
+	want := []string{"label-bug", "label-errores", "label-equipo"}
+	if !slices.Equal(li.Labels, want) || li.State != todoState || len(li.Comments) != 1 {
+		t.Errorf("tras la regresión: etiquetas = %v (quiero %v), estado = %q, comentarios = %d", li.Labels, want, li.State, len(li.Comments))
 	}
 }
 
