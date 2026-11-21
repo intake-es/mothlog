@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,7 +96,121 @@ func TestPostgresUploadEnrichPurge(t *testing.T) {
 	if err != nil || deleted != 1 {
 		t.Fatalf("borrados = %d, %v", deleted, err)
 	}
-	if _, err := st.SourceMap(ctx, p.ID, release1, chunkJS); err != nil {
+	if _, err := st.SourceMap(ctx, p.ID, release1, "", chunkJS); err != nil {
 		t.Errorf("el reciente se borró: %v", err)
+	}
+}
+
+func TestPostgresSentryCLI(t *testing.T) {
+	st, admin, schema := pgStore(t)
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "front", "7438a4393be53fabe513ce19bec380e9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, apiSecret, err := st.CreateToken(ctx, "sentry-cli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, quiet(), Options{UploadToken: token})
+
+	replay(t, s, "upload", "Bearer "+token)
+	replay(t, s, "inject", "Bearer "+apiSecret)
+	count := func(q string) int {
+		t.Helper()
+		var n int
+		if err := admin.QueryRow(ctx, q).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.sourcemaps WHERE release = 'prueba-upload' AND debug_id IS NULL AND url LIKE '~/%.js'`); n != 2 {
+		t.Errorf("mapas por nombre = %d", n)
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.sourcemaps WHERE release = '' AND debug_id IN ('` + injectChunkID + `', '` + injectMainID + `')`); n != 2 {
+		t.Errorf("mapas por debug ID = %d", n)
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.upload_chunks`); n != 2 {
+		t.Errorf("hay %d trozos; quiero los 2, hasta que caduquen", n)
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.artifact_bundles`); n != 2 {
+		t.Errorf("bundles = %d", n)
+	}
+
+	for _, name := range []string{"web-cli-upload-1", "web-cli-inject-1"} {
+		ev := readEvent(t, name)
+		if err := s.Enrich(ctx, p.ID, ev); err != nil {
+			t.Fatal(err)
+		}
+		if top := topFrame(ev); top.Filename != carrito || top.Line != 7 || top.ContextLine != failLine {
+			t.Errorf("%s: primer fotograma = %s:%d %q", name, top.Filename, top.Line, top.ContextLine)
+		}
+	}
+
+	// Otra subida sustituye el mapa por nombre; repetir la del bundle lo
+	// repone y renueva su fecha para la retención.
+	if err := st.PutSourceMaps(ctx, p.ID, "prueba-upload", []store.SourceMapFile{{File: chunkJS, Map: []byte(`{"version":3,"sources":[],"mappings":""}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `UPDATE `+schema+`.sourcemaps SET uploaded_at = now() - interval '10 days'`); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(testdata, "sentry-cli", "upload", "002.body"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := serve(t, s, http.MethodPost, "/api/0/organizations/o/artifactbundle/assemble/", "Bearer "+token, "application/json", body)
+	if !strings.Contains(rec.Body.String(), `"state":"ok"`) {
+		t.Errorf("repetido: %d %s", rec.Code, rec.Body)
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.sourcemaps WHERE release = 'prueba-upload' AND uploaded_at > now() - interval '1 minute'`); n != 2 {
+		t.Errorf("%d mapas renovados, quiero 2", n)
+	}
+	ev := readEvent(t, "web-cli-upload-1")
+	if err := s.Enrich(ctx, p.ID, ev); err != nil {
+		t.Fatal(err)
+	}
+	if top := topFrame(ev); top.Filename != carrito || top.Line != 7 {
+		t.Errorf("tras repetir: primer fotograma = %s:%d", top.Filename, top.Line)
+	}
+
+	// Retención: los mapas y bundles de hace más de 90 días y los trozos sin ensamblar de más de un día.
+	if err := st.PutUploadChunks(ctx, map[string][]byte{sha1Hex([]byte("viejo")): []byte("viejo"), sha1Hex([]byte("nuevo")): []byte("nuevo")}); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`UPDATE ` + schema + `.sourcemaps SET uploaded_at = now() - interval '91 days' WHERE release = 'prueba-upload' OR debug_id = '` + injectChunkID + `'`,
+		`UPDATE ` + schema + `.artifact_bundles SET assembled_at = now() - interval '91 days' WHERE release = 'prueba-upload'`,
+		`UPDATE ` + schema + `.upload_chunks SET uploaded_at = now() - interval '25 hours' WHERE sha1 <> '` + sha1Hex([]byte("nuevo")) + `'`,
+	} {
+		if _, err := admin.Exec(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	deleted, err := s.Purge(ctx, 90*24*time.Hour)
+	if err != nil || deleted != 3 {
+		t.Fatalf("borrados = %d, %v", deleted, err)
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.sourcemaps`); n != 1 {
+		t.Errorf("quedan %d mapas, quiero el de main por debug ID", n)
+	}
+	if n := count(`SELECT count(*) FROM ` + schema + `.artifact_bundles`); n != 1 {
+		t.Errorf("quedan %d bundles", n)
+	}
+	missing, err := st.MissingUploadChunks(ctx, []string{sha1Hex([]byte("viejo")), sha1Hex([]byte("nuevo"))})
+	if err != nil || len(missing) != 1 || missing[0] != sha1Hex([]byte("viejo")) {
+		t.Errorf("trozos que faltan tras la retención = %v, %v", missing, err)
+	}
+	// Tras la retención, el bundle borrado vuelve a pedir su trozo.
+	rec = serve(t, s, http.MethodPost, "/api/0/organizations/o/artifactbundle/assemble/", "Bearer "+token, "application/json", body)
+	if !strings.Contains(rec.Body.String(), `"state":"not_found"`) {
+		t.Errorf("tras la retención: %d %s", rec.Code, rec.Body)
+	}
+	ev = readEvent(t, "web-cli-upload-1")
+	if err := s.Enrich(ctx, p.ID, ev); err != nil {
+		t.Fatal(err)
+	}
+	if topFrame(ev).Minified != nil {
+		t.Error("se tradujo con un mapa caducado")
 	}
 }

@@ -14,31 +14,47 @@ import (
 )
 
 // SourceMapFile es un .map subido para un release; File es el nombre del .js
-// al que corresponde.
+// al que corresponde. Con DebugID se guarda por él y no sustituye a los que
+// solo tienen nombre.
 type SourceMapFile struct {
-	File string
-	Map  []byte
+	File    string
+	Dist    string
+	URL     string
+	DebugID string
+	Map     []byte
 }
 
 // PutSourceMaps guarda los mapas comprimidos, sustituyendo los que ya hubiera
-// con el mismo fichero. Si el proyecto no existe devuelve ErrNotFound.
+// con el mismo fichero (o el mismo debug ID). Si el proyecto no existe
+// devuelve ErrNotFound.
 func (s *Store) PutSourceMaps(ctx context.Context, projectID int64, release string, files []SourceMapFile) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("guardar source maps: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		return putSourceMaps(ctx, tx, projectID, release, files)
+	})
+}
+
+func putSourceMaps(ctx context.Context, tx pgx.Tx, projectID int64, release string, files []SourceMapFile) error {
 	for _, f := range files {
 		gz, err := gzipBytes(f.Map)
 		if err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `
-			INSERT INTO sourcemaps (project_id, release, file, map_gzip, size)
-			VALUES ($1, $2, $3, $4, $5)
-			ON CONFLICT (project_id, release, file)
-			DO UPDATE SET map_gzip = EXCLUDED.map_gzip, size = EXCLUDED.size, uploaded_at = now()`,
-			projectID, release, f.File, gz, len(f.Map))
+		q := `
+			INSERT INTO sourcemaps (project_id, release, dist, file, url, map_gzip, size)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (project_id, release, dist, file) WHERE debug_id IS NULL
+			DO UPDATE SET url = EXCLUDED.url, map_gzip = EXCLUDED.map_gzip, size = EXCLUDED.size, uploaded_at = now()`
+		args := []any{projectID, release, f.Dist, f.File, f.URL, gz, len(f.Map)}
+		if f.DebugID != "" {
+			q = `
+			INSERT INTO sourcemaps (project_id, release, dist, file, url, map_gzip, size, debug_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (project_id, debug_id) WHERE debug_id IS NOT NULL
+			DO UPDATE SET release = EXCLUDED.release, dist = EXCLUDED.dist, file = EXCLUDED.file, url = EXCLUDED.url,
+				map_gzip = EXCLUDED.map_gzip, size = EXCLUDED.size, uploaded_at = now()`
+			args = append(args, f.DebugID)
+		}
+		_, err = tx.Exec(ctx, q, args...)
 		var pe *pgconn.PgError
 		if errors.As(err, &pe) && pe.Code == "23503" {
 			return ErrNotFound
@@ -47,18 +63,28 @@ func (s *Store) PutSourceMaps(ctx context.Context, projectID int64, release stri
 			return fmt.Errorf("guardar source map %s: %w", f.File, err)
 		}
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("guardar source maps: %w", err)
-	}
 	return nil
 }
 
-// SourceMap devuelve el mapa descomprimido o ErrNotFound.
-func (s *Store) SourceMap(ctx context.Context, projectID int64, release, file string) ([]byte, error) {
+// SourceMap devuelve el mapa descomprimido del fichero en ese release, o
+// ErrNotFound. Prefiere el de la misma dist y, si no, uno sin dist; entre
+// varios, el más nuevo.
+func (s *Store) SourceMap(ctx context.Context, projectID int64, release, dist, file string) ([]byte, error) {
+	return s.sourceMap(ctx, `
+		SELECT map_gzip FROM sourcemaps
+		WHERE project_id = $1 AND release = $2 AND file = $3 AND dist IN ($4, '')
+		ORDER BY dist = $4 DESC, uploaded_at DESC, id DESC LIMIT 1`,
+		projectID, release, file, dist)
+}
+
+// SourceMapByDebugID devuelve el mapa con ese debug ID, o ErrNotFound.
+func (s *Store) SourceMapByDebugID(ctx context.Context, projectID int64, debugID string) ([]byte, error) {
+	return s.sourceMap(ctx, `SELECT map_gzip FROM sourcemaps WHERE project_id = $1 AND debug_id = $2`, projectID, debugID)
+}
+
+func (s *Store) sourceMap(ctx context.Context, q string, args ...any) ([]byte, error) {
 	var gz []byte
-	err := s.pool.QueryRow(ctx,
-		`SELECT map_gzip FROM sourcemaps WHERE project_id = $1 AND release = $2 AND file = $3`,
-		projectID, release, file).Scan(&gz)
+	err := s.pool.QueryRow(ctx, q, args...).Scan(&gz)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -76,11 +102,14 @@ func (s *Store) SourceMap(ctx context.Context, projectID int64, release, file st
 	return b, nil
 }
 
-// DeleteSourceMapsBefore borra los mapas subidos antes de t.
+// DeleteSourceMapsBefore borra los mapas subidos y los bundles ensamblados antes de t.
 func (s *Store) DeleteSourceMapsBefore(ctx context.Context, t time.Time) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM sourcemaps WHERE uploaded_at < $1`, t)
 	if err != nil {
 		return 0, fmt.Errorf("borrar source maps: %w", err)
+	}
+	if _, err := s.pool.Exec(ctx, `DELETE FROM artifact_bundles WHERE assembled_at < $1`, t); err != nil {
+		return 0, fmt.Errorf("borrar bundles: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }

@@ -1,0 +1,10 @@
+{
+  "method": "GET",
+  "path": "/api/0/organizations/cualquiera/chunk-upload/",
+  "headers": {
+    "accept": "*/*",
+    "user-agent": "sentry-cli/3.8.2"
+  },
+  "status": 200,
+  "response": "{\"accept\":[\"artifact_bundles\"],\"chunkSize\":8388608,\"chunksPerRequest\":64,\"compression\":[\"gzip\"],\"concurrency\":4,\"hashAlgorithm\":\"sha1\",\"maxFileSize\":104857600,\"maxRequestSize\":33554432,\"url\":\"/api/0/organizations/cualquiera/chunk-upload/\"}\n"
+}

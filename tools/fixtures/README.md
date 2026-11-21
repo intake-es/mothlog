@@ -23,8 +23,10 @@ Cada envío son dos ficheros:
 | `api-tarea-a-1` y `-b-1` | 2.75.0 | `task failed id=… name='enviar_factura' worker=… try=4 duration_ms=…` del logger `worker`, con id, worker y duración distintos | Los dos, el mismo error |
 | `web-typeerror-1` | `@sentry/browser` 11.15.0 | `TypeError` en `src/carrito.ts` al pulsar un botón, a través de `mitt`; lo captura el `addEventListener` envuelto del SDK; release `fixture-release-1` | Error nuevo; con los mapas de `testdata/sourcemaps/`, el último fotograma sale como `src/carrito.ts:7` y los de `mitt`, con `in_app` falso |
 | `web-sesion-1` y `-2` | 11.15.0 | `session` del navegador: la del arranque y la que cuenta el error | Se aceptan y se ignoran |
+| `web-cli-upload-1` | 11.15.0 | El mismo `TypeError`, con el build subido por `sentry-cli sourcemaps upload`; release `prueba-upload`, sin `debug_meta` | Error nuevo; con `testdata/sentry-cli/upload`, el último fotograma sale como `src/carrito.ts:7` por release y nombre |
+| `web-cli-inject-1` | 11.15.0 | El mismo `TypeError`, con el build pasado por `sentry-cli sourcemaps inject`; release `prueba-inject` y `debug_meta` con el debug ID de los dos `.js` | Error nuevo; con `testdata/sentry-cli/inject`, el último fotograma sale como `src/carrito.ts:7` por debug ID; el evento guardado conserva `debug_meta` |
 
-Proyectos de los DSN: `api` es el `1` y `web` el `2`. La clave pública va en `X-Sentry-Auth` (Python) o en `sentry_key` de la query (navegador).
+Proyectos de los DSN: `api` es el `1`, `web` el `2` y `front` (el de los `web-cli-*`) el `3`. La clave pública va en `X-Sentry-Auth` (Python) o en `sentry_key` de la query (navegador).
 
 La app de Python pone `server_name`, `release`, `environment` y una etiqueta `component` fijos, y en `before_send` cambia las rutas de la máquina que graba por `/srv/api` y `/usr/lib/python3.14`, para que no salgan en los fixtures.
 
@@ -45,6 +47,15 @@ Los mapas traen `sourcesContent`. esbuild escribe las fuentes relativas a `dist/
 | `chunk-Z554BZQ6.js:1:242` | `node_modules/mitt/src/index.ts:109` |
 | `chunk-Z554BZQ6.js:1:442` | `src/carrito.ts:12` |
 | `chunk-Z554BZQ6.js:1:383` | `src/carrito.ts:7`, donde salta el error |
+
+## testdata/sentry-cli/
+
+Lo que mandó sentry-cli 3.8.2 al subir el build de `navegador/` a intake-errors, petición a petición: `NNN.body` y `NNN.meta.json` (método, ruta, cabeceras sin `Authorization`, y el código y la respuesta que dio el servidor). Las dos subidas son de cuatro peticiones: las opciones de la subida por trozos, el primer ensamblado (que responde `not_found` con el trozo que falta), el trozo en gzip y el ensamblado que responde `ok`.
+
+- `upload/`: `sourcemaps upload --release prueba-upload`, sin debug IDs.
+- `inject/`: `sourcemaps inject` y `sourcemaps upload` sin release; el debug ID del chunk es `174ab4b5-75a1-56fb-be73-185871cd4267` y el de `main-V7FHULKG.js`, `5cb45e20-41a8-5fea-a9ea-8edaf705a1dc`.
+
+`internal/sourcemap` las repite en orden contra el handler y comprueba que las respuestas son las grabadas.
 
 ## Regrabar
 
@@ -68,4 +79,13 @@ Los mapas traen `sourcesContent`. esbuild escribe las fuentes relativas a `dist/
    ```
 
    `grabar.mjs` sirve `dist/` como `https://app.example.com`, pulsa el botón, guarda en `<salida>` lo que iba a `errors.example.com`, con la misma numeración que el receptor, y bloquea todo lo demás.
-4. `python3 tools/fixtures/ver.py <salida>` lista los items de cada envío. Renombrar los ficheros como en la tabla y copiarlos a `testdata/envelopes/`, y copiar `dist/*.js` y `dist/*.map` a `testdata/sourcemaps/`. `node posiciones.mjs <envío> dist` da las posiciones originales de cada fotograma. Si cambian las claves, los ids, los hashes de los chunks o las líneas, ajustar los tests que los esperan.
+4. Los `web-cli-*` y `testdata/sentry-cli/` salen de la prueba con `sentry-cli` de verdad, que arranca el binario contra una base vacía:
+
+   ```sh
+   cd tools/sentry-cli
+   npm ci
+   DATABASE_URL=postgres://... ./prueba.sh
+   ```
+
+   Crea los proyectos `api`, `web` y `front`, compila la página tres veces con el DSN de `front` y la sube con `sentry-cli` 3.8.2 sin `inject`, con `inject` y con 1.77.3; manda el error con Chromium a través de `navegador.mjs` y comprueba con la API que el último fotograma de cada evento sale como `src/carrito.ts:7`. Prueba también que un token malo da 401. Deja en `trabajo/subidas/<caso>/` lo que mandó `sentry-cli` y en `trabajo/envios-<caso>/` los envíos del navegador: el que lleva el evento es el `web-cli-<caso>-1`.
+5. `python3 tools/fixtures/ver.py <salida>` lista los items de cada envío. Renombrar los ficheros como en la tabla y copiarlos a `testdata/envelopes/`, y copiar `dist/*.js` y `dist/*.map` a `testdata/sourcemaps/`. `node posiciones.mjs <envío> dist` da las posiciones originales de cada fotograma. Si cambian las claves, los ids, los hashes de los chunks o las líneas, ajustar los tests que los esperan.

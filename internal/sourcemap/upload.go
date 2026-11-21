@@ -23,24 +23,41 @@ type savedFile struct {
 	Size int    `json:"size"`
 }
 
-// Register añade la ruta de subida al mux.
+// Register añade al mux la ruta de subida propia y las de sentry-cli.
 func (s *Service) Register(mux *http.ServeMux) {
 	mux.HandleFunc(UploadPattern, s.upload)
+	s.registerCLI(mux)
 }
 
-func (s *Service) authorized(r *http.Request) bool {
-	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || got == "" || s.opts.UploadToken == "" {
-		return false
+// authorized acepta SOURCEMAP_UPLOAD_TOKEN o un token activo de la API. Si
+// no, ya ha respondido 401 o 500.
+func (s *Service) authorized(w http.ResponseWriter, r *http.Request) bool {
+	scheme, got, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	got = strings.TrimSpace(got)
+	if strings.EqualFold(scheme, "Bearer") && got != "" {
+		if s.opts.UploadToken != "" {
+			a, b := sha256.Sum256([]byte(got)), sha256.Sum256([]byte(s.opts.UploadToken))
+			if subtle.ConstantTimeCompare(a[:], b[:]) == 1 {
+				return true
+			}
+		}
+		_, err := s.store.Authenticate(r.Context(), got)
+		if err == nil {
+			return true
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			s.log.ErrorContext(r.Context(), "autenticar subida de source maps", "err", err)
+			writeError(w, http.StatusInternalServerError, "error interno")
+			return false
+		}
 	}
-	a, b := sha256.Sum256([]byte(got)), sha256.Sum256([]byte(s.opts.UploadToken))
-	return subtle.ConstantTimeCompare(a[:], b[:]) == 1
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	writeError(w, http.StatusUnauthorized, "token no válido")
+	return false
 }
 
 func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
-	if !s.authorized(r) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		writeError(w, http.StatusUnauthorized, "token no válido")
+	if !s.authorized(w, r) {
 		return
 	}
 	projectID, err := strconv.ParseInt(r.PathValue("project_id"), 10, 64)
@@ -125,9 +142,9 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "no se pudieron guardar")
 		return
 	}
+	s.cache.clear()
 	saved := make([]savedFile, len(files))
 	for i, f := range files {
-		s.cache.invalidate(key{projectID, release, f.File})
 		saved[i] = savedFile{Name: names[i], File: f.File, Size: len(f.Map)}
 	}
 	s.log.InfoContext(r.Context(), "source maps subidos", "project", projectID, "release", release, "n", len(saved))

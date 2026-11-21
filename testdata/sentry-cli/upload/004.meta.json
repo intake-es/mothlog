@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/api/0/organizations/cualquiera/artifactbundle/assemble/",
+  "headers": {
+    "accept": "*/*",
+    "user-agent": "sentry-cli/3.8.2",
+    "content-type": "application/json"
+  },
+  "status": 200,
+  "response": "{\"state\":\"ok\",\"missingChunks\":[],\"detail\":null}\n"
+}

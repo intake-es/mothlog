@@ -1,0 +1,9 @@
+{
+  "name": "prueba-sentry-cli",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sentry/cli": "3.8.2",
+    "playwright": "1.64.1"
+  }
+}

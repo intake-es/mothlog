@@ -132,7 +132,7 @@ func run(args []string) error {
 	defer db.Close()
 
 	if cfg.SourceMapUploadToken == "" {
-		log.Warn("sin SOURCEMAP_UPLOAD_TOKEN: la subida de source maps responde 401")
+		log.Warn("sin SOURCEMAP_UPLOAD_TOKEN: la subida de source maps solo acepta tokens de la API")
 	}
 	maps := sourcemap.New(db, log, sourcemap.Options{UploadToken: cfg.SourceMapUploadToken})
 	go maps.RunRetention(ctx, time.Duration(cfg.RetentionDays)*24*time.Hour, time.Hour)

@@ -1,7 +1,9 @@
 package event
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -178,6 +180,31 @@ func TestParseInvalid(t *testing.T) {
 		}
 		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("%q: err = %v", in, err)
+		}
+	}
+}
+
+func TestParseKeepsDebugMetaAndDist(t *testing.T) {
+	dm := `{"images":[{"type":"sourcemap","code_file":"https://app.example.com/a.js","debug_id":"174ab4b5-75a1-56fb-be73-185871cd4267"}]}`
+	e, err := Parse([]byte(`{"event_id":"a","dist":"d1","debug_meta":` + dm + `}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Dist != "d1" || string(e.DebugMeta) != dm {
+		t.Fatalf("dist %q, debug_meta %s", e.Dist, e.DebugMeta)
+	}
+	out, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"dist":"d1"`) || !strings.Contains(string(out), `"debug_meta":`+dm) {
+		t.Errorf("normalizado = %s", out)
+	}
+
+	for _, raw := range []string{`null`, `"x"`, `[1]`, `3`} {
+		e, err := Parse([]byte(`{"event_id":"a","debug_meta":` + raw + `}`))
+		if err != nil || e.DebugMeta != nil {
+			t.Errorf("debug_meta %s: %s, %v", raw, e.DebugMeta, err)
 		}
 	}
 }

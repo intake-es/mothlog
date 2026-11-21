@@ -6,9 +6,12 @@ import (
 	"time"
 )
 
+// key busca un mapa por debug ID o, si no lo tiene, por release, dist y fichero.
 type key struct {
 	project int64
+	debugID string
 	release string
+	dist    string
 	file    string
 }
 
@@ -72,14 +75,6 @@ func (c *cache) add(e *entry) {
 	c.size += e.size
 	for c.size > c.max {
 		c.remove(c.ll.Back())
-	}
-}
-
-func (c *cache) invalidate(k key) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if el, ok := c.items[k]; ok {
-		c.remove(el)
 	}
 }
 

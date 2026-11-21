@@ -23,6 +23,7 @@ type Event struct {
 	Level       string            `json:"level"`
 	Logger      string            `json:"logger,omitempty"`
 	Release     string            `json:"release,omitempty"`
+	Dist        string            `json:"dist,omitempty"`
 	Environment string            `json:"environment,omitempty"`
 	SDK         SDK               `json:"sdk"`
 	Message     string            `json:"message,omitempty"`
@@ -35,6 +36,8 @@ type Event struct {
 	ServerName  string            `json:"server_name,omitempty"`
 	Breadcrumbs json.RawMessage   `json:"breadcrumbs,omitempty"`
 	Contexts    json.RawMessage   `json:"contexts,omitempty"`
+	// DebugMeta va tal cual; sus imágenes sourcemap dicen el debug ID de cada .js.
+	DebugMeta json.RawMessage `json:"debug_meta,omitempty"`
 }
 
 type SDK struct {
@@ -111,6 +114,7 @@ type raw struct {
 	Level       text            `json:"level"`
 	Logger      text            `json:"logger"`
 	Release     text            `json:"release"`
+	Dist        text            `json:"dist"`
 	Environment text            `json:"environment"`
 	SDK         json.RawMessage `json:"sdk"`
 	Logentry    json.RawMessage `json:"logentry"`
@@ -124,6 +128,7 @@ type raw struct {
 	ServerName  text            `json:"server_name"`
 	Breadcrumbs json.RawMessage `json:"breadcrumbs"`
 	Contexts    json.RawMessage `json:"contexts"`
+	DebugMeta   json.RawMessage `json:"debug_meta"`
 }
 
 type rawMessage struct {
@@ -174,6 +179,7 @@ func Parse(payload []byte) (*Event, error) {
 		Level:       string(r.Level),
 		Logger:      string(r.Logger),
 		Release:     string(r.Release),
+		Dist:        string(r.Dist),
 		Environment: string(r.Environment),
 		SDK:         parseSDK(r.SDK),
 		Message:     message(r),
@@ -185,6 +191,7 @@ func Parse(payload []byte) (*Event, error) {
 		ServerName:  string(r.ServerName),
 		Breadcrumbs: nonNull(r.Breadcrumbs),
 		Contexts:    nonNull(r.Contexts),
+		DebugMeta:   object(r.DebugMeta),
 	}
 	if e.Level == "" {
 		e.Level = "error"
@@ -438,6 +445,15 @@ func lines(b json.RawMessage) []string {
 		out[i] = string(s)
 	}
 	return out
+}
+
+// object devuelve b si es un objeto JSON, o nil.
+func object(b json.RawMessage) json.RawMessage {
+	b = nonNull(b)
+	if len(b) == 0 || b[0] != '{' {
+		return nil
+	}
+	return b
 }
 
 func nonNull(b json.RawMessage) json.RawMessage {

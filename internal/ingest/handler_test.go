@@ -37,6 +37,7 @@ var fixtureProjects = []struct {
 }{
 	{1, "api", "5b6d3a35fd6eb6e0f9d410fc5c0f6cbc"},
 	{2, "web", "ce01335f125960aa6957a133d15b5f3a"},
+	{3, "front", "7438a4393be53fabe513ce19bec380e9"},
 }
 
 // Fixtures con un event y el issue que deben abrir, según tools/fixtures/README.md.
@@ -48,6 +49,8 @@ var errorFixtures = map[string]struct{ title, culprit string }{
 	"api-tarea-a-1":       {"task failed id=88dfc065281046dfa0098d0fa91bbdf4", ""},
 	"api-tarea-b-1":       {"task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35", ""},
 	"web-typeerror-1":     {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
+	"web-cli-upload-1":    {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
+	"web-cli-inject-1":    {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
 }
 
 var noEventFixtures = []string{
@@ -667,5 +670,19 @@ func TestPurgeSkipsIssueBeingIngested(t *testing.T) {
 func TestValidID(t *testing.T) {
 	if !validID(hex.EncodeToString(make([]byte, 16))) || validID("xyz") || validID("") {
 		t.Fatal("validID")
+	}
+}
+
+func TestStoredEventKeepsDebugMeta(t *testing.T) {
+	e := newTestEnv(t, 1000)
+	for _, name := range []string{"web-cli-inject-1", "web-cli-upload-1"} {
+		f := loadFixture(t, name)
+		e.sendOK(t, f, f.body)
+	}
+	if n := e.count(t, `SELECT count(*) FROM events WHERE jsonb_array_length(data->'debug_meta'->'images') = 2 AND release = 'prueba-inject'`); n != 1 {
+		t.Errorf("%d eventos con debug_meta", n)
+	}
+	if n := e.count(t, `SELECT count(*) FROM events WHERE data ? 'debug_meta'`); n != 1 {
+		t.Errorf("%d eventos con debug_meta; el de upload no lo trae", n)
 	}
 }

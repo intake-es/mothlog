@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -39,32 +40,57 @@ type stored struct {
 	at time.Time
 }
 
+// memStore guarda en memoria; los proyectos "web" y "front" (el de
+// testdata/sentry-cli) son webID y el token de la API que vale es apiToken.
 type memStore struct {
-	mu    sync.Mutex
-	maps  map[key]stored
-	reads int
+	mu      sync.Mutex
+	maps    map[key]stored
+	reads   int
+	chunks  map[string][]byte
+	bundles map[string]bool
+	// vanish son trozos que UploadChunk ya no encuentra, aunque MissingUploadChunks sí.
+	vanish map[string]bool
 }
 
-func newMemStore() *memStore { return &memStore{maps: map[key]stored{}} }
+const apiToken = "ie_token-de-la-api"
+
+func newMemStore() *memStore {
+	return &memStore{maps: map[key]stored{}, chunks: map[string][]byte{}, bundles: map[string]bool{}}
+}
 
 func (m *memStore) PutSourceMaps(_ context.Context, projectID int64, release string, files []store.SourceMapFile) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, f := range files {
-		m.maps[key{projectID, release, f.File}] = stored{f.Map, time.Now()}
+		now := stored{f.Map, time.Now()}
+		m.maps[key{project: projectID, release: release, dist: f.Dist, file: f.File}] = now
+		if f.DebugID != "" {
+			m.maps[key{project: projectID, debugID: f.DebugID}] = now
+		}
 	}
 	return nil
 }
 
-func (m *memStore) SourceMap(_ context.Context, projectID int64, release, file string) ([]byte, error) {
+func (m *memStore) SourceMap(_ context.Context, projectID int64, release, dist, file string) ([]byte, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reads++
-	s, ok := m.maps[key{projectID, release, file}]
-	if !ok {
-		return nil, store.ErrNotFound
+	for _, d := range []string{dist, ""} {
+		if s, ok := m.maps[key{project: projectID, release: release, dist: d, file: file}]; ok {
+			return s.b, nil
+		}
 	}
-	return s.b, nil
+	return nil, store.ErrNotFound
+}
+
+func (m *memStore) SourceMapByDebugID(_ context.Context, projectID int64, debugID string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.reads++
+	if s, ok := m.maps[key{project: projectID, debugID: debugID}]; ok {
+		return s.b, nil
+	}
+	return nil, store.ErrNotFound
 }
 
 func (m *memStore) DeleteSourceMapsBefore(_ context.Context, t time.Time) (int64, error) {
@@ -78,6 +104,71 @@ func (m *memStore) DeleteSourceMapsBefore(_ context.Context, t time.Time) (int64
 		}
 	}
 	return n, nil
+}
+
+func (m *memStore) ProjectByName(_ context.Context, name string) (store.Project, error) {
+	if name != "web" && name != "front" {
+		return store.Project{}, store.ErrNotFound
+	}
+	return store.Project{ID: webID, Name: name}, nil
+}
+
+func (m *memStore) Authenticate(_ context.Context, secret string) (store.Token, error) {
+	if secret != apiToken {
+		return store.Token{}, store.ErrNotFound
+	}
+	return store.Token{Name: "api"}, nil
+}
+
+func (m *memStore) PutUploadChunks(_ context.Context, chunks map[string][]byte) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, v := range chunks {
+		m.chunks[k] = v
+	}
+	return nil
+}
+
+func (m *memStore) MissingUploadChunks(_ context.Context, sums []string) ([]string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	missing := []string{}
+	for _, s := range sums {
+		if _, ok := m.chunks[s]; !ok && !slices.Contains(missing, s) {
+			missing = append(missing, s)
+		}
+	}
+	return missing, nil
+}
+
+func (m *memStore) UploadChunk(_ context.Context, sum string) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c, ok := m.chunks[sum]
+	if !ok || m.vanish[sum] {
+		return nil, store.ErrNotFound
+	}
+	return c, nil
+}
+
+func (m *memStore) DeleteUploadChunksBefore(context.Context, time.Time) (int64, error) { return 0, nil }
+
+func (m *memStore) BundleAssembled(_ context.Context, checksum string, projectIDs []int64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.bundles[checksum], nil
+}
+
+func (m *memStore) PutBundle(ctx context.Context, b store.Bundle) error {
+	for _, p := range b.ProjectIDs {
+		if err := m.PutSourceMaps(ctx, p, b.Release, b.Files); err != nil {
+			return err
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bundles[b.Checksum] = true
+	return nil
 }
 
 func quiet() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -481,8 +572,8 @@ func TestUploadReplaces(t *testing.T) {
 
 func TestPurge(t *testing.T) {
 	s, st := webService(t)
-	old := key{webID, "viejo", chunkJS}
-	st.maps[old] = stored{st.maps[key{webID, release1, chunkJS}].b, time.Now().AddDate(0, 0, -91)}
+	old := key{project: webID, release: "viejo", file: chunkJS}
+	st.maps[old] = stored{st.maps[key{project: webID, release: release1, file: chunkJS}].b, time.Now().AddDate(0, 0, -91)}
 
 	ev := readEvent(t, "web-typeerror-1")
 	ev.Release = "viejo"
@@ -529,7 +620,7 @@ func BenchmarkEnrichWeb(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		st.maps[key{webID, release1, f}] = stored{body, time.Now()}
+		st.maps[key{project: webID, release: release1, file: f}] = stored{body, time.Now()}
 	}
 	s := New(st, quiet(), Options{})
 	raw, err := os.ReadFile(filepath.Join(testdata, "envelopes", "web-typeerror-1.envelope"))

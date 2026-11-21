@@ -20,6 +20,8 @@ const fixturesDir = "../../testdata/envelopes"
 const (
 	keyAPI = "5b6d3a35fd6eb6e0f9d410fc5c0f6cbc"
 	keyWeb = "ce01335f125960aa6957a133d15b5f3a"
+	// El de la prueba con sentry-cli de tools/sentry-cli.
+	keyWebCLI = "7438a4393be53fabe513ce19bec380e9"
 )
 
 type want struct {
@@ -33,6 +35,8 @@ type want struct {
 	inApp      bool
 	release    string
 	request    string
+	// debugIDs es cuántas imágenes sourcemap trae debug_meta.
+	debugIDs int
 }
 
 var (
@@ -73,6 +77,13 @@ var fixtures = map[string]want{
 	}),
 	"web-typeerror-1": with(browser, func(w *want) {
 		w.excType, w.inApp, w.request = "TypeError", true, " https://app.example.com/"
+	}),
+	"web-cli-upload-1": with(browser, func(w *want) {
+		w.key, w.release, w.excType, w.inApp, w.request = keyWebCLI, "prueba-upload", "TypeError", true, " https://app.example.com/"
+	}),
+	"web-cli-inject-1": with(browser, func(w *want) {
+		w.key, w.release, w.excType, w.inApp, w.request = keyWebCLI, "prueba-inject", "TypeError", true, " https://app.example.com/"
+		w.debugIDs = 2
 	}),
 	"web-sesion-1": {key: keyWeb, noEvent: true},
 	"web-sesion-2": {key: keyWeb, noEvent: true},
@@ -191,6 +202,26 @@ func TestFixtures(t *testing.T) {
 			}
 			if len(e.Contexts) == 0 || len(e.Breadcrumbs) == 0 {
 				t.Error("faltan contexts o breadcrumbs")
+			}
+			var dm struct {
+				Images []struct {
+					Type     string `json:"type"`
+					CodeFile string `json:"code_file"`
+					DebugID  string `json:"debug_id"`
+				} `json:"images"`
+			}
+			if len(e.DebugMeta) > 0 {
+				if err := json.Unmarshal(e.DebugMeta, &dm); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if len(dm.Images) != w.debugIDs {
+				t.Errorf("%d imágenes en debug_meta, quiero %d", len(dm.Images), w.debugIDs)
+			}
+			for _, img := range dm.Images {
+				if img.Type != "sourcemap" || !strings.HasPrefix(img.CodeFile, "https://app.example.com/") || len(img.DebugID) != 36 {
+					t.Errorf("imagen = %+v", img)
+				}
 			}
 
 			var req string

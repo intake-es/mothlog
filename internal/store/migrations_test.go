@@ -51,7 +51,7 @@ func TestMigrationProjectLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := p.Up(ctx)
+	res, err := p.UpTo(ctx, 7)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,5 +112,66 @@ func TestMigrationProjectLabels(t *testing.T) {
 	var labels []string
 	if err := pool.QueryRow(ctx, `SELECT linear_label_ids FROM projects WHERE id = $1`, back).Scan(&labels); err != nil || !slices.Equal(labels, []string{}) {
 		t.Errorf("tras bajar y subir: %v, %v", labels, err)
+	}
+}
+
+func TestMigrationSourceMapsSentryCLI(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 7); err != nil {
+		t.Fatal(err)
+	}
+	var web int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('web', 'clave-web') RETURNING id`).Scan(&web); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO sourcemaps (project_id, release, file, map_gzip, size) VALUES ($1, 'r1', 'a.js', 'viejo', 5)`, web); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 8); err != nil {
+		t.Fatal(err)
+	}
+	var dist, url string
+	var debugID *string
+	if err := pool.QueryRow(ctx, `SELECT dist, url, debug_id::text FROM sourcemaps WHERE file = 'a.js'`).Scan(&dist, &url, &debugID); err != nil || dist != "" || url != "" || debugID != nil {
+		t.Fatalf("mapa de antes: %q %q %v, %v", dist, url, debugID, err)
+	}
+	// Dos del mismo release y fichero con debug ID, y uno con dist.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO sourcemaps (project_id, release, file, map_gzip, size, debug_id, uploaded_at) VALUES
+			($1, 'r1', 'a.js', 'id1', 3, '174ab4b5-75a1-56fb-be73-185871cd4267', now() + interval '1 minute'),
+			($1, 'r1', 'a.js', 'id2', 3, '86c80c38-f83a-593e-aa45-9e741c94fda4', now())`, web); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO sourcemaps (project_id, release, dist, file, map_gzip, size) VALUES ($1, 'r1', 'd1', 'a.js', 'd1', 2)`, web); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO sourcemaps (project_id, release, file, map_gzip, size) VALUES ($1, 'r1', 'a.js', 'x', 1)`, web); err == nil {
+		t.Error("dos mapas sin debug ID con el mismo release, dist y fichero")
+	}
+
+	if _, err := p.DownTo(ctx, 7); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	var body string
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*), max(convert_from(map_gzip, 'UTF8')) FROM sourcemaps`).Scan(&n, &body); err != nil || n != 1 || body != "id1" {
+		t.Errorf("tras bajar: %d filas, %q, %v; quiero solo el más nuevo", n, body, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
 	}
 }
