@@ -44,6 +44,12 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route := func(pattern string, f http.HandlerFunc) { mux.Handle(pattern, auth(f)) }
 
 	route("GET /api/0/projects/{$}", h.projects)
+	for _, p := range []string{"/api/0/projects/{id}/filters", "/api/0/projects/{id}/filters/{$}"} {
+		route("GET "+p, h.filters)
+		route("PATCH "+p, h.setFilters)
+	}
+	route("GET /api/0/projects/{id}/dropped", h.dropped)
+	route("GET /api/0/projects/{id}/dropped/{$}", h.dropped)
 	route("GET /api/0/issues/{$}", h.issues)
 	route("GET /api/0/issues/{id}/{$}", h.issue)
 	route("GET /api/0/issues/{id}/events/{$}", h.issueEvents)
@@ -84,6 +90,65 @@ func (h *handlers) projects(w http.ResponseWriter, r *http.Request) {
 		out[i] = projectJSON{ID: p.ID, Name: p.Name, DSN: dsn.String(), LinearLabelIDs: labels}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+func (h *handlers) filters(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r)
+	if !ok {
+		return
+	}
+	f, err := h.st.Filters(r.Context(), id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
+}
+
+// setFilters cambia solo los campos que trae el cuerpo; null en un número
+// vuelve a su valor por defecto.
+func (h *handlers) setFilters(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r)
+	if !ok {
+		return
+	}
+	f, err := h.st.Filters(r.Context(), id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&f); err != nil {
+		writeError(w, http.StatusBadRequest, "cuerpo no válido: "+err.Error())
+		return
+	}
+	f, err = h.st.SetFilters(r.Context(), id, f)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, f)
+}
+
+func (h *handlers) dropped(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r)
+	if !ok {
+		return
+	}
+	days, ok := intParam(w, r.URL.Query().Get("days"), "days")
+	if !ok {
+		return
+	}
+	if days == 0 {
+		days = 30
+	}
+	st, err := h.st.DroppedSince(r.Context(), id, days, time.Now())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 func (h *handlers) issues(w http.ResponseWriter, r *http.Request) {

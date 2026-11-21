@@ -29,17 +29,20 @@ const (
 
 type Projects interface {
 	ProjectByID(ctx context.Context, id int64) (store.Project, error)
+	Filters(ctx context.Context, projectID int64) (store.Filters, error)
 }
 
 type Handler struct {
 	projects Projects
 	ingester *Ingester
 	limiter  *RateLimiter
+	drops    *Drops
 	log      *slog.Logger
 }
 
-func NewHandler(projects Projects, ingester *Ingester, limiter *RateLimiter, log *slog.Logger) *Handler {
-	return &Handler{projects: projects, ingester: ingester, limiter: limiter, log: log}
+// NewHandler acepta drops nil: entonces no se cuentan los descartes.
+func NewHandler(projects Projects, ingester *Ingester, limiter *RateLimiter, drops *Drops, log *slog.Logger) *Handler {
+	return &Handler{projects: projects, ingester: ingester, limiter: limiter, drops: drops, log: log}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -127,8 +130,35 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		events = append(events, ev)
 	}
 
+	lim := DefaultLimits()
+	perMinute := 0
 	if len(events) > 0 {
-		if ok, wait := h.limiter.Allow(project.ID, len(events)); !ok {
+		filters, err := h.projects.Filters(ctx, project.ID)
+		if err != nil {
+			h.log.ErrorContext(ctx, "leer filtros", "proyecto", project.ID, "err", err)
+			fail(w, http.StatusInternalServerError, "error interno")
+			return
+		}
+		lim = LimitsOf(filters)
+		if filters.RateLimitPerMinute != nil {
+			perMinute = *filters.RateLimitPerMinute
+		}
+		fl := NewFilter(filters)
+		kept := events[:0]
+		for _, ev := range events {
+			if reason := fl.Drop(ev); reason != "" {
+				h.drops.Add(project.ID, reason, 1)
+				h.log.DebugContext(ctx, "evento descartado", "proyecto", project.ID, "event_id", ev.ID, "motivo", reason)
+				continue
+			}
+			kept = append(kept, ev)
+		}
+		events = kept
+	}
+
+	if len(events) > 0 {
+		if ok, wait := h.limiter.AllowUpTo(project.ID, len(events), perMinute); !ok {
+			h.drops.Add(project.ID, store.DropRateLimit, len(events))
 			secs := strconv.Itoa(max(1, int(math.Ceil(wait.Seconds()))))
 			hdr := w.Header()
 			hdr.Set("Retry-After", secs)
@@ -141,7 +171,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	respID := headerID
 	for i, ev := range events {
 		start := time.Now()
-		res, err := h.ingester.Ingest(ctx, project.ID, ev)
+		res, err := h.ingester.IngestWith(ctx, project.ID, ev, lim)
 		if err != nil {
 			h.log.ErrorContext(ctx, "guardar evento", "proyecto", project.ID, "event_id", ev.ID, "err", err)
 			fail(w, http.StatusInternalServerError, "error interno")
@@ -150,8 +180,11 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		if i == 0 {
 			respID = ev.ID
 		}
+		if res.Dropped != "" && !res.Duplicate {
+			h.drops.Add(project.ID, res.Dropped, 1)
+		}
 		h.log.DebugContext(ctx, "evento", "proyecto", project.ID, "event_id", ev.ID, "issue", res.IssueID,
-			"resultado", res.Outcome.String(), "repetido", res.Duplicate, "duración", time.Since(start))
+			"resultado", res.Outcome.String(), "repetido", res.Duplicate, "descartado", res.Dropped, "duración", time.Since(start))
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": respID})
 }

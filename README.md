@@ -20,7 +20,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `LISTEN_ADDR` | dirección HTTP | `:8080` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
 | `PUBLIC_URL` | URL pública del servicio, para escribir los DSN y el enlace de los avisos | obligatoria para `projects create` y `list`; en `/api/0/projects/`, la de cada petición; sin ella, los avisos van sin enlace |
-| `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto | `60` |
+| `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto, en los proyectos que no ponen el suyo | `60` |
 | `RETENTION_DAYS` | días que se guardan los eventos y los source maps | `90` |
 | `SOURCEMAP_UPLOAD_TOKEN` | token para subir source maps, además de los tokens de la API; sin él solo valen esos | vacío |
 | `SLACK_WEBHOOK_URL` | webhook entrante de Slack; sin él no se avisa en Slack | vacío |
@@ -69,6 +69,9 @@ intake-errors projects list
 intake-errors projects labels backend                 # enseña sus etiquetas de Linear propias
 intake-errors projects labels backend <id>,<id>       # las sustituye por estas
 intake-errors projects labels backend --clear         # las quita
+intake-errors projects filters backend                # enseña sus filtros, el tope por issue y el muestreo
+intake-errors projects filters backend set <clave> [<valor>…]   # cambia uno; ver Filtros, tope y muestreo
+intake-errors projects dropped backend [<días>]       # lo descartado por motivo, 30 días por defecto
 ```
 
 Las issues de Linear de un proyecto llevan dos grupos de etiquetas: las de `LINEAR_LABEL_IDS`, que llevan las issues de todos los proyectos, y las propias del proyecto, que se ponen con `projects labels` y sirven para lo que cada uno quiera (el equipo que se encarga, una prioridad, que las recoja otro servicio…). Los ids son los de Linear, no los nombres de las etiquetas.
@@ -109,17 +112,46 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events
 | `GET /api/0/issues/{id}/stacktrace.md` | el último evento en Markdown, pensado para un modelo |
 | `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}`; `resolved_next` guarda el release del último evento (409 si no tiene) |
 | `GET /api/0/events/{id}/` | el evento normalizado entero, por id o por `event_id` |
+| `GET /api/0/projects/{id}/filters` | los filtros, el tope por issue, el muestreo y el límite por minuto del proyecto |
+| `PATCH /api/0/projects/{id}/filters` | cambia los campos que trae el cuerpo, con los mismos nombres; `null` en un número vuelve a su valor por defecto; 400 con un valor no válido |
+| `GET /api/0/projects/{id}/dropped?days=` | lo descartado en los últimos `days` días (30 por defecto, hoy incluido): `total`, `reasons` con cada motivo y `daily` por día y motivo |
 
 Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
 
 
 ## Ingesta
 
-Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Solo se guardan los items `event`; el resto se acepta y se ignora. Pasado `RATE_LIMIT_PER_MINUTE`, responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
+Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Solo se guardan los items `event`; el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
 
 Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo trae; si no, el tipo de la excepción lanzada y el módulo o fichero y la función de sus fotogramas `in_app` (sin líneas); y en los logs sin excepción, el logger y el mensaje con UUIDs, hexadecimales y números cambiados por marcadores. Un evento en un issue `resolved`, o en uno `resolved_next` con otro release, lo reabre como regresión.
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
+
+### Filtros, tope y muestreo
+
+Cada proyecto tiene su configuración, con `projects filters` o con `/api/0/projects/{id}/filters`. Por defecto no filtra nada, guarda como mucho 100 eventos por issue y hora, no muestrea y usa `RATE_LIMIT_PER_MINUTE`.
+
+Los filtros se aplican al recibir el evento, antes de agruparlo: lo filtrado no abre ni cuenta en ningún issue, no avisa y no gasta el límite por minuto.
+
+| Clave | Descarta | Motivo en las cifras |
+|---|---|---|
+| `messages` | los eventos cuyo mensaje, o el `Tipo: valor` o el valor de alguna excepción, casa con alguna de estas expresiones regulares (sintaxis de Go; `(?i)` para no distinguir mayúsculas) | `message` |
+| `exception_types` | los que tienen alguna excepción de estos tipos, por su nombre (`KeyError`) o con el módulo delante (`pagos.errores.ReembolsoRechazado`) | `exception_type` |
+| `browser_extensions` (`on`/`off`) | los errores de extensiones del navegador: `chrome-extension://`, `moz-extension://`, `safari-extension://`, `safari-web-extension://`, `ms-browser-extension://` o `edge-extension://` en un fotograma, el mensaje o una excepción | `browser_extension` |
+| `web_crawlers` (`on`/`off`) | los de peticiones de bots, rastreadores y comprobadores de disponibilidad, por el `User-Agent` que trae el evento en `request.headers` | `web_crawler` |
+| `localhost` (`on`/`off`) | los de `request.url` en `localhost`, `*.localhost`, `127.0.0.0/8`, `::1` o `0.0.0.0`, o con la IP del usuario en una de esas direcciones | `localhost` |
+| `environments` | los de estos entornos | `environment` |
+| `releases` | los de estos releases; `*` vale cualquier cosa (`*-beta.*`) | `release` |
+
+El resto limita lo que se guarda sin perder la cuenta:
+
+- `events_per_issue_per_hour` (100 por defecto): pasado el tope en una hora de reloj, el evento no se guarda, pero el issue suma su `count` y su última vez, así que la cifra es la real. No vuelve a avisar: los avisos siguen siendo solo los de error nuevo y regresión. Motivo `issue_limit`.
+- `sample_rate`, de 0 a 1 (1 por defecto): la parte de los eventos de issues que ya existen que se guarda; los que quedan fuera cuentan en el issue igual que los del tope. Motivo `sampled`.
+- `rate_limit_per_minute`: el límite por minuto del proyecto, en lugar de `RATE_LIMIT_PER_MINUTE`. Lo que lo pasa se rechaza con 429 y no cuenta en ningún issue. Motivo `rate_limit`.
+
+El primer evento de un issue nuevo y el de una regresión se guardan siempre, aunque el tope o el muestreo digan lo contrario. El muestreo también deja pasar el primer evento de cada día (UTC) de cada issue, para que un issue que sigue recibiendo eventos tenga siempre uno guardado dentro de `RETENTION_DAYS` y la purga no lo borre con su `count`. Si un evento que no se guardó se vuelve a enviar con el mismo `event_id`, cuenta otra vez, porque no queda nada con que reconocerlo; los SDK solo reenvían si la respuesta no es un 200.
+
+Las cifras de lo descartado se cuentan en memoria y se guardan cada 10 segundos y al parar, por proyecto, motivo y día (UTC); si el proceso muere sin parar, se pierden las de esos últimos segundos.
 
 Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
 

@@ -10,12 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	mrand "math/rand/v2"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/intake-errors/internal/store"
 )
 
 type Enricher interface {
@@ -61,6 +63,7 @@ type Ingester struct {
 	notifier Notifier
 	log      *slog.Logger
 	now      func() time.Time
+	random   func() float64
 }
 
 // NewIngester acepta enricher y notifier nil: entonces no hacen nada.
@@ -71,7 +74,24 @@ func NewIngester(pool *pgxpool.Pool, enricher Enricher, notifier Notifier, log *
 	if notifier == nil {
 		notifier = NopNotifier{}
 	}
-	return &Ingester{pool: pool, enricher: enricher, notifier: notifier, log: log, now: time.Now}
+	return &Ingester{pool: pool, enricher: enricher, notifier: notifier, log: log, now: time.Now, random: mrand.Float64}
+}
+
+// Limits son el tope y el muestreo de los eventos de issues que ya existen.
+// El primer evento de un issue y el de una regresión se guardan siempre.
+type Limits struct {
+	// PerIssuePerHour es cuántos eventos se guardan como mucho por issue y hora.
+	PerIssuePerHour int
+	// SampleRate es la parte, de 0 a 1, de los eventos que se guardan.
+	SampleRate float64
+}
+
+func DefaultLimits() Limits {
+	return Limits{PerIssuePerHour: store.DefaultEventsPerIssuePerHour, SampleRate: 1}
+}
+
+func LimitsOf(f store.Filters) Limits {
+	return Limits{PerIssuePerHour: f.PerIssuePerHour(), SampleRate: f.SampleRate}
 }
 
 type Result struct {
@@ -81,12 +101,25 @@ type Result struct {
 	Duplicate bool
 	// ResolvedAt es, en una regresión, desde cuándo estaba resuelto el issue.
 	ResolvedAt *time.Time
+	// Dropped es, si el evento cuenta en el issue pero no se guarda, por qué:
+	// store.DropIssueLimit o store.DropSampled.
+	Dropped string
 }
 
 var errDuplicate = errors.New("evento repetido")
 
-// Ingest guarda un evento y actualiza su issue en una sola transacción.
+// Ingest es IngestWith con los límites por defecto.
 func (in *Ingester) Ingest(ctx context.Context, projectID int64, ev *event.Event) (Result, error) {
+	return in.IngestWith(ctx, projectID, ev, DefaultLimits())
+}
+
+// IngestWith guarda un evento y actualiza su issue en una sola transacción.
+// Pasado el tope o fuera de la muestra, el issue cuenta el evento pero el
+// evento no se guarda.
+func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.Event, lim Limits) (Result, error) {
+	if lim.PerIssuePerHour <= 0 {
+		lim.PerIssuePerHour = store.DefaultEventsPerIssuePerHour
+	}
 	now := in.now().UTC()
 	if !validID(ev.ID) {
 		ev.ID = newID()
@@ -107,7 +140,7 @@ func (in *Ingester) Ingest(ctx context.Context, projectID int64, ev *event.Event
 	var res Result
 	err = pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
 		var err error
-		res, err = in.save(ctx, tx, projectID, ev, g, data, now)
+		res, err = in.save(ctx, tx, projectID, ev, g, data, now, lim)
 		if err != nil {
 			return err
 		}
@@ -125,8 +158,9 @@ func (in *Ingester) Ingest(ctx context.Context, projectID int64, ev *event.Event
 	return res, nil
 }
 
-func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *event.Event, g Grouping, data []byte, now time.Time) (Result, error) {
+func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *event.Event, g Grouping, data []byte, now time.Time, lim Limits) (Result, error) {
 	res := Result{}
+	hour := now.Truncate(time.Hour)
 	found, err := lockIssue(ctx, tx, projectID, g.Fingerprint)
 	if err != nil {
 		return res, err
@@ -135,11 +169,12 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		// Si otro evento con la misma huella abre el issue a la vez, el insert
 		// espera a que acabe y no inserta; entonces se trata como uno que ya existía.
 		err := tx.QueryRow(ctx, `
-			INSERT INTO issues (project_id, fingerprint, title, culprit, type, level, first_seen, last_seen, event_count)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 1)
+			INSERT INTO issues (project_id, fingerprint, title, culprit, type, level, first_seen, last_seen, event_count,
+				stored_hour, stored_in_hour, last_stored_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 1, $8, 1, $9)
 			ON CONFLICT (project_id, fingerprint) DO NOTHING
 			RETURNING id`,
-			projectID, g.Fingerprint, g.Title, g.Culprit, g.Type, ev.Level, ev.Timestamp).Scan(&res.IssueID)
+			projectID, g.Fingerprint, g.Title, g.Culprit, g.Type, ev.Level, ev.Timestamp, hour, now).Scan(&res.IssueID)
 		switch {
 		case err == nil:
 			res.Outcome = New
@@ -162,6 +197,34 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 			res.Outcome = Regressed
 			res.ResolvedAt = found.resolvedAt
 		}
+		stored := 0
+		if found.storedHour != nil && found.storedHour.Equal(hour) {
+			stored = found.storedInHour
+		}
+		// El primer evento de cada día (UTC) salta el muestreo, para que el issue
+		// siempre tenga un evento dentro de la retención y la purga no lo borre.
+		firstToday := found.lastStoredAt == nil || found.lastStoredAt.Before(now.Truncate(24*time.Hour))
+		if !regressed {
+			switch {
+			case stored >= lim.PerIssuePerHour:
+				res.Dropped = store.DropIssueLimit
+			case !firstToday && lim.SampleRate < 1 && in.random() >= lim.SampleRate:
+				res.Dropped = store.DropSampled
+			}
+		}
+		if res.Dropped == "" {
+			stored++
+		} else {
+			// Un reenvío del mismo evento no debe contar dos veces, igual que si se guardara.
+			var dup bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM events WHERE project_id = $1 AND event_id = $2)`,
+				projectID, ev.ID).Scan(&dup); err != nil {
+				return res, fmt.Errorf("buscar evento: %w", err)
+			}
+			if dup {
+				return res, errDuplicate
+			}
+		}
 		_, err := tx.Exec(ctx, `
 			UPDATE issues SET
 				event_count = event_count + 1,
@@ -170,11 +233,17 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 				status = $3,
 				resolved_in_release = CASE WHEN $4 THEN NULL ELSE resolved_in_release END,
 				resolved_at = CASE WHEN $4 THEN NULL ELSE resolved_at END,
-				last_regressed_at = CASE WHEN $4 THEN $5 ELSE last_regressed_at END
+				last_regressed_at = CASE WHEN $4 THEN $5 ELSE last_regressed_at END,
+				stored_hour = $6,
+				stored_in_hour = $7,
+				last_stored_at = CASE WHEN $8 THEN $5 ELSE last_stored_at END
 			WHERE id = $1`,
-			found.id, ev.Timestamp, status, regressed, now)
+			found.id, ev.Timestamp, status, regressed, now, hour, stored, res.Dropped == "")
 		if err != nil {
 			return res, fmt.Errorf("actualizar issue: %w", err)
+		}
+		if res.Dropped != "" {
+			return res, nil
 		}
 	}
 
@@ -195,18 +264,21 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 }
 
 type lockedIssue struct {
-	id         int64
-	status     string
-	resolvedIn string
-	resolvedAt *time.Time
+	id           int64
+	status       string
+	resolvedIn   string
+	resolvedAt   *time.Time
+	storedHour   *time.Time
+	storedInHour int
+	lastStoredAt *time.Time
 }
 
 func lockIssue(ctx context.Context, tx pgx.Tx, projectID int64, fp string) (*lockedIssue, error) {
 	var li lockedIssue
 	err := tx.QueryRow(ctx, `
-		SELECT id, status, COALESCE(resolved_in_release, ''), resolved_at FROM issues
+		SELECT id, status, COALESCE(resolved_in_release, ''), resolved_at, stored_hour, stored_in_hour, last_stored_at FROM issues
 		WHERE project_id = $1 AND fingerprint = $2
-		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.resolvedAt)
+		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.resolvedAt, &li.storedHour, &li.storedInHour, &li.lastStoredAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}

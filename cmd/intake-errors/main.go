@@ -147,7 +147,9 @@ func run(args []string) error {
 	}
 	go alerts.Run(ctx)
 	ingester := ingest.NewIngester(db.Pool(), maps, alerts, log)
-	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), log)
+	drops := ingest.NewDrops(db)
+	go drops.Run(ctx, 10*time.Second, log)
+	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), drops, log)
 
 	mux := routes(db, envelopes, maps.Register, auth.Register)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
@@ -175,7 +177,12 @@ func run(args []string) error {
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdown)
+	err = srv.Shutdown(shutdown)
+	// Lo descartado mientras se cerraban las peticiones.
+	if ferr := drops.Flush(shutdown); ferr != nil {
+		log.Error("guardar descartados", "err", ferr)
+	}
+	return err
 }
 
 type pinger interface {

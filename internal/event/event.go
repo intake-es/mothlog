@@ -89,8 +89,9 @@ type User struct {
 }
 
 type Request struct {
-	Method string `json:"method,omitempty"`
-	URL    string `json:"url,omitempty"`
+	Method    string `json:"method,omitempty"`
+	URL       string `json:"url,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
 }
 
 // text acepta cualquier valor JSON escalar como cadena; un objeto o una lista
@@ -399,13 +400,20 @@ func parseUser(b json.RawMessage) *User {
 
 func parseRequest(b json.RawMessage) *Request {
 	var raw struct {
-		Method text `json:"method"`
-		URL    text `json:"url"`
+		Method  text            `json:"method"`
+		URL     text            `json:"url"`
+		Headers json.RawMessage `json:"headers"`
 	}
 	if json.Unmarshal(nonNull(b), &raw) != nil {
 		return nil
 	}
 	r := Request{Method: string(raw.Method), URL: string(raw.URL)}
+	// headers llega como objeto o como lista de pares, igual que tags.
+	for k, v := range parseTags(raw.Headers) {
+		if strings.EqualFold(k, "User-Agent") {
+			r.UserAgent = v
+		}
+	}
 	if r == (Request{}) {
 		return nil
 	}

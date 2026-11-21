@@ -208,3 +208,23 @@ func TestParseKeepsDebugMetaAndDist(t *testing.T) {
 		}
 	}
 }
+
+func TestParseUserAgent(t *testing.T) {
+	for _, body := range []string{
+		`{"request":{"url":"https://a","headers":{"User-Agent":"ExampleBot/1.0"}}}`,
+		`{"request":{"url":"https://a","headers":{"user-agent":"ExampleBot/1.0","accept":"*/*"}}}`,
+		`{"request":{"url":"https://a","headers":[["Accept","*/*"],["USER-AGENT","ExampleBot/1.0"]]}}`,
+	} {
+		e, err := Parse([]byte(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if e.Request == nil || e.Request.UserAgent != "ExampleBot/1.0" || e.Request.URL != "https://a" {
+			t.Errorf("%s: request = %+v", body, e.Request)
+		}
+	}
+	e, err := Parse([]byte(`{"request":{"headers":{"accept":"*/*"}}}`))
+	if err != nil || e.Request != nil {
+		t.Errorf("sin método, url ni user agent: %+v, %v", e.Request, err)
+	}
+}

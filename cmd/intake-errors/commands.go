@@ -20,6 +20,9 @@ const usage = `uso:
   intake-errors projects labels <nombre> enseña las etiquetas de Linear propias del proyecto
   intake-errors projects labels <nombre> <id>[,<id>…]  las sustituye
   intake-errors projects labels <nombre> --clear  las quita
+  intake-errors projects filters <nombre>  enseña sus filtros, el tope por issue y el muestreo
+  intake-errors projects filters <nombre> set <clave> [<valor>…]  cambia uno
+  intake-errors projects dropped <nombre> [<días>]  cuenta lo descartado por motivo (30 días por defecto)
   intake-errors tokens create <nombre>  crea un token de la API y lo imprime una sola vez
   intake-errors tokens list             lista los tokens
   intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre`

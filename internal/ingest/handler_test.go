@@ -185,6 +185,8 @@ type testEnv struct {
 	s     *store.Store
 	h     http.Handler
 	notes *recorder
+	ing   *Ingester
+	drops *Drops
 }
 
 func newTestEnv(t *testing.T, perMinute int) *testEnv {
@@ -202,8 +204,9 @@ func newTestEnv(t *testing.T, perMinute int) *testEnv {
 	notes := &recorder{}
 	ing := NewIngester(s.Pool(), nil, notes, log)
 	mux := http.NewServeMux()
-	mux.Handle(Pattern, NewHandler(s, ing, NewRateLimiter(perMinute), log))
-	return &testEnv{s: s, h: mux, notes: notes}
+	drops := NewDrops(s)
+	mux.Handle(Pattern, NewHandler(s, ing, NewRateLimiter(perMinute), drops, log))
+	return &testEnv{s: s, h: mux, notes: notes, ing: ing, drops: drops}
 }
 
 func (e *testEnv) send(r *http.Request) *httptest.ResponseRecorder {
@@ -646,7 +649,7 @@ func TestPurgeSkipsIssueBeingIngested(t *testing.T) {
 	}
 	ev.ID = newHexID()
 	ev.Timestamp = old
-	if _, err := ing.save(ctx, tx, 1, ev, Group(ev), []byte(`{}`), time.Now()); err != nil {
+	if _, err := ing.save(ctx, tx, 1, ev, Group(ev), []byte(`{}`), time.Now(), DefaultLimits()); err != nil {
 		t.Fatal(err)
 	}
 

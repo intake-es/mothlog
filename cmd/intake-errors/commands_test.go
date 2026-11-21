@@ -6,7 +6,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
 )
 
@@ -122,5 +124,97 @@ func TestLabelsCommand(t *testing.T) {
 	db.AddProject(t, "backend")
 	if _, err := run("backend", "label-a"); err == nil || len(stored()) != 0 {
 		t.Errorf("con dos proyectos del mismo nombre: %v", err)
+	}
+}
+
+func TestFiltersCommand(t *testing.T) {
+	db := storetest.NewDB(t)
+	ctx := context.Background()
+	p := db.AddProject(t, "web")
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := filtersCommand(ctx, db.Store, args, &out)
+		return out.String(), err
+	}
+
+	out, err := run("web")
+	if err != nil || !strings.Contains(out, "events_per_issue_per_hour  100 (por defecto)") ||
+		!strings.Contains(out, "rate_limit_per_minute      RATE_LIMIT_PER_MINUTE") || !strings.Contains(out, "sample_rate                1") {
+		t.Fatalf("por defecto: %q, %v", out, err)
+	}
+	for _, args := range [][]string{
+		{"web", "set", "messages", "^ResizeObserver loop", `Script error\.?`},
+		{"web", "set", "exception_types", "KeyError"},
+		{"web", "set", "releases", "*-beta.*"},
+		{"web", "set", "environments", "development", "staging"},
+		{"web", "set", "browser_extensions", "on"},
+		{"web", "set", "web_crawlers", "on"},
+		{"web", "set", "localhost", "on"},
+		{"web", "set", "events_per_issue_per_hour", "25"},
+		{"web", "set", "sample_rate", "0.1"},
+		{"web", "set", "rate_limit_per_minute", "500"},
+		{"web", "set", "environments"},
+		{"web", "set", "localhost", "off"},
+	} {
+		if _, err := run(args...); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	f, err := db.Filters(ctx, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(f.Messages, []string{"^ResizeObserver loop", `Script error\.?`}) || !slices.Equal(f.ExceptionTypes, []string{"KeyError"}) ||
+		!slices.Equal(f.Releases, []string{"*-beta.*"}) || len(f.Environments) != 0 || !f.BrowserExtensions || !f.WebCrawlers || f.Localhost ||
+		f.PerIssuePerHour() != 25 || f.SampleRate != 0.1 || *f.RateLimitPerMinute != 500 {
+		t.Fatalf("guardado = %+v", f)
+	}
+	out, err = run("web", "set", "rate_limit_per_minute", "default")
+	if err != nil || !strings.Contains(out, "RATE_LIMIT_PER_MINUTE") || !strings.Contains(out, "events_per_issue_per_hour  25\n") {
+		t.Errorf("volver al límite por defecto: %q, %v", out, err)
+	}
+
+	for _, args := range [][]string{
+		{"web", "set", "otra", "x"},
+		{"web", "set", "localhost", "sí"},
+		{"web", "set", "localhost", "on", "off"},
+		{"web", "set", "sample_rate", "2"},
+		{"web", "set", "sample_rate", "mitad"},
+		{"web", "set", "events_per_issue_per_hour", "0"},
+		{"web", "set", "messages", "(roto"},
+		{"nadie"},
+	} {
+		if _, err := run(args...); err == nil {
+			t.Errorf("%v sin error", args)
+		}
+	}
+	if again, _ := db.Filters(ctx, p.ID); again.SampleRate != 0.1 || again.PerIssuePerHour() != 25 {
+		t.Errorf("un cambio no válido ha tocado lo guardado: %+v", again)
+	}
+}
+
+func TestDroppedCommand(t *testing.T) {
+	db := storetest.NewDB(t)
+	ctx := context.Background()
+	p := db.AddProject(t, "web")
+	if err := db.AddDropped(ctx, []store.Dropped{
+		{ProjectID: p.ID, Reason: store.DropWebCrawler, Day: time.Now(), Count: 12},
+		{ProjectID: p.ID, Reason: store.DropSampled, Day: time.Now().AddDate(0, 0, -5), Count: 3},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := droppedCommand(ctx, db.Store, []string{"web"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if s := out.String(); !strings.Contains(s, "web_crawler        12\n") || !strings.Contains(s, "sampled            3\n") || !strings.Contains(s, "total              15\n") {
+		t.Errorf("salida = %q", s)
+	}
+	out.Reset()
+	if err := droppedCommand(ctx, db.Store, []string{"web", "1"}, &out); err != nil || !strings.Contains(out.String(), "total              12\n") {
+		t.Errorf("un día: %q, %v", out.String(), err)
+	}
+	if err := droppedCommand(ctx, db.Store, []string{"web", "x"}, &out); err == nil {
+		t.Error("días no numéricos sin error")
 	}
 }

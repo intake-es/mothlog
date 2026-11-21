@@ -22,6 +22,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
+	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
 )
 
@@ -1011,5 +1012,38 @@ func TestEndToEndTaskFailed(t *testing.T) {
 		if strings.Contains(string(bodies[i]), "attachments") || strings.Contains(string(bodies[i]), `"color"`) {
 			t.Errorf("%d: lleva attachments", i)
 		}
+	}
+}
+
+// Pasado el tope por issue, los eventos repetidos siguen sin avisar: un solo
+// aviso por canal para todo el bucle.
+func TestLoopPastIssueLimitAlertsOnce(t *testing.T) {
+	e := newEnv(t, nil)
+	const n = 3 * store.DefaultEventsPerIssuePerHour
+	var issue int64
+	for i := range n {
+		res := e.ingest(t, "api-excepcion-1")
+		if i == 0 {
+			issue = res.IssueID
+		}
+		if (i == 0) != (res.Outcome == ingest.New) || res.IssueID != issue {
+			t.Fatalf("evento %d: %+v", i, res)
+		}
+	}
+	rows := e.outbox(t)
+	if len(rows) != 2 || rows[0].Kind != "new" || rows[1].Kind != "new" {
+		t.Fatalf("outbox = %+v", rows)
+	}
+	var count, stored int64
+	if err := e.db.Pool().QueryRow(context.Background(), `
+		SELECT event_count, (SELECT count(*) FROM events WHERE issue_id = $1) FROM issues WHERE id = $1`, issue).Scan(&count, &stored); err != nil {
+		t.Fatal(err)
+	}
+	// Si el bucle cruza una hora en punto, el tope vuelve a empezar.
+	if count != n || stored > 2*store.DefaultEventsPerIssuePerHour {
+		t.Errorf("count %d, guardados %d", count, stored)
+	}
+	if sent := e.send(t); sent != 2 {
+		t.Errorf("%d avisos enviados, quiero 2 (Slack y Linear)", sent)
 	}
 }

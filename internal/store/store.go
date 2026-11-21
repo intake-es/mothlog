@@ -54,7 +54,9 @@ func migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
 		return err
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
-		goose.WithSessionLocker(locker), goose.WithSlog(log))
+		goose.WithSessionLocker(locker), goose.WithSlog(log),
+		// Las migraciones de ramas paralelas pueden llegar en otro orden que su número.
+		goose.WithAllowOutofOrder(true))
 	if err != nil {
 		return fmt.Errorf("preparar migraciones: %w", err)
 	}
