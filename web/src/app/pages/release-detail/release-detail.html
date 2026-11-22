@@ -88,6 +88,62 @@
       }
     </section>
 
+    @if (health(); as h) {
+      <section class="block health">
+        <div class="group__head">
+          <h3 class="block__title">{{ t('release.health') }}</h3>
+          <p class="health__hint">{{ t('release.health.hint') }}</p>
+        </div>
+        @if (h.has) {
+          <div class="stats stats--health">
+            <div class="stat">
+              <span class="stat__n tnum" [attr.data-tone]="h.sessionsTone">{{ h.sessions }}</span>
+              <span class="stat__label">{{ t('release.health.crashFreeSessions') }}</span>
+              <span class="stat__sub tnum">{{ h.sessionsSub }}</span>
+            </div>
+            <div class="stat">
+              <span class="stat__n tnum" [attr.data-tone]="h.usersTone">{{ h.users }}</span>
+              <span class="stat__label">{{ t('release.health.crashFreeUsers') }}</span>
+              <span class="stat__sub tnum">{{ h.usersSub }}</span>
+            </div>
+            <div class="stat">
+              <span class="stat__n tnum">{{ h.adoption }}</span>
+              <span class="stat__label">{{ t('release.health.adoption') }}</span>
+              <span class="stat__sub tnum">{{ h.adoptionSub }}</span>
+            </div>
+          </div>
+          <app-session-chart class="health__chart" [hours]="h.series" />
+          @if (h.envs.length) {
+            <table class="envs">
+              <caption class="visually-hidden">{{ t('release.health.byEnvironment') }}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('release.health.col.environment') }}</th>
+                  <th scope="col" class="envs__num">{{ t('release.health.col.sessions') }}</th>
+                  <th scope="col" class="envs__num">{{ t('release.health.col.crashed') }}</th>
+                  <th scope="col" class="envs__num">{{ t('release.health.crashFreeSessions') }}</th>
+                  <th scope="col" class="envs__num">{{ t('release.health.crashFreeUsers') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (e of h.envs; track e.name) {
+                  <tr>
+                    <td class="envs__name">{{ e.name }}</td>
+                    <td class="envs__num tnum">{{ e.sessions }}</td>
+                    <td class="envs__num tnum">{{ e.crashed }}</td>
+                    <td class="envs__num tnum" [attr.data-tone]="e.tone">{{ e.rate }}</td>
+                    <td class="envs__num tnum">{{ e.users }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        } @else {
+          <p class="muted">{{ t('release.health.empty') }}</p>
+        }
+      </section>
+    }
+
     <section class="block stats">
       @for (s of sections(); track s.key) {
         <div class="stat">

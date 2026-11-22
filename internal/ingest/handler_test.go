@@ -51,6 +51,7 @@ var errorFixtures = map[string]struct{ title, culprit string }{
 	"web-typeerror-1":     {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
 	"web-cli-upload-1":    {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
 	"web-cli-inject-1":    {"TypeError: Cannot read properties of undefined (reading 'reduce')", "https://app.example.com/chunk-Z554BZQ6.js in a"},
+	"api-sesion-crash-1":  {"KeyError: 'oeste'", "app in sincronizar_stock_estricto"},
 }
 
 var noEventFixtures = []string{
@@ -58,6 +59,7 @@ var noEventFixtures = []string{
 	"api-validacion-2",
 	"api-descartado-1", "api-descartado-2",
 	"web-sesion-1", "web-sesion-2",
+	"api-sesiones-1", "api-sesion-ok-1", "api-sesion-crash-2",
 }
 
 // Fixtures con check-ins de crons, en el orden en que se mandaron.

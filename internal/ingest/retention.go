@@ -55,7 +55,7 @@ func purgeEmptyIssues(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
 	return n, nil
 }
 
-// RunRetention purga al arrancar y luego cada hora hasta que se cancela ctx.
+// RunRetention purga eventos y sesiones al arrancar y luego cada hora hasta que se cancela ctx.
 func RunRetention(ctx context.Context, pool *pgxpool.Pool, days int, log *slog.Logger) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
@@ -66,6 +66,11 @@ func RunRetention(ctx context.Context, pool *pgxpool.Pool, days int, log *slog.L
 			log.ErrorContext(ctx, "retención", "err", err)
 		} else if ev > 0 || is > 0 {
 			log.InfoContext(ctx, "retención", "eventos", ev, "issues", is)
+		}
+		if n, err := PurgeSessions(ctx, pool, cutoff, time.Now()); err != nil {
+			log.ErrorContext(ctx, "retención de sesiones", "err", err)
+		} else if n > 0 {
+			log.InfoContext(ctx, "retención de sesiones", "filas", n)
 		}
 		select {
 		case <-ctx.Done():

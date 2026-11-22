@@ -16,7 +16,7 @@ Un agente puede llevar un error de principio a fin sin salir del MCP: buscarlo, 
 - [Issues]({base}/api/0/issues/?query=is:open): la lista, con el lenguaje de búsqueda en `query`.
 - [Historial]({base}/api/0/issues/{id}/history/): comentarios y cambios de estado, por fecha.
 - `POST {base}/api/0/issues/{id}/comments/` con `{"body": "..."}` comenta; `POST {base}/api/0/issues/{id}/status` con `{"status": "resolved_next", "comment": "..."}` cambia el estado.
-- [Releases]({base}/api/0/releases/): las releases con sus despliegues y lo que trajo cada una.
+- [Releases]({base}/api/0/releases/): las releases con sus despliegues, lo que trajo cada una y su salud: el porcentaje de sesiones y de usuarios sin crash y la adopción.
 - [Monitores de cron]({base}/api/0/monitors/): los crons con su último estado y la próxima ejecución esperada; `{base}/api/0/projects/{id}/monitors/{slug}/` da el historial de uno.
 
 ## Más

@@ -191,6 +191,68 @@
   font-size: 0.75rem;
 }
 
+.stats--health {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.stat__sub {
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+}
+
+[data-tone='tone-warn'] {
+  color: var(--warning-text);
+}
+
+[data-tone='tone-bad'] {
+  color: var(--danger);
+}
+
+.health__hint {
+  margin-top: 0.15rem;
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+}
+
+.health__chart {
+  margin-top: 1.25rem;
+}
+
+.envs {
+  width: 100%;
+  max-width: 760px;
+  margin-top: 1.25rem;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.envs th {
+  padding: 0 0 0.4rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.envs td {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.envs tr:last-child td {
+  border-bottom: 0;
+}
+
+.envs .envs__num {
+  text-align: right;
+}
+
+.envs__name {
+  font-weight: 500;
+}
+
 .group__head {
   margin-bottom: 0.6rem;
 }

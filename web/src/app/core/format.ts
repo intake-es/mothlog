@@ -99,6 +99,46 @@ export function count(n: number): string {
   return cached('count', (loc) => new Intl.NumberFormat(loc)).format(n);
 }
 
+/**
+ * Una parte de 0 a 1 en porcentaje, con hasta dos decimales y truncado, para
+ * que un 99,996 % con crashes no salga como 100 %. Sin valor, «—».
+ */
+export function percent(v: number | null | undefined): string {
+  if (v === null || v === undefined || Number.isNaN(v)) {
+    return '—';
+  }
+  const f = cached(
+    'percent',
+    (loc) => new Intl.NumberFormat(loc, { style: 'percent', maximumFractionDigits: 2 }),
+  );
+  return f.format(Math.floor(v * 10_000) / 10_000);
+}
+
+export type HealthTone = 'tone-good' | 'tone-warn' | 'tone-bad' | 'tone-none';
+
+/** El tono de un porcentaje sin crash: bien desde el 99 %, aviso desde el 95 %. */
+export function healthTone(v: number | null | undefined): HealthTone {
+  if (v === null || v === undefined) {
+    return 'tone-none';
+  }
+  return v >= 0.99 ? 'tone-good' : v >= 0.95 ? 'tone-warn' : 'tone-bad';
+}
+
+/** Una hora de la serie: «22 nov, 16:00», «Nov 22, 04:00 PM». */
+export function dayHour(iso: string): string {
+  const f = cached(
+    'day-hour',
+    (loc) =>
+      new Intl.DateTimeFormat(loc, {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+  );
+  return f.format(new Date(iso));
+}
+
 /** Separa «TypeError: mensaje» en el tipo y el mensaje para pintarlos distinto. */
 export function splitTitle(title: string, type: string): { type: string; message: string } {
   if (type && title.startsWith(`${type}: `)) {

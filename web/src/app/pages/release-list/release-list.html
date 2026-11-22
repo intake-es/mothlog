@@ -51,6 +51,7 @@
     <div class="list" role="list">
       <div class="list__head" aria-hidden="true">
         <span>{{ t('releases.col.release') }}</span>
+        <span class="list__num">{{ t('releases.col.health') }}</span>
         <span class="list__num">{{ t('releases.col.new') }}</span>
         <span class="list__num">{{ t('releases.col.regressions') }}</span>
         <span class="list__num">{{ t('releases.col.events') }}</span>
@@ -75,6 +76,17 @@
                 <span class="row__fact row__pending">{{ t('releases.notDeployed') }}</span>
               }
             </div>
+          </div>
+          <div class="row__health tnum" [attr.title]="row.health.title">
+            @if (row.health.none) {
+              <span class="row__health-none">{{ t('releases.health.none') }}</span>
+            } @else {
+              <span class="row__rate" [attr.data-tone]="row.health.tone">{{ row.health.rate }}</span>
+              @if (row.health.adoption) {
+                <span class="row__adoption">{{ row.health.adoption }}</span>
+              }
+            }
+            <span class="visually-hidden">{{ row.health.title }}</span>
           </div>
           <div class="row__num tnum" [class.row__num--zero]="!row.release.new_issues">
             @if (row.release.new_issues) {

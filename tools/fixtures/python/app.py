@@ -44,8 +44,8 @@ def before_send(event, hint):
 
 sentry_sdk.init(
     dsn=os.environ["SENTRY_DSN"],
-    release="fixture-release-1",
-    environment="production",
+    release=os.environ.get("SENTRY_RELEASE", "fixture-release-1"),
+    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
     server_name="api-1",
     before_send=before_send,
 )
@@ -73,6 +73,11 @@ async def media(pedido_id: str):
     return {"pedido": pedido_id, "media": lineas["unidades"] / lineas["envios"]}
 
 
+@app.get("/pedidos/importar-ok")
+async def importar_ok():
+    return Pedido.model_validate({"cliente": "c_1042", "cantidad": 12})
+
+
 @app.get("/pedidos/importar")
 async def importar():
     return Pedido.model_validate({"cliente": "c_1042", "cantidad": "doce"})
@@ -90,6 +95,11 @@ def sincronizar_stock(almacen: str) -> int:
     except KeyError:
         log.exception("stock.sincronizacion_fallida", almacen=almacen)
         return 0
+
+
+def sincronizar_stock_estricto(almacen: str) -> int:
+    existencias = {"norte": 4, "sur": 9}
+    return existencias[almacen]
 
 
 def reembolsar(pedido_id: str) -> None:

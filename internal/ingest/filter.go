@@ -74,6 +74,15 @@ func (fl *Filter) Drop(ev *event.Event) string {
 	return ""
 }
 
+// DropSession dice si las sesiones de esa release y ese entorno se ignoran,
+// con los mismos filtros de entorno y release que los eventos.
+func (fl *Filter) DropSession(release, environment string) bool {
+	if environment != "" && slices.Contains(fl.f.Environments, environment) {
+		return true
+	}
+	return slices.ContainsFunc(fl.releases, func(re *regexp.Regexp) bool { return re.MatchString(release) })
+}
+
 func hasExceptionType(ev *event.Event, types []string) bool {
 	for _, x := range ev.Exceptions {
 		if x.Type == "" {

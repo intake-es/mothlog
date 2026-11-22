@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { ReleaseDetail, ReleaseIssue } from '../../core/api';
+import type { HealthHour, ReleaseDetail, ReleaseHealth, ReleaseIssue } from '../../core/api';
 import { environment } from '../../core/environment';
 import { lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
@@ -35,6 +35,68 @@ const issue = (over: Partial<ReleaseIssue>): ReleaseIssue => ({
   ...over,
 });
 
+const health = (over: Partial<ReleaseHealth> = {}): ReleaseHealth => ({
+  environment: '',
+  sessions: 0,
+  sessions_errored: 0,
+  sessions_crashed: 0,
+  sessions_abnormal: 0,
+  users: 0,
+  users_crashed: 0,
+  crash_free_sessions: null,
+  crash_free_users: null,
+  sessions_24h: 0,
+  adoption: null,
+  ...over,
+});
+
+/** 72 horas sin sesiones salvo la última, con 8 y una con crash. */
+const series = (): HealthHour[] => {
+  const end = Math.floor(now / HOUR) * HOUR;
+  return Array.from({ length: 72 }, (_, i) => {
+    const last = i === 71;
+    return {
+      hour: new Date(end - (71 - i) * HOUR).toISOString(),
+      sessions: last ? 8 : 0,
+      sessions_errored: last ? 2 : 0,
+      sessions_crashed: last ? 1 : 0,
+      sessions_abnormal: 0,
+      crash_free_sessions: last ? 0.875 : null,
+    };
+  });
+};
+
+const withHealth = (over: Partial<ReleaseDetail> = {}): ReleaseDetail =>
+  detail({
+    health: health({
+      sessions: 8,
+      sessions_errored: 2,
+      sessions_crashed: 1,
+      users: 2,
+      users_crashed: 1,
+      crash_free_sessions: 0.875,
+      crash_free_users: 0.5,
+      sessions_24h: 8,
+      adoption: 0.5,
+    }),
+    health_by_environment: [
+      health({
+        environment: 'production',
+        sessions: 4,
+        sessions_crashed: 1,
+        crash_free_sessions: 0.75,
+        users: 2,
+        users_crashed: 1,
+        crash_free_users: 0.5,
+      }),
+      health({ environment: 'staging', sessions: 4, crash_free_sessions: 1 }),
+    ],
+    health_series: series(),
+    ...over,
+  });
+
+const spaces = (s: string | null | undefined) => (s ?? '').replace(/\s/g, ' ').trim();
+
 const detail = (over: Partial<ReleaseDetail> = {}): ReleaseDetail => ({
   id: 2,
   project_id: 4,
@@ -48,6 +110,9 @@ const detail = (over: Partial<ReleaseDetail> = {}): ReleaseDetail => ({
   regressions: 0,
   events: 12,
   last_event: iso(HOUR),
+  health: health(),
+  health_by_environment: [],
+  health_series: [],
   previous: 'web@1.0.0',
   next: null,
   new: [issue({})],
@@ -142,6 +207,69 @@ describe('ReleaseDetailPage', () => {
     expect(pager[1].classList).toContain('pager__btn--off');
   });
 
+  it('pinta la salud: sesiones y usuarios sin crash, adopción, la serie y cada entorno', async () => {
+    const { el } = await render(withHealth());
+    const health = el.querySelector('.health') as HTMLElement;
+    expect(health.querySelector('.block__title')?.textContent).toBe('Salud');
+    const stats = Array.from(health.querySelectorAll('.stat'));
+    expect(stats.map((s) => spaces(s.querySelector('.stat__n')?.textContent))).toEqual([
+      '87,5 %',
+      '50 %',
+      '50 %',
+    ]);
+    expect(stats.map((s) => s.querySelector('.stat__label')?.textContent)).toEqual([
+      'Sesiones sin crash',
+      'Usuarios sin crash',
+      'Adopción en 24 h',
+    ]);
+    expect(stats.map((s) => s.querySelector('.stat__sub')?.textContent)).toEqual([
+      '1 de 8 con crash',
+      '1 de 2 con crash',
+      '8 sesiones en las últimas 24 h',
+    ]);
+    expect(stats[0].querySelector('.stat__n')?.getAttribute('data-tone')).toBe('tone-bad');
+
+    const chart = health.querySelector('app-session-chart [role="img"]');
+    expect(chart?.getAttribute('aria-label')).toBe(
+      'Sesiones por hora en las últimas 72 h: 8 en total, 1 con crash',
+    );
+    expect(health.querySelectorAll('app-session-chart .col').length).toBe(72);
+    expect(spaces(health.querySelectorAll('app-session-chart .tip')[71].textContent)).toMatch(
+      /· 8 sesiones · 1 con crash · 87,5 %$/,
+    );
+
+    const rows = Array.from(health.querySelectorAll('.envs tbody tr')).map((r) =>
+      Array.from(r.querySelectorAll('td')).map((td) => spaces(td.textContent)),
+    );
+    expect(rows).toEqual([
+      ['production', '4', '1', '75 %', '50 %'],
+      ['staging', '4', '0', '100 %', '—'],
+    ]);
+  });
+
+  it('con un entorno elegido no repite la tabla por entorno', async () => {
+    environment.set('production');
+    const { el } = await render(
+      withHealth({
+        health: health({ environment: 'production', sessions: 4, crash_free_sessions: 0.75 }),
+      }),
+    );
+    expect(el.querySelector('.envs')).toBeNull();
+    expect(spaces(el.querySelector('.health .stat__sub')?.textContent)).toBe('0 de 4 con crash');
+    expect(el.querySelectorAll('.health .stat__sub')[1].textContent).toBe(
+      'Las sesiones no traen usuario',
+    );
+  });
+
+  it('sin sesiones no enseña porcentajes', async () => {
+    const { el } = await render();
+    expect(el.querySelector('.health .stat')).toBeNull();
+    expect(el.querySelector('.health .muted')?.textContent).toContain(
+      'Todavía no hay sesiones de esta release',
+    );
+    expect(el.querySelector('.health')?.textContent).not.toContain('%');
+  });
+
   it('pide la release del entorno elegido', async () => {
     environment.set('staging');
     const { el, params } = await render(detail({ deploys: [] }));
@@ -176,6 +304,44 @@ describe('ReleaseDetailPage', () => {
       );
       expect(el.querySelector('.sp-badge--green')?.textContent).toBe('Resolved with this release');
       expect(el.querySelector('[aria-label="Back to releases"]')).not.toBeNull();
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('pinta la salud en inglés', async () => {
+      lang.set('en');
+      const { el } = await render(withHealth());
+      const health = el.querySelector('.health') as HTMLElement;
+      expect(health.querySelector('.block__title')?.textContent).toBe('Health');
+      expect(
+        Array.from(health.querySelectorAll('.stat')).map((s) => [
+          spaces(s.querySelector('.stat__n')?.textContent),
+          s.querySelector('.stat__label')?.textContent,
+          s.querySelector('.stat__sub')?.textContent,
+        ]),
+      ).toEqual([
+        ['87.5%', 'Crash-free sessions', '1 of 8 crashed'],
+        ['50%', 'Crash-free users', '1 of 2 crashed'],
+        ['50%', '24 h adoption', '8 sessions over the last 24 h'],
+      ]);
+      expect(
+        health.querySelector('app-session-chart [role="img"]')?.getAttribute('aria-label'),
+      ).toBe('Sessions per hour over the last 72 h: 8 in total, 1 crashed');
+      expect(Array.from(health.querySelectorAll('.envs th')).map((th) => th.textContent)).toEqual([
+        'Environment',
+        'Sessions',
+        'Crashed',
+        'Crash-free sessions',
+        'Crash-free users',
+      ]);
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('sin sesiones lo explica en inglés', async () => {
+      lang.set('en');
+      const { el } = await render();
+      expect(el.querySelector('.health .muted')?.textContent).toBe(
+        'No sessions for this release yet. The SDKs send them when session tracking is turned on.',
+      );
       expect(spanishLeft(el)).toEqual([]);
     });
 

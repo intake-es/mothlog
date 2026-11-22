@@ -44,6 +44,10 @@ type Release struct {
 	Regressions int64      `json:"regressions"`
 	Events      int64      `json:"events"`
 	LastEvent   *time.Time `json:"last_event"`
+	// Health son las sesiones del entorno pedido (o de todos) y
+	// HealthByEnvironment, las de cada entorno con sesiones.
+	Health              ReleaseHealth   `json:"health"`
+	HealthByEnvironment []ReleaseHealth `json:"health_by_environment"`
 }
 
 func validName(what, s string) (string, error) {
@@ -295,7 +299,8 @@ func (s *Store) ListReleases(ctx context.Context, f ReleaseFilter) (ReleasePage,
 		where = append(where, fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(f.Project)))
 	}
 	if f.Environment != "" {
-		where = append(where, `(st.events > 0 OR EXISTS (SELECT 1 FROM deploys d WHERE d.release_id = r.id AND d.environment = $1))`)
+		where = append(where, `(st.events > 0 OR EXISTS (SELECT 1 FROM deploys d WHERE d.release_id = r.id AND d.environment = $1)
+			OR EXISTS (SELECT 1 FROM release_sessions rs WHERE rs.project_id = r.project_id AND rs.release = r.version AND rs.environment = $1))`)
 	}
 	if f.Cursor != "" {
 		c, err := decodeCursor(f.Cursor, "releases")
@@ -327,6 +332,9 @@ func (s *Store) ListReleases(ctx context.Context, f ReleaseFilter) (ReleasePage,
 		page.Releases = []Release{}
 	}
 	if err := s.loadDeploys(ctx, page.Releases, f.Environment); err != nil {
+		return ReleasePage{}, err
+	}
+	if err := s.loadHealth(ctx, page.Releases, f.Environment, time.Now()); err != nil {
 		return ReleasePage{}, err
 	}
 	return page, nil
@@ -377,6 +385,9 @@ func (s *Store) Release(ctx context.Context, projectID int64, version, env strin
 	if err := s.loadDeploys(ctx, rels, env); err != nil {
 		return Release{}, err
 	}
+	if err := s.loadHealth(ctx, rels, env, time.Now()); err != nil {
+		return Release{}, err
+	}
 	return rels[0], nil
 }
 
@@ -401,6 +412,8 @@ type ReleaseDetail struct {
 	// Stopped son los que salían en la release anterior y en esta no, y los
 	// que se resolvieron al desplegarla.
 	Stopped []ReleaseIssue `json:"stopped"`
+	// HealthSeries son las sesiones por hora de las últimas HealthSeriesHours.
+	HealthSeries []HealthHour `json:"health_series"`
 }
 
 // ReleaseDetail es la release con sus issues, solo de un entorno si env no
@@ -411,6 +424,9 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 		return ReleaseDetail{}, err
 	}
 	d := ReleaseDetail{Release: r}
+	if d.HealthSeries, err = s.healthSeries(ctx, projectID, version, env, time.Now()); err != nil {
+		return ReleaseDetail{}, err
+	}
 	err = s.pool.QueryRow(ctx, `
 		SELECT
 			(SELECT o.version FROM releases o WHERE o.project_id = r.project_id AND (o.first_seen, o.id) < (r.first_seen, r.id)

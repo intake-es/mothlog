@@ -66,7 +66,7 @@ type addCommentIn struct {
 
 type listReleasesIn struct {
 	Project     string `json:"project,omitempty" jsonschema:"id o nombre del proyecto; vacío, todos"`
-	Environment string `json:"environment,omitempty" jsonschema:"solo las releases con eventos o despliegues en este entorno, contando solo lo suyo; vacío, todos"`
+	Environment string `json:"environment,omitempty" jsonschema:"solo las releases con eventos, despliegues o sesiones en este entorno, contando solo lo suyo; vacío, todos"`
 	Cursor      string `json:"cursor,omitempty" jsonschema:"next_cursor de la respuesta anterior"`
 	Limit       int    `json:"limit,omitempty" jsonschema:"releases por página, de 1 a 100; 25 por defecto"`
 }
@@ -242,6 +242,7 @@ func New(st *store.Store, opts Options) *mcp.Server {
 		Name:        "list_releases",
 		Annotations: readOnly,
 		Description: "Lista las releases, de la más nueva a la más vieja, con sus despliegues y cuántos errores nuevos (new_issues), con eventos (issues), regresiones y eventos trajo cada una. " +
+			"Con las sesiones de los SDK trae su salud en health (y por entorno en health_by_environment): crash_free_sessions y crash_free_users de 0 a 1 (null si no hay sesiones o usuarios), los totales y adoption, la parte de las sesiones de las últimas 24 h del proyecto que es de esa release. " +
 			"Úsala para saber qué se ha desplegado y dónde, o qué release empeoró las cosas; luego get_release para el detalle de una. Si la respuesta trae next_cursor, hay más páginas.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listReleasesIn) (*mcp.CallToolResult, any, error) {
 		page, err := st.ListReleases(ctx, store.ReleaseFilter(in))
@@ -252,6 +253,7 @@ func New(st *store.Store, opts Options) *mcp.Server {
 		Name:        "get_release",
 		Annotations: readOnly,
 		Description: "Devuelve una release de un proyecto con sus despliegues, la anterior y la siguiente, y lo nuevo que trajo: los issues que aparecieron con ella (new), las regresiones (regressed), los que ya existían y siguieron saliendo (continued) y los que dejaron de salir o se resolvieron al desplegarla (stopped). " +
+			"Trae también su salud (health, health_by_environment) y las sesiones por hora de las últimas 72 h (health_series). " +
 			"Úsala tras un despliegue para ver si rompió algo o si arregló lo que debía; para buscar los issues de una release, list_issues con release:<versión>.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in releaseIn) (*mcp.CallToolResult, any, error) {
 		p, err := project(ctx, st, in.Project)

@@ -215,6 +215,37 @@ export interface Release {
   regressions: number;
   events: number;
   last_event: string | null;
+  health: ReleaseHealth;
+  health_by_environment: ReleaseHealth[];
+}
+
+/**
+ * Las sesiones de una release en un entorno ('' es en todos). Los porcentajes
+ * van de 0 a 1 y son null sin sesiones o sin usuarios; adoption, sin sesiones
+ * del proyecto en las últimas 24 h.
+ */
+export interface ReleaseHealth {
+  environment: string;
+  sessions: number;
+  sessions_errored: number;
+  sessions_crashed: number;
+  sessions_abnormal: number;
+  users: number;
+  users_crashed: number;
+  crash_free_sessions: number | null;
+  crash_free_users: number | null;
+  sessions_24h: number;
+  adoption: number | null;
+}
+
+/** Una hora de la serie de sesiones, por la hora en que empezaron. */
+export interface HealthHour {
+  hour: string;
+  sessions: number;
+  sessions_errored: number;
+  sessions_crashed: number;
+  sessions_abnormal: number;
+  crash_free_sessions: number | null;
 }
 
 /** Un issue en el detalle de una release, con sus eventos en ella (o en la anterior, si dejó de salir). */
@@ -230,6 +261,7 @@ export interface ReleaseDetail extends Release {
   continued: ReleaseIssue[];
   regressed: ReleaseIssue[];
   stopped: ReleaseIssue[];
+  health_series: HealthHour[];
 }
 
 export interface Environment {

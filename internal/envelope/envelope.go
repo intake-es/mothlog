@@ -53,8 +53,8 @@ type Envelope struct {
 	Items  []Item
 }
 
-// Events devuelve los items de tipo event; el resto (sessions, client_report…)
-// se aceptan y se ignoran.
+// Events devuelve los items de tipo event; de los demás, session y sessions
+// los lee Sessions y el resto (client_report…) se aceptan y se ignoran.
 func (e *Envelope) Events() []Item {
 	var out []Item
 	for _, it := range e.Items {

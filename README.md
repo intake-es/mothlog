@@ -191,9 +191,9 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issu
 | `POST /api/0/issues/{id}/comments/` | comenta con `{"body": "..."}` en Markdown, hasta 20 000 caracteres (201) |
 | `DELETE /api/0/issues/{id}/comments/{comment}` | borra un comentario propio (204; 403 si es de otro) |
 | `GET /api/0/environments/?project=` y `GET /api/0/projects/{id}/environments/` | los entornos de los eventos, con cuántos issues y eventos tienen y cuándo se vio el último |
-| `GET /api/0/releases/?project=&environment=&cursor=&limit=` y `GET /api/0/projects/{id}/releases/` | las releases, de la más nueva a la más vieja, con sus despliegues y cuántos errores nuevos (`new_issues`), con eventos (`issues`), regresiones y eventos trajo cada una; con `environment`, las que tienen eventos o despliegues en él, contando solo lo suyo |
+| `GET /api/0/releases/?project=&environment=&cursor=&limit=` y `GET /api/0/projects/{id}/releases/` | las releases, de la más nueva a la más vieja, con sus despliegues, cuántos errores nuevos (`new_issues`), con eventos (`issues`), regresiones y eventos trajo cada una, y su salud (`health` y `health_by_environment`, en [Salud de las releases](#salud-de-las-releases)); con `environment`, las que tienen eventos, despliegues o sesiones en él, contando solo lo suyo |
 | `POST /api/0/projects/{id}/releases/` | crea la release `{"version": "..."}` (201, o 200 si ya existía); con `"environment"` (y `"deployed_at"`, opcional) apunta además un despliegue y devuelve en `resolved_issues` los issues que resolvió |
-| `GET /api/0/projects/{id}/releases/{version}/?environment=` | la release con sus despliegues, la anterior y la siguiente, y sus issues: `new` (aparecieron con ella), `regressed`, `continued` (ya existían y siguieron saliendo) y `stopped` (salían en la anterior y en esta no, o se resolvieron al desplegarla) |
+| `GET /api/0/projects/{id}/releases/{version}/?environment=` | la release con sus despliegues, la anterior y la siguiente, y sus issues: `new` (aparecieron con ella), `regressed`, `continued` (ya existían y siguieron saliendo) y `stopped` (salían en la anterior y en esta no, o se resolvieron al desplegarla); también su salud y `health_series`, sus sesiones por hora de las últimas 72 h |
 | `GET` y `POST /api/0/projects/{id}/releases/{version}/deploys/` | sus despliegues; `POST` con `{"environment": "production"}` apunta uno (y crea la release si no existía) |
 | `GET /api/0/events/{id}/` | el evento normalizado entero, por id o por `event_id` |
 | `GET /api/0/projects/{id}/filters` | los filtros, el tope por issue, el muestreo y el límite por minuto del proyecto |
@@ -245,7 +245,7 @@ Una clave es una letra o `_` seguida de letras, números, `_`, `.` o `-`; lo que
 
 ## Ingesta
 
-Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Solo se guardan los items `event`; el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
+Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Se guardan los items `event` y se cuentan los `session` y `sessions` ([Salud de las releases](#salud-de-las-releases)); el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
 
 Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo trae; si no, el tipo de la excepción lanzada y el módulo o fichero y la función de sus fotogramas `in_app` (sin líneas); y en los logs sin excepción, el logger y el mensaje con UUIDs, hexadecimales y números cambiados por marcadores. Un evento en un issue `resolved`, o en uno `resolved_next` con una release posterior, lo reabre como regresión ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)).
 
@@ -303,6 +303,31 @@ De cada release se sabe qué trajo: los errores que aparecieron con ella, los qu
 Qué release es posterior se decide por su número cuando las dos se leen como versiones del mismo paquete (`1.4.0`, `v2.0.0-rc.1`, `web@2026.11.21`, como en semver: con dos números o más, la pre-release antes que la versión y sin contar el `+build`). Así, una versión vieja que nunca había mandado nada no reabre ni resuelve nada, y una vuelta atrás tampoco. Si alguna no se lee como versión (un hash de git, `build-a1`…), se decide por cuándo se vio por primera vez, y entonces el evento que estrena una release no cuenta como posterior, porque puede ser de un cliente viejo; el siguiente de esa release ya sí, y una creada a mano o desplegada cuenta desde el primero. Con esos nombres, una vuelta atrás a uno que nunca se había visto cuenta como posterior al desplegarlo y resuelve los issues en `resolved_next`; se evita creando cada release al construirla, antes de desplegar las siguientes.
 
 **Entornos.** La lista de entornos de cada proyecto sale de los eventos. En la interfaz, el selector de entorno del raíl filtra la lista de errores, el detalle con su gráfica y sus recuentos, y las releases; por defecto, todos los entornos, y la elección se guarda en el navegador. En la API y el MCP es el parámetro `environment`.
+
+### Salud de las releases
+
+Los SDK mandan sesiones: una por carga de página en el navegador y, en los SDK de servidor, una por petición, que mandan ya sumadas por minuto. Con ellas, cada release enseña qué parte de sus sesiones y de sus usuarios no tuvo un crash, en la lista y en el detalle de releases, por la API (`health`) y por el MCP (`list_releases`, `get_release`):
+
+- **Sesiones sin crash**: 1 − sesiones con crash / sesiones.
+- **Usuarios sin crash**: 1 − usuarios con alguna sesión con crash / usuarios.
+- **Adopción**: la parte de las sesiones del proyecto de las últimas 24 horas que es de esa release.
+
+Se calculan por release y entorno (`health_by_environment`) y por release en todos los entornos (`health`, o en el del parámetro `environment`). Sin sesiones no hay porcentaje: la API devuelve `null` y la interfaz, «Sin sesiones»; sin `did`, lo mismo con los usuarios.
+
+Qué hay que activar en los SDK:
+
+- **Navegador** (`@sentry/browser` y los de los frameworks): viene activado con `browserSessionIntegration`, que está en las integraciones por defecto. Solo hace falta `release` en `Sentry.init`; si se quitan las integraciones por defecto, hay que añadirla.
+- **Python** (`sentry-sdk`): `auto_session_tracking` viene activado y, con las integraciones web (FastAPI, Django, Flask…), manda las sesiones de las peticiones sumadas en items `sessions`. Para una app de línea de comandos o un worker, `sentry_sdk.start_session()` y `sentry_sdk.end_session()` alrededor de su vida.
+- En todos: `release` (sin release no se cuenta nada) y, si se quiere separar, `environment`. Los usuarios salen del usuario del SDK (`Sentry.setUser({id})`, `sentry_sdk.set_user({"id": ...})`), que el SDK manda como `did`.
+
+Cómo se cuentan:
+
+- Se guardan sumadas por hora de inicio, proyecto, release y entorno: total, con errores, con crash y anómalas. Una sesión cuenta con crash si acaba en `crashed` o en `unhandled`, que es como el SDK del navegador marca un error sin capturar.
+- Una sesión individual llega varias veces (el inicio con `init`, las actualizaciones y el final) y cuenta una sola vez, con su último estado: mientras puede seguir llegando se recuerda lo que ya contó por su `sid` (con hash), y se olvida a las 24 horas sin noticias suyas. Un reenvío o una actualización más vieja no cambian nada, y lo que llega después del final tampoco; una actualización sin el `init` no cuenta hasta que llega el `init`.
+- Los items `sessions` de los SDK de servidor no llevan id, así que un reenvío del mismo item cuenta dos veces; los SDK solo reenvían si la respuesta no es un 200.
+- Los usuarios distintos se guardan por release y entorno con el `did` con hash, con la misma clave que los usuarios de los issues; sin `did`, la sesión cuenta solo en las sesiones.
+- Los filtros de `environments` y `releases` del proyecto también dejan fuera sus sesiones; las sesiones no gastan del límite por minuto.
+- La retención es la de los eventos: cada hora se borran las horas de sesiones y los usuarios de más de `RETENTION_DAYS` días.
 
 ### Releases con sentry-cli
 

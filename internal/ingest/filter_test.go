@@ -59,7 +59,7 @@ func TestFiltersDropOnlyTheirOwn(t *testing.T) {
 			store.DropMessage, []string{"api-excepcion-1", "api-log-error-1"}},
 		{"exception_types", func(f *store.Filters) {
 			f.ExceptionTypes = []string{"KeyError", "pydantic_core._pydantic_core.ValidationError"}
-		}, store.DropExceptionType, []string{"api-log-exception-1", "api-validacion-1"}},
+		}, store.DropExceptionType, []string{"api-log-exception-1", "api-sesion-crash-1", "api-validacion-1"}},
 		{"browser_extensions", func(f *store.Filters) { f.BrowserExtensions = true },
 			store.DropBrowserExtension, []string{"web-extension"}},
 		{"web_crawlers", func(f *store.Filters) { f.WebCrawlers = true },

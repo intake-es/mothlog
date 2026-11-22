@@ -16,13 +16,16 @@ Cada envío son dos ficheros:
 |---|---|---|---|
 | `api-excepcion-1` | sentry-python 2.75.0 | `ZeroDivisionError` sin capturar en `GET /pedidos/{pedido_id}/media` | Error nuevo; el fotograma de `app.py` es `in_app` y trae su código |
 | `api-validacion-1` | 2.75.0 | `ValidationError` de pydantic en `GET /pedidos/importar` | Error nuevo |
-| `api-excepcion-2`, `api-validacion-2` | 2.75.0 | `sessions` que acompañan a cada error | Se aceptan y se ignoran |
-| `api-descartado-1` y `-2` | 2.75.0 | `NotFound` que descarta `before_send`: solo llegan `sessions` y `client_report` | Nada |
+| `api-excepcion-2`, `api-validacion-2` | 2.75.0 | `sessions` que acompañan a cada error | Una sesión con crash en `fixture-release-1` |
+| `api-descartado-1` y `-2` | 2.75.0 | `NotFound` que descarta `before_send`: solo llegan `sessions` y `client_report` | Una sesión sin crash; el `client_report` se ignora |
+| `api-sesiones-1` | 2.75.0 | `sessions` de tres peticiones bien y una con `ZeroDivisionError` (caso `sesiones`) | Cuatro sesiones, una con crash, sin usuarios |
+| `api-sesion-ok-1` | 2.75.0 | `session` de `start_session()` y `end_session()` con el usuario `u_ana` (caso `sesion-ok`) | Una sesión `exited` y un usuario sin crash |
+| `api-sesion-crash-1` y `-2` | 2.75.0 | Con el usuario `u_luis`, un `KeyError` sin capturar (`handled: false`) y luego su `session` `crashed` (caso `sesion-crash`) | Error nuevo; una sesión con crash y un usuario con crash |
 | `api-log-exception-1` | 2.75.0 | `log.exception("stock.sincronizacion_fallida", ...)` de structlog con un `KeyError` | Error nuevo |
 | `api-log-error-1` | 2.75.0 | `log.error("pagos.reembolso_rechazado", ...)` de structlog, sin excepción | Error nuevo, con el nombre del evento de título |
 | `api-tarea-a-1` y `-b-1` | 2.75.0 | `task failed id=… name='enviar_factura' worker=… try=4 duration_ms=…` del logger `worker`, con id, worker y duración distintos | Los dos, el mismo error |
 | `web-typeerror-1` | `@sentry/browser` 11.15.0 | `TypeError` en `src/carrito.ts` al pulsar un botón, a través de `mitt`; lo captura el `addEventListener` envuelto del SDK; release `fixture-release-1` | Error nuevo; con los mapas de `testdata/sourcemaps/`, el último fotograma sale como `src/carrito.ts:7` y los de `mitt`, con `in_app` falso |
-| `web-sesion-1` y `-2` | 11.15.0 | `session` del navegador: la del arranque y la que cuenta el error | Se aceptan y se ignoran |
+| `web-sesion-1` y `-2` | 11.15.0 | `session` del navegador: la del arranque (`init`, `ok`) y la que cuenta el error (`unhandled`), con el mismo `sid` | Una sola sesión, con crash, en cualquier orden y aunque se reenvíen |
 | `web-cli-upload-1` | 11.15.0 | El mismo `TypeError`, con el build subido por `sentry-cli sourcemaps upload`; release `prueba-upload`, sin `debug_meta` | Error nuevo; con `testdata/sentry-cli/upload`, el último fotograma sale como `src/carrito.ts:7` por release y nombre |
 | `api-cron-ok-1` y `-2` | 2.75.0 | `check_in` del decorador `@monitor` de `limpieza-nocturna`: `in_progress` y `ok` con el mismo `check_in_id`, con `monitor_config` (crontab `0 3 * * *` en `Europe/Madrid`, margen 5 y máximo 20) | Crea el monitor; queda en `ok` con la duración, y el siguiente a las 3:00 de Madrid |
 | `api-cron-error-1` y `-2` | 2.75.0 | `check_in` de `enviar-facturas`, que lanza un `TimeoutError`: `in_progress` y `error`, con `monitor_config` de cada 2 horas | Crea el monitor, en `error` |
@@ -32,7 +35,7 @@ Cada envío son dos ficheros:
 
 Proyectos de los DSN: `api` es el `1`, `web` el `2` y `front` (el de los `web-cli-*`) el `3`. La clave pública va en `X-Sentry-Auth` (Python) o en `sentry_key` de la query (navegador).
 
-La app de Python pone `server_name`, `release`, `environment` y una etiqueta `component` fijos, y en `before_send` cambia las rutas de la máquina que graba por `/srv/api` y `/usr/lib/python3.14`, para que no salgan en los fixtures.
+La app de Python pone `server_name`, `release`, `environment` (`SENTRY_RELEASE` y `SENTRY_ENVIRONMENT` los cambian) y una etiqueta `component` fijos, y en `before_send` cambia las rutas de la máquina que graba por `/srv/api` y `/usr/lib/python3.14`, para que no salgan en los fixtures.
 
 ## testdata/sourcemaps/
 
@@ -69,7 +72,7 @@ Lo que mandó sentry-cli 3.8.2 al subir el build de `navegador/` a intake-errors
 
    ```sh
    cd tools/fixtures/python
-   for caso in excepcion validacion descartado log-exception log-error tarea tarea cron-ok cron-error; do
+   for caso in excepcion validacion descartado log-exception log-error tarea tarea cron-ok cron-error sesiones sesion-ok sesion-crash; do
      SENTRY_DSN=http://<clave>@127.0.0.1:8299/1 uv run grabar.py $caso
    done
    ```

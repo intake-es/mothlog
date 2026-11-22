@@ -9,7 +9,9 @@ import sentry_sdk
 from fastapi.testclient import TestClient
 from sentry_sdk.crons import monitor
 
-from app import app, reembolsar, sincronizar_stock
+from sentry_sdk.utils import event_from_exception
+
+from app import app, reembolsar, sincronizar_stock, sincronizar_stock_estricto
 
 client = TestClient(app, raise_server_exceptions=False)
 caso = sys.argv[1]
@@ -56,6 +58,25 @@ elif caso == "cron-error":
         enviar_facturas()
     except TimeoutError:
         pass
+elif caso == "sesiones":
+    for _ in range(3):
+        client.get("/pedidos/importar-ok")
+    client.get("/pedidos/p_1042/media")
+elif caso == "sesion-ok":
+    sentry_sdk.set_user({"id": "u_ana"})
+    sentry_sdk.start_session()
+    sentry_sdk.end_session()
+elif caso == "sesion-crash":
+    sentry_sdk.set_user({"id": "u_luis"})
+    sentry_sdk.start_session()
+    try:
+        sincronizar_stock_estricto("oeste")
+    except KeyError as exc:
+        event, hint = event_from_exception(
+            exc, client_options=sentry_sdk.get_client().options, mechanism={"type": "excepthook", "handled": False}
+        )
+        sentry_sdk.capture_event(event, hint=hint)
+    sentry_sdk.end_session()
 else:
     sys.exit(f"caso desconocido: {caso}")
 sentry_sdk.flush(10)

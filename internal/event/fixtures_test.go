@@ -85,8 +85,14 @@ var fixtures = map[string]want{
 		w.key, w.release, w.excType, w.inApp, w.request = keyWebCLI, "prueba-inject", "TypeError", true, " https://app.example.com/"
 		w.debugIDs = 2
 	}),
-	"web-sesion-1": {key: keyWeb, noEvent: true},
-	"web-sesion-2": {key: keyWeb, noEvent: true},
+	"api-sesiones-1":  {key: keyAPI, noEvent: true},
+	"api-sesion-ok-1": {key: keyAPI, noEvent: true},
+	"api-sesion-crash-1": with(python, func(w *want) {
+		w.excType, w.inApp = "KeyError", true
+	}),
+	"api-sesion-crash-2": {key: keyAPI, noEvent: true},
+	"web-sesion-1":       {key: keyWeb, noEvent: true},
+	"web-sesion-2":       {key: keyWeb, noEvent: true},
 	// Check-ins de crons: los lee internal/monitor.
 	"api-cron-ok-1":            {key: keyAPI, noEvent: true},
 	"api-cron-ok-2":            {key: keyAPI, noEvent: true},

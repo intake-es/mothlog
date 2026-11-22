@@ -13,10 +13,20 @@ import { RouterLink } from '@angular/router';
 import type { Subscription } from 'rxjs';
 import { Api, apiError, type ReleaseDetail, type ReleaseIssue } from '../../core/api';
 import { environment } from '../../core/environment';
-import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
+import {
+  ago,
+  count,
+  fullDate,
+  healthTone,
+  percent,
+  STATUS_BADGE,
+  STATUS_LABEL,
+  splitTitle,
+} from '../../core/format';
 import { I18n, type Key, plural } from '../../core/i18n';
 import { PageTitle } from '../../core/page-title';
 import { Icon } from '../../ui/icon';
+import { SessionChart } from './session-chart';
 
 type Group = 'new' | 'regressed' | 'continued' | 'stopped';
 
@@ -47,7 +57,7 @@ const TITLES: Record<Group, Key> = {
 /** Una release: sus despliegues, los errores que trajo y los que dejaron de salir con ella. */
 @Component({
   selector: 'app-release-detail',
-  imports: [RouterLink, Icon],
+  imports: [RouterLink, Icon, SessionChart],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './release-detail.html',
   styleUrl: './release-detail.css',
@@ -83,6 +93,49 @@ export class ReleaseDetailPage {
       ago: ago(d.deployed_at),
     })),
   );
+
+  /** Los porcentajes sin crash, la adopción, la serie y, sin entorno elegido, cada entorno. */
+  protected readonly health = computed(() => {
+    const d = this.detail();
+    if (!d) {
+      return null;
+    }
+    const h = d.health;
+    return {
+      has: h.sessions > 0,
+      sessions: percent(h.crash_free_sessions),
+      sessionsTone: healthTone(h.crash_free_sessions),
+      sessionsSub: this.t('release.health.sessionsCrashed', {
+        crashed: count(h.sessions_crashed),
+        n: count(h.sessions),
+      }),
+      users: percent(h.crash_free_users),
+      usersTone: healthTone(h.crash_free_users),
+      usersSub: h.users
+        ? this.t('release.health.usersCrashed', {
+            crashed: count(h.users_crashed),
+            n: count(h.users),
+          })
+        : this.t('release.health.noUsers'),
+      adoption: percent(h.adoption),
+      adoptionSub:
+        h.adoption === null
+          ? this.t('release.health.noRecent')
+          : plural('release.health.recent', h.sessions_24h),
+      series: d.health_series,
+      envs:
+        h.environment || d.health_by_environment.length < 2
+          ? []
+          : d.health_by_environment.map((e) => ({
+              name: e.environment || this.t('release.health.noEnvironment'),
+              sessions: count(e.sessions),
+              crashed: count(e.sessions_crashed),
+              rate: percent(e.crash_free_sessions),
+              tone: healthTone(e.crash_free_sessions),
+              users: percent(e.crash_free_users),
+            })),
+    };
+  });
 
   protected readonly sections = computed<Section[]>(() => {
     const d = this.detail();

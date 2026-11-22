@@ -13,8 +13,8 @@ import { Router, RouterLink } from '@angular/router';
 import type { Subscription } from 'rxjs';
 import { Api, apiError, type Project, type Release } from '../../core/api';
 import { environment } from '../../core/environment';
-import { ago, count, fullDate } from '../../core/format';
-import { I18n, plural } from '../../core/i18n';
+import { ago, count, fullDate, type HealthTone, healthTone, percent } from '../../core/format';
+import { I18n, plural, t } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
 import { Pick, type PickOption } from '../../ui/pick';
 
@@ -35,6 +35,15 @@ interface Row {
   news: string;
   regressions: string;
   events: string;
+  health: HealthCell;
+}
+
+interface HealthCell {
+  none: boolean;
+  rate: string;
+  tone: HealthTone;
+  adoption: string;
+  title: string;
 }
 
 /** Las releases de la más nueva a la más vieja, con lo que trajo cada una. */
@@ -93,6 +102,7 @@ export class ReleaseListPage {
         : this.t('releases.noNew'),
       regressions: plural('releases.regressions', release.regressions),
       events: count(release.events),
+      health: healthCell(release),
     }));
   });
 
@@ -160,4 +170,21 @@ export class ReleaseListPage {
 function latestPerEnvironment(r: Release) {
   const seen = new Set<string>();
   return r.deploys.filter((d) => !seen.has(d.environment) && seen.add(d.environment));
+}
+
+/** El porcentaje de sesiones sin crash y la adopción, o «sin sesiones». */
+function healthCell(r: Release): HealthCell {
+  const h = r.health;
+  const rate = percent(h.crash_free_sessions);
+  const adoption = percent(h.adoption);
+  return {
+    none: h.crash_free_sessions === null,
+    rate,
+    tone: healthTone(h.crash_free_sessions),
+    adoption: h.adoption === null ? '' : t('releases.health.adoption', { n: adoption }),
+    title:
+      h.crash_free_sessions === null
+        ? t('releases.health.none')
+        : t('releases.health.title', { rate, n: count(h.sessions), adoption }),
+  };
 }

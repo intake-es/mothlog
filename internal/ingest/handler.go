@@ -157,7 +157,8 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 
 	lim := DefaultLimits()
 	perMinute := 0
-	if len(events) > 0 || len(checkIns) > 0 {
+	sessions := env.Sessions()
+	if len(events) > 0 || len(checkIns) > 0 || len(sessions) > 0 {
 		filters, err := h.projects.Filters(ctx, project.ID)
 		if err != nil {
 			h.log.ErrorContext(ctx, "leer filtros", "proyecto", project.ID, "err", err)
@@ -169,6 +170,8 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 			perMinute = *filters.RateLimitPerMinute
 		}
 		fl := NewFilter(filters)
+		// Las sesiones no gastan del límite de eventos.
+		h.sessions(ctx, project.ID, sessions, fl)
 		kept := events[:0]
 		for _, ev := range events {
 			if reason := fl.Drop(ev); reason != "" {

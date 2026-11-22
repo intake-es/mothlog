@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { Release } from '../../core/api';
+import type { Release, ReleaseHealth } from '../../core/api';
 import { EnvironmentChoice, environment } from '../../core/environment';
 import { lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
@@ -11,6 +11,23 @@ import { ReleaseListPage } from './release-list';
 const now = Date.now();
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
 const HOUR = 3_600_000;
+
+const health = (over: Partial<ReleaseHealth> = {}): ReleaseHealth => ({
+  environment: '',
+  sessions: 0,
+  sessions_errored: 0,
+  sessions_crashed: 0,
+  sessions_abnormal: 0,
+  users: 0,
+  users_crashed: 0,
+  crash_free_sessions: null,
+  crash_free_users: null,
+  sessions_24h: 0,
+  adoption: null,
+  ...over,
+});
+
+const spaces = (s: string | null | undefined) => (s ?? '').replace(/\s/g, ' ').trim();
 
 const release = (over: Partial<Release>): Release => ({
   id: 2,
@@ -29,6 +46,15 @@ const release = (over: Partial<Release>): Release => ({
   regressions: 1,
   events: 1234,
   last_event: iso(60_000),
+  health: health({
+    sessions: 8,
+    sessions_crashed: 1,
+    sessions_errored: 2,
+    crash_free_sessions: 0.875,
+    sessions_24h: 4,
+    adoption: 0.4,
+  }),
+  health_by_environment: [],
   ...over,
 });
 
@@ -43,6 +69,7 @@ const RELEASES = [
     regressions: 0,
     events: 7,
     first_seen: iso(30 * HOUR),
+    health: health(),
   }),
 ];
 
@@ -82,6 +109,7 @@ describe('ReleaseListPage', () => {
     expect(el.querySelector('.titlebar__count')?.textContent).toBe('(2)');
     expect(Array.from(el.querySelectorAll('.list__head span')).map((s) => s.textContent)).toEqual([
       'Release',
+      'Sin crash',
       'Nuevos',
       'Regresiones',
       'Eventos',
@@ -105,6 +133,17 @@ describe('ReleaseListPage', () => {
     expect(rows[0].querySelector('.sp-badge--yellow')?.textContent).toBe('1');
     expect(rows[0].textContent).toContain('1 regresión');
     expect(rows[0].textContent).toContain('1234');
+
+    // El porcentaje sin crash y la adopción; sin sesiones no hay porcentaje.
+    expect(spaces(rows[0].querySelector('.row__rate')?.textContent)).toBe('87,5 %');
+    expect(rows[0].querySelector('.row__rate')?.getAttribute('data-tone')).toBe('tone-bad');
+    expect(spaces(rows[0].querySelector('.row__adoption')?.textContent)).toBe('40 % de adopción');
+    expect(spaces(rows[0].querySelector('.row__health')?.getAttribute('title'))).toBe(
+      'Sesiones sin crash: 87,5 % de 8. Adopción en las últimas 24 h: 40 %.',
+    );
+    expect(rows[1].querySelector('.row__rate')).toBeNull();
+    expect(rows[1].querySelector('.row__health-none')?.textContent).toBe('Sin sesiones');
+    expect(rows[1].textContent).not.toContain('100');
 
     expect(rows[1].querySelector('.row__pending')?.textContent).toBe('Sin desplegar');
     expect(rows[1].textContent).toContain('Ningún error nuevo');
@@ -140,7 +179,7 @@ describe('ReleaseListPage', () => {
       lang.set('en');
       const { el } = await render();
       expect(Array.from(el.querySelectorAll('.list__head span')).map((s) => s.textContent)).toEqual(
-        ['Release', 'New', 'Regressions', 'Events', 'Seen'],
+        ['Release', 'Crash-free', 'New', 'Regressions', 'Events', 'Seen'],
       );
       const rows = el.querySelectorAll<HTMLAnchorElement>('a.row');
       expect(rows[0].querySelector('.sp-badge--gray')?.textContent).toBe('Finalized');
@@ -151,6 +190,9 @@ describe('ReleaseListPage', () => {
       expect(rows[0].textContent).toContain('1 regression');
       expect(rows[1].querySelector('.row__pending')?.textContent).toBe('Not deployed');
       expect(rows[1].textContent).toContain('No new errors');
+      expect(spaces(rows[0].querySelector('.row__rate')?.textContent)).toBe('87.5%');
+      expect(spaces(rows[0].querySelector('.row__adoption')?.textContent)).toBe('40% adoption');
+      expect(rows[1].querySelector('.row__health-none')?.textContent).toBe('No sessions');
       expect(el.querySelector('app-pick .pick')?.getAttribute('aria-label')).toBe(
         'Project: All projects',
       );
