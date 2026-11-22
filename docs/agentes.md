@@ -84,7 +84,7 @@ curl -s https://errors.example.com/mcp \
 | `list_comments` | el historial: comentarios, cambios de estado y asignaciones | sí |
 | `list_assignees` | a quién se puede asignar: las personas que han entrado en la interfaz y los tokens activos | sí |
 | `list_releases`, `get_release` | las releases y lo que trajo una (nuevos, regresiones, los que dejaron de salir) y su salud (sesiones y usuarios sin crash, adopción) | sí |
-| `list_monitors`, `get_monitor` | los crons con su estado y la próxima ejecución esperada, y el historial de uno | sí |
+| `list_monitors`, `get_monitor` | los crons con su estado y la próxima ejecución esperada, y el historial de uno; los monitores de disponibilidad con su estado, su porcentaje y sus incidentes | sí |
 | `assign_issue` | asignar un error: `"assignee": "me"` para el propio token, un login, el nombre de otro token o vacío para desasignar; idempotente | no |
 | `add_comment` | comentar en Markdown | no |
 | `set_issue_status` | `resolved_next`, `resolved`, `silenced` u `open`, con un `comment` opcional unido al cambio; idempotente | no |

@@ -1,0 +1,129 @@
+<header class="titlebar">
+  <a class="icon-btn" [routerLink]="backLink()" [attr.aria-label]="t('monitor.back')">
+    <svg appIcon="arrow-left"></svg>
+  </a>
+  <h1 class="titlebar__title crumbs">
+    <a routerLink="/monitors" class="crumbs__root">{{ t('monitors.title') }}</a>
+    <span class="crumbs__sep" aria-hidden="true">/</span>
+    <span class="crumbs__leaf">{{ heading() }}</span>
+  </h1>
+</header>
+
+<div class="content">
+  @if (loading()) {
+    <div class="pad" aria-busy="true" [attr.aria-label]="t('monitor.loading')">
+      <span class="sp-skeleton" style="width: 100%; height: 320px; border-radius: 12px"></span>
+    </div>
+  } @else if (notFound()) {
+    <div class="state">
+      <svg appIcon="magnifying-glass" weight="duotone"></svg>
+      <p class="state__title">{{ t('monitor.notFound.title') }}</p>
+      <p class="state__text">{{ t('monitor.notFound.text') }}</p>
+      <a class="btn" routerLink="/monitors">{{ t('monitor.back') }}</a>
+    </div>
+  } @else if (!editing() && projects().length === 0) {
+    <div class="state">
+      <svg appIcon="squares-four"></svg>
+      <p class="state__title">{{ t('uptimeForm.noProjects.title') }}</p>
+      <p class="state__text">{{ error() || t('uptimeForm.noProjects.text') }}</p>
+    </div>
+  } @else {
+    <div class="wrap">
+      <p class="lede">{{ t('uptimeForm.lede') }}</p>
+      <form class="card" (submit)="$event.preventDefault(); save()">
+        <fieldset class="group">
+          <legend class="group__title">{{ t('uptimeForm.section.target') }}</legend>
+          <div class="group__body">
+            @if (!editing()) {
+              <label class="field">
+                <span class="field__label">{{ t('uptimeForm.project') }}</span>
+                <select class="input" name="project" [value]="draft().projectId" (change)="patch({ projectId: num($any($event.target).value) })">
+                  @for (p of projects(); track p.id) {
+                    <option [value]="p.id" [selected]="p.id === draft().projectId">{{ p.name }}</option>
+                  }
+                </select>
+              </label>
+            }
+            <label class="field">
+              <span class="field__label">{{ t('uptimeForm.name') }}</span>
+              <input class="input" type="text" name="name" maxlength="200" required [placeholder]="t('uptimeForm.namePlaceholder')" [value]="draft().name" (input)="patch({ name: $any($event.target).value })" />
+            </label>
+            <div class="url-row">
+              <div class="field">
+                <span class="field__label" id="uptime-method">{{ t('uptimeForm.method') }}</span>
+                <div class="seg" role="radiogroup" aria-labelledby="uptime-method">
+                  @for (m of methods; track m) {
+                    <button type="button" class="seg__opt" role="radio" [attr.aria-checked]="draft().method === m" (click)="patch({ method: m })">{{ m }}</button>
+                  }
+                </div>
+              </div>
+              <label class="field url-row__url">
+                <span class="field__label">{{ t('uptimeForm.url') }}</span>
+                <input class="input mono" type="url" name="url" required spellcheck="false" autocomplete="off" [placeholder]="t('uptimeForm.urlPlaceholder')" [value]="draft().url" (input)="patch({ url: $any($event.target).value })" />
+              </label>
+            </div>
+            <p class="field__hint">{{ t('uptimeForm.urlHint') }}</p>
+          </div>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend class="group__title">{{ t('uptimeForm.section.check') }}</legend>
+          <div class="group__body grid">
+            <label class="field">
+              <span class="field__label">{{ t('uptimeForm.interval') }}</span>
+              <select class="input" name="interval" (change)="patch({ interval: num($any($event.target).value) })">
+                @for (i of intervals; track i.value) {
+                  <option [value]="i.value" [selected]="i.value === draft().interval">{{ i.label }}</option>
+                }
+              </select>
+            </label>
+            <label class="field">
+              <span class="field__label">{{ t('uptimeForm.timeout') }}</span>
+              <input class="input" type="number" name="timeout" min="1" max="60" [value]="draft().timeout" (input)="patch({ timeout: num($any($event.target).value) })" />
+              <span class="field__hint">{{ t('uptimeForm.timeoutHint') }}</span>
+            </label>
+            <label class="field">
+              <span class="field__label">{{ t('uptimeForm.expected') }}</span>
+              <input class="input mono" type="text" name="expected" spellcheck="false" [value]="draft().expected" (input)="patch({ expected: $any($event.target).value })" />
+              <span class="field__hint">{{ t('uptimeForm.expectedHint') }}</span>
+            </label>
+            <label class="field">
+              <span class="field__label">{{ t('uptimeForm.threshold') }}</span>
+              <input class="input" type="number" name="threshold" min="1" max="10" [value]="draft().threshold" (input)="patch({ threshold: num($any($event.target).value) })" />
+              <span class="field__hint">{{ t('uptimeForm.thresholdHint') }}</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="group">
+          <label class="check">
+            <input type="checkbox" class="switch" role="switch" [checked]="draft().paused" (change)="patch({ paused: $any($event.target).checked })" />
+            {{ t('uptimeForm.paused') }}
+          </label>
+          <p class="field__hint">{{ t('uptimeForm.pausedHint') }}</p>
+        </div>
+
+        <div class="group foot">
+          @if (editing()) {
+            <button type="button" class="btn btn--ghost danger" [disabled]="busy()" (click)="remove()">
+              <svg appIcon="trash"></svg>
+              {{ confirmDelete() ? t('uptimeForm.confirmDelete') : t('uptimeForm.delete') }}
+            </button>
+          }
+          @if (error()) {
+            <span class="err foot__err" role="alert">{{ error() }}</span>
+          }
+          <div class="row-end foot__end">
+            <a class="btn" [routerLink]="backLink()">{{ t('uptimeForm.cancel') }}</a>
+            <button type="submit" class="btn btn--primary" [disabled]="busy() || !valid()">
+              {{ busy() ? t('uptimeForm.saving') : editing() ? t('uptimeForm.save') : t('uptimeForm.create') }}
+            </button>
+          </div>
+        </div>
+      </form>
+      @if (confirmDelete()) {
+        <p class="field__hint warn" role="status">{{ t('uptimeForm.deleteHint') }}</p>
+      }
+    </div>
+  }
+</div>

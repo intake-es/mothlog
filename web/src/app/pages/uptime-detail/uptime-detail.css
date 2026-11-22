@@ -1,0 +1,59 @@
+.stats--4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.head__since {
+  color: var(--danger);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.head__url {
+  overflow: hidden;
+  max-width: 100%;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.head__url:hover {
+  color: var(--text);
+}
+
+.last-error {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.chart {
+  margin-top: 1.5rem;
+}
+
+.incidents .history__head,
+.incidents .history__row {
+  grid-template-columns: 120px 180px 110px minmax(0, 1fr);
+}
+
+.pct--warn {
+  color: var(--warning);
+}
+
+.pct--bad {
+  color: var(--danger);
+}
+
+@media (max-width: 768px) {
+  .stats--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .incidents .history__row {
+    grid-template-columns: auto auto auto;
+  }
+}

@@ -69,6 +69,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/events/{id}/{$}", h.event)
 	h.registerReleases(route)
 	h.registerMonitors(route)
+	h.registerUptime(route)
 	mcpHandler := mcpserver.Handler(st, mcpserver.Options{
 		Actor: actorFrom,
 		IssueURL: func(ctx context.Context, id int64) string {

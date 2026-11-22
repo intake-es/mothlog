@@ -10,6 +10,8 @@ import { MonitorListPage } from './pages/monitor-list/monitor-list';
 import { ProjectSettingsPage } from './pages/project-settings/project-settings';
 import { ReleaseDetailPage } from './pages/release-detail/release-detail';
 import { ReleaseListPage } from './pages/release-list/release-list';
+import { UptimeDetailPage } from './pages/uptime-detail/uptime-detail';
+import { UptimeFormPage } from './pages/uptime-form/uptime-form';
 
 // Los títulos son claves de las traducciones: los escribe PageTitle en el idioma elegido.
 export const routes: Routes = [
@@ -33,6 +35,21 @@ export const routes: Routes = [
         title: 'title.release' satisfies Key,
       },
       { path: 'monitors', component: MonitorListPage, title: 'title.monitors' satisfies Key },
+      {
+        path: 'monitors/uptime/new',
+        component: UptimeFormPage,
+        title: 'title.uptimeNew' satisfies Key,
+      },
+      {
+        path: 'monitors/:project/uptime/:slug',
+        component: UptimeDetailPage,
+        title: 'title.monitor' satisfies Key,
+      },
+      {
+        path: 'monitors/:project/uptime/:slug/edit',
+        component: UptimeFormPage,
+        title: 'title.uptimeEdit' satisfies Key,
+      },
       {
         path: 'monitors/:project/:slug',
         component: MonitorDetailPage,

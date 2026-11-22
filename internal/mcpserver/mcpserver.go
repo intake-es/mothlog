@@ -100,7 +100,7 @@ const instructions = `Errores de las aplicaciones que envían a intake-errors, a
 5. Dejar constancia con add_comment: qué causaba el error y qué se ha cambiado (commit, PR, fichero).
 6. Marcar el estado con set_issue_status: resolved_next si el arreglo aún no está desplegado (pasa a resolved solo al desplegarse una release posterior), resolved si ya lo está, silenced si no hay nada que arreglar. Lleva un comment opcional que queda unido al cambio en el historial.
 
-Si hace falta más: list_events y get_event para otros eventos, get_issue_tags para todas las etiquetas, list_releases y get_release para lo que trajo una release, list_comments para el historial, list_monitors y get_monitor para los crons que fallan o no llegan. Las herramientas de leer aceptan environment (production, staging…) para quedarse con los eventos de ese entorno.`
+Si hace falta más: list_events y get_event para otros eventos, get_issue_tags para todas las etiquetas, list_releases y get_release para lo que trajo una release, list_comments para el historial, list_monitors y get_monitor para los crons que fallan o no llegan y las webs que no responden. Las herramientas de leer aceptan environment (production, staging…) para quedarse con los eventos de ese entorno.`
 
 func New(st *store.Store, opts Options) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "intake-errors", Version: "0.2.0"}, &mcp.ServerOptions{

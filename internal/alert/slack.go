@@ -266,7 +266,7 @@ func spanishDate(t, ref time.Time) string {
 }
 
 func (s *slack) send(ctx context.Context, _ pgx.Tx, p *pending) error {
-	if p.cron != nil {
+	if p.isMonitor() {
 		return postJSON(ctx, s.client, "slack", s.url, slackCron(p), nil)
 	}
 	return postJSON(ctx, s.client, "slack", s.url, slackMessage(p, p.ev, p.link), nil)

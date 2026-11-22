@@ -37,19 +37,23 @@ func Sign(secret string, t time.Time, body []byte) string {
 
 type WebhookPayload struct {
 	// Type es new, regressed, frequency, users, test o, en los crons,
-	// cron_failed, cron_missed, cron_timeout y cron_recovered.
+	// cron_failed, cron_missed, cron_timeout y cron_recovered, y en los
+	// monitores de disponibilidad, uptime_down y uptime_up.
 	Type string `json:"type"`
 	// Delivery es el mismo en los reintentos del mismo aviso.
 	Delivery string      `json:"delivery"`
 	SentAt   time.Time   `json:"sent_at"`
 	Rule     WebhookRule `json:"rule"`
 	Project  string      `json:"project"`
-	// Issue va en los avisos de errores; Monitor y CheckIn, en los de crons.
-	Issue   *WebhookIssue   `json:"issue,omitempty"`
-	Monitor *WebhookMonitor `json:"monitor,omitempty"`
-	CheckIn *WebhookCheckIn `json:"check_in,omitempty"`
-	Event   *WebhookEvent   `json:"event"`
-	Trigger *WebhookTrigger `json:"trigger,omitempty"`
+	// Issue va en los avisos de errores; Monitor y CheckIn, en los de crons;
+	// Uptime e Incident, en los de disponibilidad.
+	Issue    *WebhookIssue    `json:"issue,omitempty"`
+	Monitor  *WebhookMonitor  `json:"monitor,omitempty"`
+	CheckIn  *WebhookCheckIn  `json:"check_in,omitempty"`
+	Uptime   *WebhookUptime   `json:"uptime,omitempty"`
+	Incident *WebhookIncident `json:"incident,omitempty"`
+	Event    *WebhookEvent    `json:"event"`
+	Trigger  *WebhookTrigger  `json:"trigger,omitempty"`
 	// ResolvedAt es, en una regresión, cuándo se había resuelto.
 	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
 	// Markdown es el error como en stacktrace.md.
@@ -142,6 +146,8 @@ func (w *webhook) send(ctx context.Context, _ pgx.Tx, p *pending) error {
 	var err error
 	if p.cron != nil {
 		pl = w.cronPayload(p)
+	} else if p.uptime != nil {
+		pl = w.uptimePayload(p)
 	} else if pl, err = w.payload(ctx, p); err != nil {
 		return err
 	}

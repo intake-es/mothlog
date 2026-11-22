@@ -1,0 +1,134 @@
+<header class="titlebar">
+  <a class="icon-btn" routerLink="/monitors" [attr.aria-label]="t('monitor.back')">
+    <svg appIcon="arrow-left"></svg>
+  </a>
+  <h1 class="titlebar__title crumbs">
+    <a routerLink="/monitors" class="crumbs__root">{{ t('monitors.title') }}</a>
+    <span class="crumbs__sep" aria-hidden="true">/</span>
+    <span class="crumbs__leaf">{{ detail()?.name ?? slug() }}</span>
+  </h1>
+
+  <div class="titlebar__actions">
+    @if (detail(); as d) {
+      <button type="button" class="btn" [disabled]="pausing()" (click)="togglePause()">
+        <svg [appIcon]="d.paused ? 'play' : 'pause'"></svg>
+        {{ d.paused ? t('uptime.resume') : t('uptime.pause') }}
+      </button>
+      <a class="btn" [routerLink]="['/monitors', d.project_id, 'uptime', d.slug, 'edit']">
+        <svg appIcon="pencil-simple"></svg>{{ t('uptime.edit') }}
+      </a>
+    }
+  </div>
+</header>
+
+<div class="content">
+  @if (loading()) {
+    <div class="pad" aria-busy="true" [attr.aria-label]="t('monitor.loading')">
+      <span class="sp-skeleton" style="width: 40%; height: 1.4rem"></span>
+      <span class="sp-skeleton" style="width: 25%; height: 0.8rem; margin-top: 0.6rem"></span>
+      <span class="sp-skeleton" style="width: 100%; height: 120px; margin-top: 2rem; border-radius: 12px"></span>
+    </div>
+  } @else if (notFound()) {
+    <div class="state">
+      <svg appIcon="magnifying-glass" weight="duotone"></svg>
+      <p class="state__title">{{ t('monitor.notFound.title') }}</p>
+      <p class="state__text">{{ t('monitor.notFound.text') }}</p>
+      <a class="btn" routerLink="/monitors">{{ t('monitor.back') }}</a>
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('monitor.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (detail(); as d) {
+    <section class="head">
+      <div class="head__title">
+        <h2 class="head__name">{{ d.name }}</h2>
+        <span class="sp-badge" [class]="stateBadge[state()]">{{ t(stateLabel[state()]) }}</span>
+        @if (facts()?.downSince; as since) {
+          <span class="head__since" [attr.title]="facts()?.downTitle">{{ since }}</span>
+        }
+      </div>
+      <p class="head__meta">
+        <span class="head__fact"><svg appIcon="squares-four"></svg>{{ d.project }}</span>
+        <a class="head__fact mono head__url" [href]="d.url" target="_blank" rel="noopener noreferrer">
+          <svg appIcon="globe-simple"></svg>{{ d.method }} {{ d.url }}
+        </a>
+      </p>
+      @if (d.last_error && d.status !== 'up') {
+        <p class="last-error mono">{{ t('uptime.lastError', { error: d.last_error }) }}</p>
+      }
+    </section>
+
+    @if (facts(); as f) {
+      <section class="block stats stats--4">
+        <div class="stat">
+          <span class="stat__label">{{ t('uptime.stat.day') }}</span>
+          <span class="stat__v tnum" [class]="f.dayClass">{{ f.day }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">{{ t('uptime.stat.month') }}</span>
+          <span class="stat__v tnum" [class]="f.monthClass">{{ f.month }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">{{ t('uptime.stat.response') }}</span>
+          <span class="stat__v tnum">{{ f.response }}</span>
+          <span class="stat__sub" [attr.title]="f.lastTitle">{{ f.last }}</span>
+        </div>
+        <div class="stat">
+          <span class="stat__label">{{ t('uptime.stat.check') }}</span>
+          <span class="stat__v">{{ f.every }}</span>
+          <span class="stat__sub">{{ f.config }}</span>
+        </div>
+      </section>
+    }
+
+    <section class="block">
+      <h3 class="block__title">{{ t('uptime.responseTimes') }}</h3>
+      @if (d.response_times.length) {
+        <app-response-chart class="chart" [buckets]="d.response_times" />
+      } @else {
+        <p class="muted">{{ t('uptime.noChecks') }}</p>
+      }
+    </section>
+
+    @if (d.checks.length) {
+      <section class="block">
+        <h3 class="block__title">{{ t('uptime.recent') }}</h3>
+        <app-uptime-strip class="strip" [checks]="d.checks" [slots]="60" />
+      </section>
+    }
+
+    <section class="block">
+      <h3 class="block__title">{{ t('uptime.incidents') }}</h3>
+      @if (incidents().length) {
+        <div class="history incidents" role="table" [attr.aria-label]="t('uptime.incidents')">
+          <div class="history__head" role="row">
+            <span role="columnheader">{{ t('uptime.col.started') }}</span>
+            <span role="columnheader">{{ t('uptime.col.ended') }}</span>
+            <span role="columnheader" class="num">{{ t('uptime.col.duration') }}</span>
+            <span role="columnheader">{{ t('uptime.col.error') }}</span>
+          </div>
+          @for (r of incidents(); track r.incident.id) {
+            <div class="history__row" role="row">
+              <span role="cell" class="tnum" [attr.title]="r.started">{{ r.startedAgo }}</span>
+              <span role="cell" class="tnum">
+                @if (r.ongoing) {
+                  <span class="sp-badge sp-badge--sm sp-badge--red">{{ r.ended }}</span>
+                } @else {
+                  <span class="muted">{{ r.ended }}</span>
+                }
+              </span>
+              <span role="cell" class="num tnum">{{ r.duration }}</span>
+              <span role="cell" class="mono ellipsis" [attr.title]="r.incident.first_error">{{ r.incident.first_error || '—' }}</span>
+            </div>
+          }
+        </div>
+      } @else {
+        <p class="muted">{{ t('uptime.noIncidents') }}</p>
+      }
+    </section>
+  }
+</div>

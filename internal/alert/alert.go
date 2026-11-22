@@ -117,8 +117,10 @@ type pending struct {
 	link     string
 	ev       *event.Event
 	issue    *store.IssueDetail
-	// cron es el monitor de los avisos de cron; en el resto, nil.
-	cron *cronInfo
+	// cron es el monitor de los avisos de cron y uptime el de los de
+	// disponibilidad; en el resto, nil.
+	cron   *cronInfo
+	uptime *uptimeInfo
 
 	project          string
 	labels           []string
@@ -322,7 +324,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	var p pending
 	var channel string
 	var attempts int
-	var ruleID, issueID, monitorID, checkinID *int64
+	var ruleID, issueID, monitorID, checkinID, uptimeID, incidentID *int64
 	var detail []byte
 	// El primer NOT EXISTS mantiene el orden por issue y canal (y regla y
 	// acción): una regresión no se manda antes de que se mande (o se abandone)
@@ -330,13 +332,14 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	// mucho SlackWaitsForLinear. Los avisos sin regla solo salen por los canales
 	// configurados.
 	err = tx.QueryRow(ctx, `
-		SELECT o.id, o.issue_id, o.monitor_id, o.checkin_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
+		SELECT o.id, o.issue_id, o.monitor_id, o.checkin_id, o.uptime_monitor_id, o.incident_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
 			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail
 		FROM alert_outbox o
 		WHERE o.sent_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= $1
 			AND (o.rule_id IS NOT NULL OR o.channel = ANY($2))
 			AND NOT EXISTS (SELECT 1 FROM alert_outbox b
 				WHERE b.issue_id IS NOT DISTINCT FROM o.issue_id AND b.monitor_id IS NOT DISTINCT FROM o.monitor_id
+					AND b.uptime_monitor_id IS NOT DISTINCT FROM o.uptime_monitor_id
 					AND b.channel = o.channel AND b.id < o.id
 					AND b.rule_id IS NOT DISTINCT FROM o.rule_id AND b.action_id IS NOT DISTINCT FROM o.action_id
 					AND b.sent_at IS NULL AND b.failed_at IS NULL)
@@ -345,7 +348,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		ORDER BY o.next_attempt_at, o.id
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, now, a.order, now.Add(-SlackWaitsForLinear)).
-		Scan(&p.id, &issueID, &monitorID, &checkinID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
+		Scan(&p.id, &issueID, &monitorID, &checkinID, &uptimeID, &incidentID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
 			&attempts, &ruleID, &p.actionID, &detail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -360,9 +363,12 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	}
 	var snd sender
 	var sendErr error
-	if monitorID != nil {
+	switch {
+	case monitorID != nil:
 		sendErr = a.loadCron(ctx, tx, &p, *monitorID, checkinID)
-	} else {
+	case uptimeID != nil:
+		sendErr = a.loadUptime(ctx, tx, &p, *uptimeID, incidentID)
+	default:
 		p.issueID = *issueID
 		sendErr = a.loadIssue(ctx, tx, &p)
 	}
@@ -377,7 +383,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 			snd, sendErr = a.ruleSender(ctx, tx, &p)
 		}
 	}
-	if sendErr == nil && p.cron == nil {
+	if sendErr == nil && !p.isMonitor() {
 		if latest, err := a.st.LatestEvent(ctx, p.issueID); err != nil {
 			sendErr = err
 		} else if latest != nil {
@@ -439,8 +445,14 @@ func (p *pending) target() slog.Attr {
 	if p.cron != nil {
 		return slog.Int64("monitor", p.cron.monitorID)
 	}
+	if p.uptime != nil {
+		return slog.Int64("monitor_disponibilidad", p.uptime.monitorID)
+	}
 	return slog.Int64("issue", p.issueID)
 }
+
+// isMonitor dice si el aviso es de un monitor y no de un issue.
+func (p *pending) isMonitor() bool { return p.cron != nil || p.uptime != nil }
 
 // issueDetail es el issue con su último evento, para el Markdown.
 func issueDetail(ctx context.Context, st *store.Store, p *pending) (store.IssueDetail, error) {

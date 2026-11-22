@@ -15,6 +15,9 @@
       [highlight]="!!project()"
       (changed)="setProject($event)"
     />
+    <a class="btn btn--primary" routerLink="/monitors/uptime/new" [queryParams]="{ project: project() || null }">
+      <svg appIcon="plus"></svg>{{ t('monitors.new') }}
+    </a>
   </div>
 </header>
 
@@ -35,7 +38,7 @@
       <p class="state__text">{{ error() }}</p>
       <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
     </div>
-  } @else if (rows().length === 0) {
+  } @else if (rows().length === 0 && uptimeRows().length === 0) {
     <div class="state">
       @if (project()) {
         <svg appIcon="magnifying-glass" weight="duotone"></svg>
@@ -45,11 +48,64 @@
         <svg appIcon="heartbeat" weight="duotone"></svg>
         <p class="state__title">{{ t('monitors.empty.title') }}</p>
         <p class="state__text">{{ t('monitors.empty.text') }}</p>
+        <p class="state__text">{{ t('monitors.empty.uptime') }}</p>
+        <a class="btn" routerLink="/monitors/uptime/new">
+          <svg appIcon="plus"></svg>{{ t('monitors.new') }}
+        </a>
       }
     </div>
   } @else {
-    @if (failing()) {
-      <p class="summary" role="status">{{ failingText() }}</p>
+    @if (summary()) {
+      <p class="summary" role="status">{{ summary() }}</p>
+    }
+    @if (uptimeRows().length) {
+      <h2 class="group">
+        <svg appIcon="pulse"></svg>{{ t('monitors.section.uptime') }}
+        <span class="group__count tnum">{{ uptimeRows().length }}</span>
+      </h2>
+      <div class="list list--uptime" role="list" [attr.aria-label]="t('monitors.section.uptime')">
+        <div class="list__head" aria-hidden="true">
+          <span>{{ t('monitors.col.monitor') }}</span>
+          <span>{{ t('monitors.col.checks') }}</span>
+          <span>{{ t('monitors.col.status') }}</span>
+          <span class="list__num">{{ t('monitors.col.day') }}</span>
+          <span class="list__num">{{ t('monitors.col.month') }}</span>
+        </div>
+        @for (row of uptimeRows(); track row.monitor.id) {
+          <a class="row row--uptime" role="listitem" [routerLink]="row.link">
+            <div class="row__main">
+              <div class="row__title">
+                <span class="row__name">{{ row.monitor.name }}</span>
+              </div>
+              <div class="row__meta">
+                <span class="row__fact"><svg appIcon="squares-four"></svg>{{ row.monitor.project }}</span>
+                <span class="row__fact row__url mono" [attr.title]="row.monitor.url">
+                  <svg appIcon="globe-simple"></svg>{{ row.monitor.method }} {{ row.url }}
+                </span>
+                <span class="row__fact"><svg appIcon="clock"></svg>{{ row.every }}</span>
+              </div>
+            </div>
+            <app-uptime-strip class="row__strip" [checks]="row.monitor.recent ?? []" />
+            <div class="row__status">
+              <span class="sp-badge sp-badge--sm" [class]="uptimeBadge[row.state]">
+                @if (row.state === 'paused') {
+                  <svg appIcon="pause"></svg>
+                }
+                {{ t(uptimeLabel[row.state]) }}
+              </span>
+            </div>
+            <div class="row__when tnum pct" [class]="row.dayClass">{{ row.day }}</div>
+            <div class="row__when tnum pct" [class]="row.monthClass">{{ row.month }}</div>
+          </a>
+        }
+      </div>
+    }
+    @if (rows().length) {
+    @if (uptimeRows().length) {
+      <h2 class="group">
+        <svg appIcon="clock"></svg>{{ t('monitors.section.cron') }}
+        <span class="group__count tnum">{{ rows().length }}</span>
+      </h2>
     }
     <div class="list" role="list">
       <div class="list__head" aria-hidden="true">
@@ -91,5 +147,6 @@
         </a>
       }
     </div>
+    }
   }
 </div>

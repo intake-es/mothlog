@@ -245,6 +245,58 @@ describe('ProjectSettingsPage', () => {
     expect(spanishLeft(editor)).toEqual([]);
   });
 
+  it('crea una regla de disponibilidad y la resume en los dos idiomas', async () => {
+    const { fixture, el } = await render('alerts');
+    el.querySelector<HTMLButtonElement>('.btn--primary')?.click();
+    fixture.detectChanges();
+    const check = (label: string) =>
+      Array.from(el.querySelectorAll<HTMLLabelElement>('label.check'))
+        .find((l) => l.textContent?.includes(label))
+        ?.querySelector('input');
+    for (const label of ['Un error nuevo', 'Una regresión']) {
+      check(label)?.click();
+    }
+    check('Un monitor que cae')?.click();
+    check('Un monitor que vuelve')?.click();
+    const name = el.querySelector<HTMLInputElement>('input[name=name]')!;
+    name.value = 'Web caída';
+    name.dispatchEvent(new Event('input'));
+    const monitors = el.querySelector<HTMLInputElement>('input[placeholder="web-principal, api"]')!;
+    monitors.value = 'web-principal';
+    monitors.dispatchEvent(new Event('input'));
+    const url = el.querySelector<HTMLInputElement>('.dest input')!;
+    url.value = 'https://agente.example.com/web';
+    url.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('button[type=submit]')?.click();
+
+    const req = http.expectOne('/api/0/projects/4/rules');
+    expect(req.request.body.conditions).toMatchObject({
+      new: false,
+      regressed: false,
+      cron: null,
+      uptime: { down: true, up: true, monitors: ['web-principal'] },
+    });
+    req.flush(
+      rule({
+        id: 9,
+        name: 'Web caída',
+        conditions: { ...rule().conditions, ...req.request.body.conditions, tags: [] },
+      }),
+    );
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const summary = () =>
+      Array.from(el.querySelectorAll('.rule__summary')).map((n) => n.textContent)[0];
+    expect(summary()).toBe('Monitor que cae o monitor que vuelve (web-principal)');
+    TestBed.inject(I18n).set('en');
+    fixture.detectChanges();
+    expect(summary()).toBe('A monitor goes down or a monitor is back up (web-principal)');
+    const editor = el.querySelector('app-rule-editor')!;
+    expect(editor.textContent).toContain('A monitor is back up, with how long the incident lasted');
+    expect(spanishLeft(editor)).toEqual([]);
+  });
+
   it('el botón de prueba manda un aviso por esa acción y dice cómo ha ido', async () => {
     const { fixture, el } = await render('alerts', [rule()]);
     el.querySelector<HTMLButtonElement>('.rule__main')?.click();

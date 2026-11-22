@@ -47,6 +47,9 @@ func kindText(p *pending) (string, string) {
 	case store.KindCronFailed, store.KindCronMissed, store.KindCronTimeout, store.KindCronRecovered:
 		s := cronKindText(p.kind)
 		return s, s + " en "
+	case store.KindUptimeDown, store.KindUptimeUp:
+		s := uptimeKindText(p.kind)
+		return s, s + " en "
 	default:
 		return "Nuevo error", "Nuevo error en "
 	}
@@ -85,6 +88,9 @@ type summary struct {
 func summarize(p *pending) summary {
 	if p.cron != nil {
 		return cronSummary(p)
+	}
+	if p.uptime != nil {
+		return uptimeSummary(p)
 	}
 	what, _ := kindText(p)
 	s := summary{What: what, Headline: headline(p), Meta: []string{p.project}}

@@ -83,6 +83,10 @@ export interface Draft {
   cronRecovered: boolean;
   /** Los slugs separados por comas; vacío, todos. */
   cronMonitors: string;
+  uptimeDown: boolean;
+  uptimeUp: boolean;
+  /** Los slugs separados por comas; vacío, todos. */
+  uptimeMonitors: string;
   environments: string;
   levels: string[];
   tags: { key: string; value: string }[];
@@ -125,6 +129,9 @@ export function newDraft(): Draft {
     cronTimeout: false,
     cronRecovered: false,
     cronMonitors: '',
+    uptimeDown: false,
+    uptimeUp: false,
+    uptimeMonitors: '',
     environments: '',
     levels: [],
     tags: [],
@@ -150,6 +157,9 @@ export function draftOf(r: Rule): Draft {
     cronTimeout: !!c.cron?.timeout,
     cronRecovered: !!c.cron?.recovered,
     cronMonitors: (c.cron?.monitors ?? []).join(', '),
+    uptimeDown: !!c.uptime?.down,
+    uptimeUp: !!c.uptime?.up,
+    uptimeMonitors: (c.uptime?.monitors ?? []).join(', '),
     environments: c.environments.join(', '),
     levels: [...c.levels],
     tags: c.tags.map((tag) => ({ ...tag })),
@@ -194,6 +204,10 @@ export function inputOf(d: Draft): RuleInput {
               recovered: d.cronRecovered,
               monitors: list(d.cronMonitors),
             }
+          : null,
+      uptime:
+        d.uptimeDown || d.uptimeUp
+          ? { down: d.uptimeDown, up: d.uptimeUp, monitors: list(d.uptimeMonitors) }
           : null,
       environments: list(d.environments),
       levels: d.levels,
@@ -272,6 +286,22 @@ export function summary(r: Rule): string {
     when.push(
       cron.monitors.length
         ? `${text} ${t('when.cronMonitors', { list: orList(cron.monitors) })}`
+        : text,
+    );
+  }
+  if (c.uptime) {
+    const up = c.uptime;
+    const kinds: Key[] = [];
+    if (up.down) {
+      kinds.push('when.uptimeDown');
+    }
+    if (up.up) {
+      kinds.push('when.uptimeUp');
+    }
+    const text = orList(kinds.map((k) => t(k)));
+    when.push(
+      up.monitors.length
+        ? `${text} ${t('when.cronMonitors', { list: orList(up.monitors) })}`
         : text,
     );
   }

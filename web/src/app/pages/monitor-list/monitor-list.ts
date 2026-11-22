@@ -10,14 +10,25 @@ import {
   untracked,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import type { Subscription } from 'rxjs';
-import { Api, apiError, type Monitor, type Project } from '../../core/api';
+import { forkJoin, type Subscription } from 'rxjs';
+import { Api, apiError, type Monitor, type Project, type UptimeMonitor } from '../../core/api';
 import { ago, count, fullDate } from '../../core/format';
 import { I18n, plural } from '../../core/i18n';
 import { CheckInStrip } from '../../ui/checkin-strip';
 import { Icon } from '../../ui/icon';
 import { Pick, type PickOption } from '../../ui/pick';
+import { UptimeStrip } from '../../ui/uptime-strip';
 import { MONITOR_STATUS_LABEL, STATUS_BADGE, scheduleText, until } from './monitor-format';
+import {
+  intervalText,
+  percent,
+  percentClass,
+  shortURL,
+  UPTIME_STATE_BADGE,
+  UPTIME_STATE_LABEL,
+  type UptimeState,
+  uptimeState,
+} from './uptime-format';
 
 interface Row {
   monitor: Monitor;
@@ -30,10 +41,25 @@ interface Row {
   lastTitle: string;
 }
 
-/** Los crons con su estado y sus últimas ejecuciones; los que fallan, primero. */
+interface UptimeRow {
+  monitor: UptimeMonitor;
+  link: (string | number)[];
+  state: UptimeState;
+  url: string;
+  every: string;
+  day: string;
+  dayClass: string;
+  month: string;
+  monthClass: string;
+}
+
+/**
+ * Los monitores de disponibilidad con su estado, su porcentaje y sus últimas
+ * comprobaciones, y los crons con sus últimas ejecuciones; los que fallan, primero.
+ */
 @Component({
   selector: 'app-monitor-list',
-  imports: [RouterLink, Icon, Pick, CheckInStrip],
+  imports: [RouterLink, Icon, Pick, CheckInStrip, UptimeStrip],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './monitor-list.html',
   styleUrl: './monitor-list.css',
@@ -47,9 +73,12 @@ export class MonitorListPage {
   protected readonly t = inject(I18n).t;
   protected readonly statusLabel = MONITOR_STATUS_LABEL;
   protected readonly statusBadge = STATUS_BADGE;
+  protected readonly uptimeLabel = UPTIME_STATE_LABEL;
+  protected readonly uptimeBadge = UPTIME_STATE_BADGE;
 
   protected readonly projects = signal<Project[]>([]);
   protected readonly monitors = signal<Monitor[]>([]);
+  protected readonly uptime = signal<UptimeMonitor[]>([]);
   protected readonly loading = signal(true);
   private readonly failure = signal<unknown>(null);
   protected readonly error = computed(() =>
@@ -62,14 +91,39 @@ export class MonitorListPage {
   ]);
 
   protected readonly title = computed(() =>
-    this.loading() || this.error() ? null : count(this.monitors().length),
+    this.loading() || this.error() ? null : count(this.monitors().length + this.uptime().length),
   );
 
   protected readonly failing = computed(
     () => this.monitors().filter((m) => ['error', 'missed', 'timeout'].includes(m.status)).length,
   );
 
-  protected readonly failingText = computed(() => plural('monitors.failing', this.failing()));
+  protected readonly down = computed(
+    () => this.uptime().filter((m) => uptimeState(m) === 'down').length,
+  );
+
+  protected readonly summary = computed(() =>
+    [
+      this.down() ? plural('monitors.down', this.down()) : '',
+      this.failing() ? plural('monitors.failing', this.failing()) : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
+  );
+
+  protected readonly uptimeRows = computed<UptimeRow[]>(() =>
+    this.uptime().map((m) => ({
+      monitor: m,
+      link: ['/monitors', m.project_id, 'uptime', m.slug],
+      state: uptimeState(m),
+      url: shortURL(m.url),
+      every: intervalText(m.interval_seconds),
+      day: percent(m.uptime_24h),
+      dayClass: percentClass(m.uptime_24h),
+      month: percent(m.uptime_30d),
+      monthClass: percentClass(m.uptime_30d),
+    })),
+  );
 
   protected readonly rows = computed<Row[]>(() => {
     const now = Date.now();
@@ -103,9 +157,10 @@ export class MonitorListPage {
     this.sub?.unsubscribe();
     this.loading.set(true);
     this.failure.set(null);
-    this.sub = this.api.monitors(project).subscribe({
-      next: (page) => {
-        this.monitors.set(page.data);
+    this.sub = forkJoin([this.api.uptimeMonitors(project), this.api.monitors(project)]).subscribe({
+      next: ([uptime, crons]) => {
+        this.uptime.set(uptime.data);
+        this.monitors.set(crons.data);
         this.loading.set(false);
       },
       error: (err) => {

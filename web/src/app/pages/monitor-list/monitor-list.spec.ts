@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { CheckInMark, Monitor } from '../../core/api';
+import type { CheckInMark, Monitor, UptimeCheck, UptimeMonitor } from '../../core/api';
 import { I18n, lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
 import { MonitorListPage } from './monitor-list';
@@ -58,17 +58,76 @@ const MONITORS = [
   }),
 ];
 
+const checks = (...ok: boolean[]): UptimeCheck[] =>
+  ok.map((v, i) => ({
+    checked_at: iso((i + 1) * MIN),
+    ok: v,
+    status_code: v ? 200 : 503,
+    duration_ms: 180,
+    error: v ? '' : 'código 503',
+  }));
+
+const uptime = (over: Partial<UptimeMonitor>): UptimeMonitor => ({
+  id: 11,
+  project_id: 4,
+  project: 'api',
+  slug: 'web-principal',
+  name: 'Web principal',
+  url: 'https://example.com/',
+  method: 'GET',
+  interval_seconds: 60,
+  timeout_seconds: 10,
+  expected_status: '200-299',
+  failure_threshold: 2,
+  paused: false,
+  status: 'down',
+  consecutive_failures: 3,
+  last_checked_at: iso(MIN),
+  last_status_code: 503,
+  last_duration_ms: 180,
+  last_error: 'código 503',
+  next_check_at: iso(-MIN),
+  created_at: iso(60 * MIN),
+  updated_at: iso(60 * MIN),
+  down_since: iso(3 * MIN),
+  uptime_24h: 99.4583,
+  uptime_30d: 99.98,
+  recent: checks(false, false, false, true),
+  ...over,
+});
+
+const UPTIME = [
+  uptime({}),
+  uptime({
+    id: 12,
+    slug: 'api',
+    name: 'API',
+    url: 'https://api.example.com/salud',
+    method: 'HEAD',
+    interval_seconds: 30,
+    status: 'up',
+    paused: true,
+    down_since: null,
+    uptime_24h: 100,
+    uptime_30d: null,
+    recent: checks(true),
+  }),
+];
+
 describe('MonitorListPage', () => {
   let http: HttpTestingController;
 
-  async function render(data: Monitor[] = MONITORS, project = '') {
+  async function render(data: Monitor[] = MONITORS, project = '', up: UptimeMonitor[] = []) {
     const fixture = TestBed.createComponent(MonitorListPage);
     if (project) {
       fixture.componentRef.setInput('project', project);
     }
     fixture.detectChanges();
     http.expectOne('/api/0/projects/').flush({ data: [{ id: 4, name: 'api', dsn: '' }] });
+    const upReq = http.expectOne((r) => r.url === '/api/0/uptime-monitors/');
     const req = http.expectOne((r) => r.url === '/api/0/monitors/');
+    expect(upReq.request.params.get('project')).toBe(req.request.params.get('project'));
+    upReq.flush({ data: up });
     req.flush({ data });
     await fixture.whenStable();
     fixture.detectChanges();
@@ -147,6 +206,78 @@ describe('MonitorListPage', () => {
     expect(el.querySelector('.summary')?.textContent).toBe(
       '1 monitor is failing, missed or timed out.',
     );
+    expect(spanishLeft(el)).toEqual([]);
+  });
+
+  it('pinta los de disponibilidad antes que los crons, con su estado, la tira y el porcentaje', async () => {
+    const { el } = await render(MONITORS, '', UPTIME);
+    expect(el.querySelector('.titlebar__count')?.textContent).toBe('(5)');
+    expect(el.querySelector('.summary')?.textContent).toBe(
+      '1 monitor de disponibilidad caído. 1 monitor falla, no llega o se pasa de tiempo.',
+    );
+    expect(Array.from(el.querySelectorAll('h2.group')).map((h) => h.textContent?.trim())).toEqual([
+      'Disponibilidad 2',
+      'Crons 3',
+    ]);
+    const rows = Array.from(el.querySelectorAll<HTMLAnchorElement>('.row--uptime'));
+    expect(rows.map((r) => r.getAttribute('href'))).toEqual([
+      '/monitors/4/uptime/web-principal',
+      '/monitors/4/uptime/api',
+    ]);
+    expect(rows[0].querySelector('.row__meta')?.textContent).toContain('GET example.com');
+    expect(rows[0].querySelector('.row__meta')?.textContent).toContain('Cada minuto');
+    expect(rows[0].querySelector('.row__status')?.textContent?.trim()).toBe('Caído');
+    const pct = rows[0].querySelectorAll('.pct');
+    const text = (n: Element | null | undefined) => n?.textContent?.trim().replace(/\s/g, ' ');
+    expect(text(pct[0])).toBe('99,45 %');
+    expect(pct[0].classList).toContain('pct--warn');
+    expect(text(pct[1])).toBe('99,98 %');
+    const bars = Array.from(rows[0].querySelectorAll('app-uptime-strip span'));
+    expect(bars).toHaveLength(30);
+    expect(bars.slice(-4).map((b) => b.className)).toEqual([
+      'bar bar--ok',
+      'bar bar--fail',
+      'bar bar--fail',
+      'bar bar--fail',
+    ]);
+    expect(bars.at(-1)?.getAttribute('title')).toMatch(/^Fallo · 503 · 180 ms · código 503 · /);
+    expect(rows[0].querySelector('app-uptime-strip')?.getAttribute('aria-label')).toBe(
+      '4 últimas comprobaciones, 3 con fallo',
+    );
+    expect(rows[1].querySelector('.row__status')?.textContent?.trim()).toBe('Pausado');
+    expect(rows[1].querySelector('.row__meta')?.textContent).toContain(
+      'HEAD api.example.com/salud',
+    );
+    expect(rows[1].querySelector('.row__meta')?.textContent).toContain('Cada 30 s');
+    expect(Array.from(rows[1].querySelectorAll('.pct')).map(text)).toEqual(['100 %', '—']);
+    expect(el.querySelector('a.btn--primary')?.getAttribute('href')).toBe('/monitors/uptime/new');
+  });
+
+  it('solo con los de disponibilidad no pinta el bloque vacío', async () => {
+    const { el } = await render([], '', UPTIME.slice(0, 1));
+    expect(el.querySelector('.state')).toBeNull();
+    expect(el.querySelectorAll('.row')).toHaveLength(1);
+    expect(el.querySelectorAll('h2.group')).toHaveLength(1);
+  });
+
+  it('en inglés, los de disponibilidad tampoco dejan texto en español', async () => {
+    TestBed.inject(I18n).set('en');
+    const { el } = await render(MONITORS, 'api', UPTIME);
+    expect(el.querySelector('.summary')?.textContent).toBe(
+      '1 uptime monitor is down. 1 monitor is failing, missed or timed out.',
+    );
+    const row = el.querySelector('.row--uptime');
+    expect(row?.querySelector('.row__status')?.textContent?.trim()).toBe('Down');
+    expect(row?.querySelector('.row__meta')?.textContent).toContain('Every minute');
+    expect(row?.querySelector('.pct')?.textContent?.trim()).toBe('99.45%');
+    expect(el.querySelector('a.btn--primary')?.textContent?.trim()).toBe('New monitor');
+    expect(el.querySelector('a.btn--primary')?.getAttribute('href')).toBe(
+      '/monitors/uptime/new?project=api',
+    );
+    // El error de la comprobación viene del servidor tal cual: se quita para mirar el resto.
+    for (const b of Array.from(el.querySelectorAll('app-uptime-strip span'))) {
+      b.removeAttribute('title');
+    }
     expect(spanishLeft(el)).toEqual([]);
   });
 });

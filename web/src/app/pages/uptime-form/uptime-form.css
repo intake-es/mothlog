@@ -1,0 +1,161 @@
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.crumbs {
+  gap: 0.4rem;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.crumbs__root {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.crumbs__root:hover {
+  color: var(--text);
+}
+
+.crumbs__sep {
+  color: var(--text-subtle);
+  font-weight: 400;
+}
+
+.crumbs__leaf {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pad,
+.wrap {
+  max-width: 44rem;
+  padding: 1.5rem;
+}
+
+.lede {
+  margin-bottom: 1rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+fieldset.group {
+  min-width: 0;
+  margin: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+}
+
+fieldset.group:first-child {
+  border-top: 0;
+}
+
+legend.group__title {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+legend.group__title + * {
+  clear: both;
+}
+
+fieldset .group__body {
+  padding-top: 0.6rem;
+}
+
+select.input {
+  appearance: auto;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.url-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+
+.url-row__url {
+  flex: 1 1 auto;
+}
+
+.seg {
+  display: inline-flex;
+  height: var(--control-h);
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+}
+
+.seg__opt {
+  padding: 0 0.7rem;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: calc(var(--radius-sm) - 2px);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.seg__opt[aria-checked='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem 1.25rem;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.foot__end {
+  margin-left: auto;
+}
+
+.foot__err {
+  flex: 1 1 12rem;
+}
+
+.danger,
+.danger svg {
+  color: var(--danger);
+}
+
+.warn {
+  margin-top: 0.6rem;
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .url-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

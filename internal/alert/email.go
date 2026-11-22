@@ -64,7 +64,7 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 	subject := "[intake-errors] " + fallback + p.project + ": " + s.Headline
 	var body strings.Builder
 	body.WriteString(s.text(p.link))
-	if p.cron == nil {
+	if !p.isMonitor() {
 		d, err := issueDetail(ctx, e.st, p)
 		if err != nil {
 			return nil, err

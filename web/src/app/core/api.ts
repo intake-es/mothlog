@@ -318,12 +318,20 @@ export interface CronCondition {
   monitors: string[];
 }
 
+export interface UptimeCondition {
+  down: boolean;
+  up: boolean;
+  /** Slugs; vacío, todos los del proyecto. */
+  monitors: string[];
+}
+
 export interface RuleConditions {
   new: boolean;
   regressed: boolean;
   frequency: { events: number; window_minutes: number } | null;
   users: { users: number } | null;
   cron?: CronCondition | null;
+  uptime?: UptimeCondition | null;
   environments: string[];
   levels: string[];
   tags: { key: string; value: string }[];
@@ -423,6 +431,80 @@ export interface CheckIn {
 export interface MonitorDetail extends Monitor {
   checkins: CheckIn[];
   next_cursor?: string;
+}
+
+export type UptimeStatus = 'pending' | 'up' | 'down';
+export type UptimeMethod = 'GET' | 'HEAD';
+
+export interface UptimeCheck {
+  checked_at: string;
+  ok: boolean;
+  status_code: number | null;
+  duration_ms: number;
+  error?: string;
+}
+
+export interface UptimeMonitor {
+  id: number;
+  project_id: number;
+  project: string;
+  slug: string;
+  name: string;
+  url: string;
+  method: UptimeMethod;
+  interval_seconds: number;
+  timeout_seconds: number;
+  expected_status: string;
+  failure_threshold: number;
+  paused: boolean;
+  status: UptimeStatus;
+  consecutive_failures: number;
+  last_checked_at: string | null;
+  last_status_code: number | null;
+  last_duration_ms: number | null;
+  last_error: string;
+  next_check_at: string;
+  created_at: string;
+  updated_at: string;
+  down_since: string | null;
+  /** Porcentaje del tiempo sin incidente; null sin comprobaciones. */
+  uptime_24h: number | null;
+  uptime_30d: number | null;
+  /** Las últimas comprobaciones, de la más nueva a la más vieja; solo en la lista. */
+  recent?: UptimeCheck[];
+}
+
+export interface UptimeIncident {
+  id: number;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  first_error: string;
+}
+
+export interface ResponseTimes {
+  at: string;
+  avg_ms: number | null;
+  max_ms: number;
+  checks: number;
+  failures: number;
+}
+
+export interface UptimeDetail extends UptimeMonitor {
+  incidents: UptimeIncident[];
+  checks: UptimeCheck[];
+  response_times: ResponseTimes[];
+}
+
+export interface UptimeInput {
+  name?: string;
+  url?: string;
+  method?: UptimeMethod;
+  interval_seconds?: number;
+  timeout_seconds?: number;
+  expected_status?: string;
+  failure_threshold?: number;
+  paused?: boolean;
 }
 
 const BASE = '/api/0';
@@ -611,6 +693,38 @@ export class Api {
   deleteMonitor(projectId: number, slug: string): Observable<void> {
     return this.http.delete<void>(
       `${BASE}/projects/${projectId}/monitors/${encodeURIComponent(slug)}/`,
+    );
+  }
+
+  uptimeMonitors(project = ''): Observable<Page<UptimeMonitor>> {
+    const params = project ? new HttpParams().set('project', project) : new HttpParams();
+    return this.http.get<Page<UptimeMonitor>>(`${BASE}/uptime-monitors/`, { params });
+  }
+
+  uptimeMonitor(projectId: number, slug: string): Observable<UptimeDetail> {
+    return this.http.get<UptimeDetail>(
+      `${BASE}/projects/${projectId}/uptime-monitors/${encodeURIComponent(slug)}/`,
+    );
+  }
+
+  createUptimeMonitor(projectId: number, input: UptimeInput): Observable<UptimeMonitor> {
+    return this.http.post<UptimeMonitor>(`${BASE}/projects/${projectId}/uptime-monitors/`, input);
+  }
+
+  updateUptimeMonitor(
+    projectId: number,
+    slug: string,
+    input: UptimeInput,
+  ): Observable<UptimeMonitor> {
+    return this.http.patch<UptimeMonitor>(
+      `${BASE}/projects/${projectId}/uptime-monitors/${encodeURIComponent(slug)}/`,
+      input,
+    );
+  }
+
+  deleteUptimeMonitor(projectId: number, slug: string): Observable<void> {
+    return this.http.delete<void>(
+      `${BASE}/projects/${projectId}/uptime-monitors/${encodeURIComponent(slug)}/`,
     );
   }
 }

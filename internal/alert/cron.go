@@ -224,8 +224,9 @@ func cronSummary(p *pending) summary {
 	return s
 }
 
+// slackCron es el aviso de un monitor, de cron o de disponibilidad.
 func slackCron(p *pending) slackPayload {
-	s := cronSummary(p)
+	s := summarize(p)
 	_, fallback := kindText(p)
 	meta := append([]string{"*" + s.What + "*"}, mapEsc(s.Meta)...)
 	msg := slackPayload{Text: esc(fallback + p.project + ": " + s.Headline)}
@@ -274,17 +275,24 @@ func cronMarkdown(p *pending) string {
 	return b.String()
 }
 
-// createCron crea una issue de Linear por cada fallo de cron; la vuelta a ir bien no crea ninguna.
+// createCron crea una issue de Linear por cada fallo de un monitor; la vuelta
+// a ir bien no crea ninguna.
 func (l *linear) createCron(ctx context.Context, p *pending) error {
-	if p.kind == store.KindCronRecovered {
+	if p.kind == store.KindCronRecovered || p.kind == store.KindUptimeUp {
 		return nil
 	}
 	what, _ := kindText(p)
+	description := ""
+	if p.uptime != nil {
+		description = uptimeMarkdown(p)
+	} else {
+		description = cronMarkdown(p)
+	}
 	input := map[string]any{
 		"id":          p.createID,
 		"teamId":      l.team,
-		"title":       truncate("["+p.project+"] "+what+": "+oneLine(p.cron.name), maxLinearTitle),
-		"description": cronMarkdown(p),
+		"title":       truncate("["+p.project+"] "+what+": "+oneLine(p.title), maxLinearTitle),
+		"description": description,
 	}
 	if ids := l.labelIDs(p); len(ids) > 0 {
 		input["labelIds"] = ids

@@ -126,6 +126,52 @@
   white-space: nowrap;
 }
 
+.group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 36px;
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.group svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.group__count {
+  color: var(--text-subtle);
+  font-weight: 500;
+}
+
+.row__url {
+  overflow: hidden;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 28rem;
+  text-overflow: ellipsis;
+}
+
+.row__status .sp-badge svg {
+  width: 11px;
+  height: 11px;
+  margin-right: 0.2rem;
+}
+
+.pct--warn {
+  color: var(--warning);
+}
+
+.pct--bad {
+  color: var(--danger);
+}
+
 .skeleton__row {
   display: flex;
   flex-direction: column;

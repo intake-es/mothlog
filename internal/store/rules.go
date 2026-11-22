@@ -58,14 +58,17 @@ type Rule struct {
 }
 
 // RuleConditions: la regla salta si se cumple alguno de los disparadores
-// (New, Regressed, Frequency, Users o, en los crons, Cron) y todos los filtros.
+// (New, Regressed, Frequency, Users o, en los monitores, Cron y Uptime) y
+// todos los filtros.
 type RuleConditions struct {
 	New       bool                `json:"new"`
 	Regressed bool                `json:"regressed"`
 	Frequency *FrequencyCondition `json:"frequency"`
 	Users     *UsersCondition     `json:"users"`
 	Cron      *CronCondition      `json:"cron"`
-	// Environments, Levels y Tags vacíos no filtran. En los crons solo filtra Environments.
+	Uptime    *UptimeCondition    `json:"uptime"`
+	// Environments, Levels y Tags vacíos no filtran. En los crons solo filtra
+	// Environments y en los de disponibilidad, ninguno.
 	Environments []string    `json:"environments"`
 	Levels       []string    `json:"levels"`
 	Tags         []TagFilter `json:"tags"`
@@ -107,7 +110,27 @@ func (c *CronCondition) Kinds() []string {
 	return out
 }
 
-// ForIssues dice si la regla avisa de errores: si tiene algún disparador que no sea de cron.
+// UptimeCondition salta cuando un monitor de disponibilidad cae o vuelve.
+// Monitors son los slugs; vacío, todos los del proyecto.
+type UptimeCondition struct {
+	Down     bool     `json:"down"`
+	Up       bool     `json:"up"`
+	Monitors []string `json:"monitors"`
+}
+
+// Kinds son los tipos de aviso de disponibilidad que pide la condición.
+func (c *UptimeCondition) Kinds() []string {
+	var out []string
+	if c.Down {
+		out = append(out, KindUptimeDown)
+	}
+	if c.Up {
+		out = append(out, KindUptimeUp)
+	}
+	return out
+}
+
+// ForIssues dice si la regla avisa de errores: si tiene algún disparador que no sea de un monitor.
 func (c RuleConditions) ForIssues() bool {
 	return c.New || c.Regressed || c.Frequency != nil || c.Users != nil
 }
@@ -260,8 +283,17 @@ func (r *Rule) Normalize() ([]string, error) {
 	}
 
 	c := &r.Conditions
-	if !c.ForIssues() && c.Cron == nil {
-		return nil, fmt.Errorf("%w: la regla necesita al menos una condición: new, regressed, frequency, users o cron", ErrInvalid)
+	if !c.ForIssues() && c.Cron == nil && c.Uptime == nil {
+		return nil, fmt.Errorf("%w: la regla necesita al menos una condición: new, regressed, frequency, users, cron o uptime", ErrInvalid)
+	}
+	if up := c.Uptime; up != nil {
+		if len(up.Kinds()) == 0 {
+			return nil, fmt.Errorf("%w: uptime necesita down o up", ErrInvalid)
+		}
+		var err error
+		if up.Monitors, err = cleanList("uptime.monitors", up.Monitors, nil); err != nil {
+			return nil, err
+		}
 	}
 	if cr := c.Cron; cr != nil {
 		if len(cr.Kinds()) == 0 {

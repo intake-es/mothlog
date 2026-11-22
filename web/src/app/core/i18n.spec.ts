@@ -59,6 +59,8 @@ const ALLOWED = new Set([
   // Estados, horarios y unidades de los monitores de cron.
   ...['monitors', 'missed', 'timeout', 'crontab', 'interval', 'week', 'month', 'year'],
   ...['millisecond', 'img', 'pending'],
+  // Estados y rutas de los monitores de disponibilidad.
+  ...['up', 'down', 'paused', 'uptime', 'edit', 'empty', 'fail'],
   'fill: currentColor; stroke: none',
 ]);
 

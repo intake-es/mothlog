@@ -20,6 +20,7 @@ import (
 	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/ui"
+	"github.com/intake-es/intake-errors/internal/uptime"
 	"github.com/intake-es/intake-errors/internal/webauth"
 )
 
@@ -33,6 +34,8 @@ type config struct {
 	// SourceMapUploadToken protege la subida de source maps; sin él se rechaza.
 	SourceMapUploadToken string
 	Alerts               alert.Options
+	// UptimeAllowPrivate deja a los monitores de disponibilidad pedir a redes privadas.
+	UptimeAllowPrivate bool
 }
 
 func loadConfig() (config, error) {
@@ -53,6 +56,7 @@ func loadConfig() (config, error) {
 		},
 	}
 	c.Alerts.PublicURL = c.PublicURL
+	c.UptimeAllowPrivate = os.Getenv("UPTIME_ALLOW_PRIVATE") == "1"
 	if c.DatabaseURL == "" {
 		return c, errors.New("falta DATABASE_URL")
 	}
@@ -155,6 +159,7 @@ func run(args []string) error {
 	go drops.Run(ctx, 10*time.Second, log)
 	monitors := monitor.New(db, alerts, log)
 	go monitors.Run(ctx, monitor.SweepInterval, time.Duration(cfg.RetentionDays)*24*time.Hour)
+	go uptime.New(db, uptime.NewChecker(cfg.UptimeAllowPrivate, nil), alerts, log).Run(ctx, uptime.TickInterval)
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), drops, log).
 		WithCheckIns(monitors)
 
