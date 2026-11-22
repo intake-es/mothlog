@@ -369,3 +369,70 @@ func TestMigrationComments(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMigrationAssign(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 13); err != nil {
+		t.Fatal(err)
+	}
+	var issue, token int64
+	if err := pool.QueryRow(ctx, `
+		WITH p AS (INSERT INTO projects (name, public_key) VALUES ('web', 'clave-web') RETURNING id)
+		INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		SELECT id, 'fp', 'TypeError', now(), now(), 1 FROM p RETURNING id`).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO api_tokens (name, token_sha256) VALUES ('agente', '\x01') RETURNING id`).Scan(&token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 16); err != nil {
+		t.Fatal(err)
+	}
+	var assignee *string
+	if err := pool.QueryRow(ctx, `SELECT assignee FROM issues WHERE id = $1`, issue).Scan(&assignee); err != nil || assignee != nil {
+		t.Fatalf("los issues de antes quedan sin asignar: %v, %v", assignee, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE issues SET assignee = 'agente', assignee_kind = 'token', assignee_token_id = $2, assigned_at = now() WHERE id = $1`, issue, token); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		`UPDATE issues SET assignee = 'ana', assignee_kind = NULL, assignee_token_id = NULL, assigned_at = now() WHERE id = $1`,
+		`UPDATE issues SET assignee = 'ana', assignee_kind = 'token', assignee_token_id = NULL, assigned_at = now() WHERE id = $1`,
+		`UPDATE issues SET assignee = 'ana', assignee_kind = 'robot', assignee_token_id = NULL, assigned_at = now() WHERE id = $1`,
+		`INSERT INTO issue_assignment_changes (issue_id, source, to_name) VALUES ($1, 'mcp', 'ana')`,
+		`INSERT INTO issue_assignment_changes (issue_id, source, to_name, to_kind) VALUES ($1, 'ingest', 'ana', 'user')`,
+		`INSERT INTO people (login, name) VALUES ('', 'nadie')`,
+	} {
+		if _, err := pool.Exec(ctx, bad, issue); err == nil {
+			t.Errorf("no debería caber: %s", bad)
+		}
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO issue_assignment_changes (issue_id, author, author_kind, source, to_name, to_kind)
+		VALUES ($1, 'agente', 'token', 'mcp', 'agente', 'token')`, issue); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.DownTo(ctx, 15); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('people') IS NOT NULL OR to_regclass('issue_assignment_changes') IS NOT NULL
+		OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'issues' AND column_name = 'assignee' AND table_schema = current_schema())`).Scan(&exists); err != nil || exists {
+		t.Errorf("tras bajar sigue lo de asignar: %v, %v", exists, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+}

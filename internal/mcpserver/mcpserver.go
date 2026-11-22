@@ -64,6 +64,12 @@ type addCommentIn struct {
 	Body    string `json:"body" jsonschema:"el comentario, en Markdown"`
 }
 
+type assignIn struct {
+	IssueID  int64  `json:"issue_id" jsonschema:"id del issue"`
+	Assignee string `json:"assignee" jsonschema:"me para asignártelo a ti (a tu token), el login de una persona o el nombre de un token (de list_assignees); vacío lo desasigna"`
+	Kind     string `json:"kind,omitempty" jsonschema:"user o token; solo hace falta si el nombre es a la vez de una persona y de un token"`
+}
+
 type listReleasesIn struct {
 	Project     string `json:"project,omitempty" jsonschema:"id o nombre del proyecto; vacío, todos"`
 	Environment string `json:"environment,omitempty" jsonschema:"solo las releases con eventos, despliegues o sesiones en este entorno, contando solo lo suyo; vacío, todos"`
@@ -87,11 +93,12 @@ type Options struct {
 
 const instructions = `Errores de las aplicaciones que envían a intake-errors, agrupados en issues. Para llevar un error de principio a fin:
 
-1. Encontrarlo con list_issues. Sin query, los abiertos que han pasado más recientemente. Ejemplos de query: "is:open environment:production", "is:regressed release:1.4.0", "TypeError browser:Safari", "user:ana@example.com is:open".
-2. Leer get_issue_context: un único Markdown con el resumen, las releases, los entornos, las etiquetas, la traza con el código de los fotogramas propios, los breadcrumbs, la petición, el usuario y el historial (comentarios y cambios de estado anteriores, que conviene leer antes de ponerse).
-3. Arreglarlo en el código.
-4. Dejar constancia con add_comment: qué causaba el error y qué se ha cambiado (commit, PR, fichero).
-5. Marcar el estado con set_issue_status: resolved_next si el arreglo aún no está desplegado (pasa a resolved solo al desplegarse una release posterior), resolved si ya lo está, silenced si no hay nada que arreglar. Lleva un comment opcional que queda unido al cambio en el historial.
+1. Encontrarlo con list_issues. Sin query, los abiertos que han pasado más recientemente. Ejemplos de query: "is:open environment:production", "is:regressed release:1.4.0", "TypeError browser:Safari", "user:ana@example.com is:open", "is:unassigned is:open".
+2. Asignártelo con assign_issue y assignee "me", para que el equipo sepa que estás con él; los tuyos salen con list_issues y query "assigned:me".
+3. Leer get_issue_context: un único Markdown con el resumen, las releases, los entornos, las etiquetas, la traza con el código de los fotogramas propios, los breadcrumbs, la petición, el usuario y el historial (comentarios y cambios de estado anteriores, que conviene leer antes de ponerse).
+4. Arreglarlo en el código.
+5. Dejar constancia con add_comment: qué causaba el error y qué se ha cambiado (commit, PR, fichero).
+6. Marcar el estado con set_issue_status: resolved_next si el arreglo aún no está desplegado (pasa a resolved solo al desplegarse una release posterior), resolved si ya lo está, silenced si no hay nada que arreglar. Lleva un comment opcional que queda unido al cambio en el historial.
 
 Si hace falta más: list_events y get_event para otros eventos, get_issue_tags para todas las etiquetas, list_releases y get_release para lo que trajo una release, list_comments para el historial, list_monitors y get_monitor para los crons que fallan o no llegan. Las herramientas de leer aceptan environment (production, staging…) para quedarse con los eventos de ese entorno.`
 
@@ -110,27 +117,31 @@ func New(st *store.Store, opts Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_issues",
 		Annotations: readOnly,
-		Description: "Lista los errores agrupados (issues) con su título, culprit, estado, número de eventos, usuarios afectados (user_count), primera y última vez y último release. " +
+		Description: "Lista los errores agrupados (issues) con su título, culprit, estado, número de eventos, usuarios afectados (user_count), primera y última vez, último release y quién lo lleva (assignee). " +
 			"Úsala para ver qué está fallando ahora (por defecto, los abiertos ordenados por la última vez) o para encontrar errores por su texto o sus etiquetas. " +
 			"Sintaxis de query: términos separados por espacios que se cumplen todos. " +
 			"is:open|resolved|resolved_next|silenced|regressed (regressed: abiertos que volvieron tras resolverse); " +
 			"release:1.2.0, environment:production, level:error, project:web (id o nombre); " +
 			"user:<id, email, username o IP> (los usuarios se guardan con hash: hay que dar el valor exacto); " +
 			"cualquier etiqueta clave:valor, como browser:Safari, os:\"Mac OS\", device:iPhone, runtime:CPython o las tags propias del SDK; " +
-			"! delante niega (!browser:Chrome, !timeout); las comillas agrupan espacios (\"division by zero\"); " +
+			"assigned:me (los tuyos), assigned:<login o nombre de token>, is:assigned, is:unassigned; " +
+			"! delante niega (!browser:Chrome, !timeout, !assigned:me); las comillas agrupan espacios (\"division by zero\"); " +
 			"el resto es texto libre que se busca en el título y el culprit sin distinguir mayúsculas. " +
 			"Los valores de etiqueta van exactos, con sus mayúsculas; get_issue_tags dice los que tiene un issue. " +
 			"Una query mal escrita devuelve un error que dice qué falla y en qué carácter. " +
 			"Si la respuesta trae next_cursor, hay más páginas.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listIssuesIn) (*mcp.CallToolResult, any, error) {
-		page, err := st.ListIssues(ctx, store.IssueFilter(in))
+		page, err := st.ListIssues(ctx, store.IssueFilter{
+			Project: in.Project, Status: in.Status, Query: in.Query, Environment: in.Environment,
+			Sort: in.Sort, Cursor: in.Cursor, Limit: in.Limit, Viewer: actor(ctx),
+		})
 		return result(page, err)
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_issue",
 		Annotations: readOnly,
-		Description: "Devuelve un issue con su último evento entero en JSON, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y organization_id. " +
+		Description: "Devuelve un issue con quién lo lleva (assignee), su último evento entero en JSON, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y organization_id. " +
 			"Úsala para saber a cuántos usuarios u organizaciones afecta, desde qué release o si va a más. Para leer la traza, mejor get_stacktrace.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in issueIn) (*mcp.CallToolResult, any, error) {
 		d, err := st.IssueDetailIn(ctx, in.IssueID, in.Environment, time.Now())
@@ -236,6 +247,37 @@ func New(st *store.Store, opts Options) *mcp.Server {
 			return nil, nil, toolErrorFor(err, "no existe ese issue")
 		}
 		return result(c, nil)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "assign_issue",
+		Annotations: &mcp.ToolAnnotations{
+			IdempotentHint:  true,
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(false),
+		},
+		Description: "Asigna un issue a quien lo va a llevar, para que el equipo sepa que alguien está con él. " +
+			"Úsala al ponerte con un error: con assignee \"me\" te lo asignas a ti (a tu token), y luego lo encuentras con list_issues y query assigned:me. " +
+			"También vale el login de una persona o el nombre de otro token (list_assignees dice quiénes); assignee vacío lo desasigna. " +
+			"Queda en el historial con el nombre de tu token; asignarlo a quien ya lo lleva no apunta nada. Devuelve el issue con su assignee.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in assignIn) (*mcp.CallToolResult, any, error) {
+		a := actor(ctx)
+		to, err := store.AssigneeRef(in.Assignee, in.Kind, a)
+		if err != nil {
+			return nil, nil, toolError(err)
+		}
+		issue, err := st.AssignIssue(ctx, in.IssueID, to, store.AssignChange{Actor: a, Source: store.SourceMCP})
+		return result(issue, err)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_assignees",
+		Annotations: readOnly,
+		Description: "Lista a quién se puede asignar un issue: las personas que han entrado en la interfaz (kind user, por su login, con su nombre) y los tokens activos (kind token, los agentes). " +
+			"Úsala para dar el assignee de assign_issue o el valor de assigned: en list_issues.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+		out, err := st.Assignees(ctx)
+		return result(map[string]any{"data": out}, err)
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

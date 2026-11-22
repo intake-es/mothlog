@@ -208,7 +208,58 @@ describe('History', () => {
     expect(el.querySelector('[role=alert]')).toBeNull();
   });
 
+  const assignments = (): HistoryEntry[] => [
+    {
+      type: 'assignment',
+      id: 1,
+      at: minutesAgo(30),
+      author: { name: 'luis', kind: 'user' },
+      source: 'ui',
+      assignee: { name: 'ana', kind: 'user' },
+    },
+    {
+      type: 'assignment',
+      id: 2,
+      at: minutesAgo(20),
+      author: { name: 'agente', kind: 'token' },
+      source: 'mcp',
+      previous: { name: 'ana', kind: 'user' },
+      assignee: { name: 'agente', kind: 'token' },
+    },
+    {
+      type: 'assignment',
+      id: 3,
+      at: minutesAgo(10),
+      author: { name: 'luis', kind: 'user' },
+      source: 'ui',
+      previous: { name: 'agente', kind: 'token' },
+    },
+  ];
+
+  it('pinta las asignaciones con quién las hizo', async () => {
+    const fixture = await render(assignments());
+    const el: HTMLElement = fixture.nativeElement;
+    expect(lines(el)).toEqual([
+      'luis lo asignó a ana desde la interfaz hace 30 min',
+      'agente token se lo asignó desde el MCP hace 20 min',
+      'luis se lo quitó a agente desde la interfaz hace 10 min',
+    ]);
+    expect(el.querySelectorAll('.marker svg').length).toBe(3);
+  });
+
   describe('en inglés', () => {
+    it('las asignaciones, en inglés', async () => {
+      lang.set('en');
+      const fixture = await render(assignments());
+      const el: HTMLElement = fixture.nativeElement;
+      expect(lines(el)).toEqual([
+        'luis assigned it to ana from the app 30m ago',
+        'agente token took it from MCP 20m ago',
+        'luis unassigned agente from the app 10m ago',
+      ]);
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
     it('pinta el historial y el cuadro de comentar en inglés', async () => {
       lang.set('en');
       // Los comentarios son de quien los escribe: aquí, en inglés, para no confundir a spanishLeft.

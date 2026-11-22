@@ -133,6 +133,7 @@ func run(args []string) error {
 		return err
 	}
 	defer db.Close()
+	auth.SavePeople(db)
 
 	if cfg.SourceMapUploadToken == "" {
 		log.Warn("sin SOURCEMAP_UPLOAD_TOKEN: la subida de source maps solo acepta tokens de la API")

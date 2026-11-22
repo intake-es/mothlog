@@ -53,4 +53,19 @@ describe('búsqueda', () => {
     expect(termValue('!is:open is:resolved', 'is')).toBe('resolved');
     expect(termValue('timeout', 'is')).toBeNull();
   });
+
+  it('el filtro de estado no toca is:assigned ni is:unassigned', () => {
+    expect(termValue('is:unassigned is:open', 'is')).toBe('open');
+    expect(termValue('is:assigned', 'is')).toBeNull();
+    expect(setTerm('is:unassigned is:open', 'is', 'resolved')).toBe('is:unassigned is:resolved');
+    expect(setTerm('is:assigned is:open', 'is', null)).toBe('is:assigned');
+  });
+
+  it('«Míos» pone y quita assigned:me', () => {
+    expect(setTerm('is:open', 'assigned', 'me')).toBe('assigned:me is:open');
+    expect(termValue('assigned:me is:open', 'assigned')).toBe('me');
+    expect(setTerm('assigned:me is:open !assigned:ana', 'assigned', null)).toBe(
+      'is:open !assigned:ana',
+    );
+  });
 });

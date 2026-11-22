@@ -81,9 +81,11 @@ curl -s https://errors.example.com/mcp \
 | `get_issue_context` | el `context.md`: todo lo que hace falta para arreglar un error, en un Markdown | sí |
 | `get_issue`, `get_issue_tags`, `get_stacktrace` | el issue en JSON, sus etiquetas y el `stacktrace.md` | sí |
 | `list_events`, `get_event` | los eventos de un issue y un evento entero | sí |
-| `list_comments` | el historial: comentarios y cambios de estado | sí |
+| `list_comments` | el historial: comentarios, cambios de estado y asignaciones | sí |
+| `list_assignees` | a quién se puede asignar: las personas que han entrado en la interfaz y los tokens activos | sí |
 | `list_releases`, `get_release` | las releases y lo que trajo una (nuevos, regresiones, los que dejaron de salir) y su salud (sesiones y usuarios sin crash, adopción) | sí |
 | `list_monitors`, `get_monitor` | los crons con su estado y la próxima ejecución esperada, y el historial de uno | sí |
+| `assign_issue` | asignar un error: `"assignee": "me"` para el propio token, un login, el nombre de otro token o vacío para desasignar; idempotente | no |
 | `add_comment` | comentar en Markdown | no |
 | `set_issue_status` | `resolved_next`, `resolved`, `silenced` u `open`, con un `comment` opcional unido al cambio; idempotente | no |
 
@@ -91,13 +93,24 @@ Las de leer aceptan `environment`. El servidor manda en sus instrucciones el flu
 
 ## 4. El flujo
 
-1. **Encontrar el error**: `list_issues` con `{"query": "is:open project:backend \"division by zero\""}`.
-2. **Leer su contexto**: `get_issue_context` con `{"issue_id": 42}`. Trae el resumen, las releases, los entornos, las etiquetas más frecuentes, la traza con el código de los fotogramas propios, los breadcrumbs, la petición, el usuario y el historial, y acaba con lo que el agente puede hacer. Si pasa de 64 KB, quita breadcrumbs, fotogramas de librerías e historial viejo, y lo dice al principio.
-3. **Arreglarlo** en el código.
-4. **Dejar constancia**: `add_comment` con `{"issue_id": 42, "body": "Causa: media() divide entre envios, que es 0 en los pedidos sin enviar."}`.
-5. **Marcar el estado**: `set_issue_status` con `{"issue_id": 42, "status": "resolved_next", "comment": "Arreglado en abc123: devuelve 0 sin envíos."}`. En `resolved_next`, el error pasa a resuelto solo cuando se despliega una release posterior a la de su último evento, y si vuelve en ella se reabre como regresión; usa `resolved` si el arreglo ya está desplegado.
-6. **Comprobarlo**: `list_comments` con `{"issue_id": 42}` enseña el comentario, el cambio de estado con su comentario y, tras el despliegue, el paso a resuelto.
+1. **Encontrar el error**: `list_issues` con `{"query": "is:open is:unassigned project:backend \"division by zero\""}`.
+2. **Asignárselo**: `assign_issue` con `{"issue_id": 42, "assignee": "me"}`. Queda asignado al token, el equipo lo ve en la lista y en el detalle, y el agente encuentra los suyos con `list_issues` y `{"query": "assigned:me"}`.
+3. **Leer su contexto**: `get_issue_context` con `{"issue_id": 42}`. Trae el resumen, las releases, los entornos, las etiquetas más frecuentes, la traza con el código de los fotogramas propios, los breadcrumbs, la petición, el usuario y el historial, y acaba con lo que el agente puede hacer. Si pasa de 64 KB, quita breadcrumbs, fotogramas de librerías e historial viejo, y lo dice al principio.
+4. **Arreglarlo** en el código.
+5. **Dejar constancia**: `add_comment` con `{"issue_id": 42, "body": "Causa: media() divide entre envios, que es 0 en los pedidos sin enviar."}`.
+6. **Marcar el estado**: `set_issue_status` con `{"issue_id": 42, "status": "resolved_next", "comment": "Arreglado en abc123: devuelve 0 sin envíos."}`. En `resolved_next`, el error pasa a resuelto solo cuando se despliega una release posterior a la de su último evento, y si vuelve en ella se reabre como regresión; usa `resolved` si el arreglo ya está desplegado.
+7. **Comprobarlo**: `list_comments` con `{"issue_id": 42}` enseña la asignación, el comentario, el cambio de estado con su comentario y, tras el despliegue, el paso a resuelto.
 
-Sin MCP, lo mismo con la API: `GET /api/0/issues/42/context.md`, `POST /api/0/issues/42/comments/` y `POST /api/0/issues/42/status`.
+Sin MCP, lo mismo con la API: `POST /api/0/issues/42/assignee` con `{"assignee": "me"}`, `GET /api/0/issues/42/context.md`, `POST /api/0/issues/42/comments/` y `POST /api/0/issues/42/status`.
 
 En la interfaz, «Copiar para un agente» en el detalle de un error copia el mismo `context.md`, para pegárselo a un agente que no tiene el MCP.
+
+## 5. Asignar un agente
+
+Un agente es su token: se asigna por el nombre del token. Hay tres formas:
+
+- El propio agente, por el MCP: `assign_issue` con `{"issue_id": 42, "assignee": "me"}`.
+- Una persona, en el detalle del error: el selector «Asignado» enseña a las personas que han entrado en la interfaz y, en «Agentes», los tokens activos.
+- Por la API, con el nombre del token: `POST /api/0/issues/42/assignee` con `{"assignee": "agente-backend"}` (y `"kind": "token"` si hay una persona con ese login).
+
+Cada asignación queda en el historial con quién la hizo. Si se revoca el token, el error sigue asignado a su nombre y sale como inactivo; para pasárselo a otro, se asigna de nuevo.

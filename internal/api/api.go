@@ -65,6 +65,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/issues/{id}/stacktrace.md", h.stacktrace)
 	route("POST /api/0/issues/{id}/status", h.setStatus)
 	h.registerHistory(route)
+	h.registerAssign(route)
 	route("GET /api/0/events/{id}/{$}", h.event)
 	h.registerReleases(route)
 	h.registerMonitors(route)
@@ -188,6 +189,7 @@ func (h *handlers) issues(w http.ResponseWriter, r *http.Request) {
 		Sort:        q.Get("sort"),
 		Cursor:      q.Get("cursor"),
 		Limit:       limit,
+		Viewer:      actorFrom(r.Context()),
 	})
 	if err != nil {
 		h.fail(w, r, err)

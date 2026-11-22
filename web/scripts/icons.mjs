@@ -51,6 +51,7 @@ const ICONS = {
     'translate',
     'trash',
     'user',
+    'user-circle-dashed',
     'warning-circle',
     'webhooks-logo',
     'bell-ringing',

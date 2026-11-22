@@ -49,8 +49,8 @@ type Comment struct {
 	Mine bool `json:"mine"`
 }
 
-// HistoryEntry es un comentario (Type "comment") o un cambio de estado
-// ("status") del historial de un issue.
+// HistoryEntry es un comentario (Type "comment"), un cambio de estado
+// ("status") o una asignación ("assignment") del historial de un issue.
 type HistoryEntry struct {
 	Type string    `json:"type"`
 	ID   int64     `json:"id"`
@@ -66,6 +66,10 @@ type HistoryEntry struct {
 	To      string   `json:"to,omitempty"`
 	Release *string  `json:"release,omitempty"`
 	Comment *Comment `json:"comment,omitempty"`
+	// Assignee y Previous, en las asignaciones: a quién se asigna (nil,
+	// desasignar) y quién lo llevaba.
+	Assignee *Actor `json:"assignee,omitempty"`
+	Previous *Actor `json:"previous,omitempty"`
 }
 
 // StatusChange es quién pide un cambio de estado, desde dónde y con qué comentario.
@@ -187,6 +191,12 @@ func (s *Store) History(ctx context.Context, issueID int64, viewer *Actor) ([]Hi
 	if err != nil {
 		return nil, fmt.Errorf("leer historial: %w", err)
 	}
+	assigned, err := s.assignmentHistory(ctx, issueID)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, assigned...)
+	slices.SortStableFunc(out, func(a, b HistoryEntry) int { return a.At.Compare(b.At) })
 	if out == nil {
 		out = []HistoryEntry{}
 	}

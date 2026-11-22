@@ -38,7 +38,20 @@ export interface Issue {
   first_release?: string | null;
   /** La release cuyo despliegue lo resolvió, si estaba en resolved_next. */
   fixed_in_release?: string | null;
+  /** Quién lo lleva; null, nadie. */
+  assignee?: Assignee | null;
   daily?: DayCount[];
+}
+
+/** Una persona (por su login) o un token a quien se asigna un error. */
+export interface Assignee {
+  name: string;
+  kind: 'user' | 'token';
+  /** El nombre de la persona, si no es su login. */
+  display_name?: string;
+  avatar_url?: string | null;
+  /** false si el token se ha revocado. */
+  active: boolean;
 }
 
 export interface Frame {
@@ -128,9 +141,9 @@ export interface IssueComment {
 
 export type ChangeSource = 'ui' | 'api' | 'mcp' | 'ingest' | 'deploy';
 
-/** Un comentario o un cambio de estado del historial de un error. */
+/** Un comentario, un cambio de estado o una asignación del historial de un error. */
 export interface HistoryEntry {
-  type: 'comment' | 'status';
+  type: 'comment' | 'status' | 'assignment';
   id: number;
   at: string;
   /** Vacío en los cambios de la ingesta y de los despliegues. */
@@ -143,6 +156,9 @@ export interface HistoryEntry {
   release?: string;
   /** El comentario que se dejó con el cambio. */
   comment?: IssueComment;
+  /** En las asignaciones: a quién (sin él, desasignar) y quién lo llevaba. */
+  assignee?: Actor;
+  previous?: Actor;
 }
 
 export interface TagValue {
@@ -510,6 +526,21 @@ export class Api {
 
   deleteComment(issueId: number, commentId: number): Observable<void> {
     return this.http.delete<void>(`${BASE}/issues/${issueId}/comments/${commentId}`);
+  }
+
+  assignees(): Observable<Page<Assignee>> {
+    return this.http.get<Page<Assignee>>(`${BASE}/assignees/`);
+  }
+
+  /** null lo desasigna. */
+  assign(issueId: number, to: Pick<Assignee, 'name' | 'kind'> | null): Observable<Issue> {
+    if (!to) {
+      return this.http.delete<Issue>(`${BASE}/issues/${issueId}/assignee`);
+    }
+    return this.http.post<Issue>(`${BASE}/issues/${issueId}/assignee`, {
+      assignee: to.name,
+      kind: to.kind,
+    });
   }
 
   setStatus(issueId: number, status: IssueStatus): Observable<Issue> {

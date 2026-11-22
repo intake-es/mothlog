@@ -65,7 +65,8 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"login": login, "name": strings.ToUpper(login[:1]) + login[1:], "id": 1})
+		_ = json.NewEncoder(w).Encode(map[string]any{"login": login, "name": strings.ToUpper(login[:1]) + login[1:], "id": 1,
+			"avatar_url": "https://avatars.example.com/" + login})
 	})
 	mux.HandleFunc("GET /user/memberships/orgs/{org}", func(w http.ResponseWriter, r *http.Request) {
 		m := members[user(r)]

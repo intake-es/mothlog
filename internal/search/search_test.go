@@ -56,6 +56,9 @@ func TestParse(t *testing.T) {
 		{"TypeError: Cannot read", []Term{{Value: "TypeError:"}, {Value: "Cannot"}, {Value: "read"}}},
 		{"browser:", []Term{{Value: "browser:"}}},
 		{"!release: x", []Term{{Value: "release:", Negate: true}, {Value: "x"}}},
+		{"assigned:me", []Term{{Key: "assigned", Value: "me"}}},
+		{"Assigned:ana !assigned:me", []Term{{Key: "assigned", Value: "ana"}, {Key: "assigned", Value: "me", Negate: true}}},
+		{"is:Assigned !is:unassigned", []Term{{Key: "is", Value: "assigned"}, {Key: "is", Value: "unassigned", Negate: true}}},
 	}
 	for _, tt := range tests {
 		q, err := Parse(tt.in)
@@ -66,6 +69,17 @@ func TestParse(t *testing.T) {
 		if !reflect.DeepEqual(q.Terms, tt.want) {
 			t.Errorf("Parse(%q) = %+v; quiero %+v", tt.in, q.Terms, tt.want)
 		}
+	}
+}
+
+func TestStatusIgnoresAssignment(t *testing.T) {
+	q, err := Parse("is:assigned !is:unassigned assigned:me")
+	if err != nil || len(q.Status()) != 0 {
+		t.Errorf("Status() = %v, %v", q.Status(), err)
+	}
+	q, _ = Parse("is:unassigned is:resolved")
+	if st := q.Status(); len(st) != 1 || st[0].Value != "resolved" {
+		t.Errorf("Status() = %v", st)
 	}
 }
 

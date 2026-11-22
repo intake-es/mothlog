@@ -15,6 +15,7 @@ import {
   Api,
   apiError,
   type EventSummary,
+  type Issue,
   type IssueDetail,
   type IssueStatus,
   type IssueTags,
@@ -27,6 +28,7 @@ import { I18n, type Key, plural } from '../../core/i18n';
 import { PageTitle } from '../../core/page-title';
 import { DayChart } from '../../ui/day-chart';
 import { Icon } from '../../ui/icon';
+import { AssigneePicker } from './assignee-picker';
 import { Breadcrumbs } from './breadcrumbs';
 import { History } from './history';
 import { Stacktrace } from './stacktrace';
@@ -58,7 +60,16 @@ const STATUS_TOAST: Record<IssueStatus, Key> = {
 
 @Component({
   selector: 'app-issue-detail',
-  imports: [RouterLink, Icon, DayChart, Stacktrace, Breadcrumbs, TagsPanel, History],
+  imports: [
+    RouterLink,
+    Icon,
+    DayChart,
+    Stacktrace,
+    Breadcrumbs,
+    TagsPanel,
+    History,
+    AssigneePicker,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown.escape)': 'menuOpen.set(false)' },
   templateUrl: './issue-detail.html',
@@ -341,6 +352,14 @@ export class IssueDetailPage {
         this.notify(apiError(err));
       },
     });
+  }
+
+  protected onAssigned(issue: Issue): void {
+    const d = this.detail();
+    if (d) {
+      this.detail.set({ ...d, assignee: issue.assignee ?? null });
+      this.historyVersion.update((v) => v + 1);
+    }
   }
 
   protected copyForAgent(): void {

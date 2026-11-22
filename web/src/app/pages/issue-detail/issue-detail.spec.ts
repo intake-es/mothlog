@@ -444,6 +444,7 @@ describe('IssueDetailPage', () => {
         'Breadcrumbs',
         'Events',
         'History',
+        'Assignee',
         'Details',
         'Affected users',
         'Tags',

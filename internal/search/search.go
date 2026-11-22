@@ -1,7 +1,7 @@
 // Package search lee el lenguaje de búsqueda de issues: términos separados
 // por espacios que se cumplen todos a la vez.
 //
-//	is:open release:1.2.0 browser:Safari os:"Mac OS" !environment:staging timeout
+//	is:open release:1.2.0 browser:Safari os:"Mac OS" !environment:staging assigned:me timeout
 package search
 
 import (
@@ -12,10 +12,16 @@ import (
 )
 
 // Statuses son los valores de is:.
-var Statuses = []string{"open", "resolved", "resolved_next", "silenced", "regressed"}
+var Statuses = []string{"open", "resolved", "resolved_next", "silenced", "regressed", "assigned", "unassigned"}
+
+// assignment son los valores de is: que miran el asignado y no el estado.
+var assignment = []string{"assigned", "unassigned"}
 
 // Keys son las claves con un significado propio; cualquier otra es una etiqueta.
-var Keys = []string{"is", "release", "environment", "level", "project", "user"}
+var Keys = []string{"is", "release", "environment", "level", "project", "user", "assigned"}
+
+// Me, como valor de assigned:, es quien busca.
+const Me = "me"
 
 // Term es un término de la búsqueda. Sin Key, Value es texto libre.
 type Term struct {
@@ -28,11 +34,11 @@ type Query struct {
 	Terms []Term
 }
 
-// Status devuelve los términos is: de la búsqueda.
+// Status devuelve los términos is: de la búsqueda que miran el estado.
 func (q Query) Status() []Term {
 	var out []Term
 	for _, t := range q.Terms {
-		if t.Key == "is" {
+		if t.Key == "is" && !slices.Contains(assignment, t.Value) {
 			out = append(out, t)
 		}
 	}

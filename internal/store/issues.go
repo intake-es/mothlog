@@ -64,6 +64,8 @@ type Issue struct {
 	FirstRelease *string `json:"first_release"`
 	// FixedInRelease es la release cuyo despliegue resolvió el issue que estaba en resolved_next.
 	FixedInRelease *string `json:"fixed_in_release"`
+	// Assignee es quien lo lleva; nil, nadie.
+	Assignee *Assignee `json:"assignee"`
 }
 
 const issueColumns = `
@@ -98,14 +100,6 @@ func issueSQL(envArg string) (cols, from string) {
 	return cols, from
 }
 
-func scanIssue(r pgx.Row) (Issue, error) {
-	var i Issue
-	err := r.Scan(&i.ID, &i.ProjectID, &i.Project, &i.Title, &i.Culprit, &i.Type, &i.Level, &i.Status,
-		&i.Count, &i.UserCount, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression,
-		&i.FirstRelease, &i.FixedInRelease)
-	return i, err
-}
-
 // IssueFilter son los parámetros de la lista, iguales en la API y en el MCP.
 type IssueFilter struct {
 	// Project es el id o el nombre del proyecto; vacío, todos.
@@ -121,6 +115,8 @@ type IssueFilter struct {
 	Sort   string
 	Cursor string
 	Limit  int
+	// Viewer es quien busca, para assigned:me.
+	Viewer *Actor
 }
 
 type IssuePage struct {
@@ -224,7 +220,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		where = append(where, "i.status = "+arg(f.Status))
 	}
 	for _, t := range query.Terms {
-		cond, err := s.termSQL(ctx, t, arg)
+		cond, err := s.termSQL(ctx, t, f.Viewer, arg)
 		if err != nil {
 			return IssuePage{}, err
 		}
@@ -249,7 +245,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		}
 		where = append(where, fmt.Sprintf("(%s, i.id) < (%s, %s)", col, arg(v), arg(c.ID)))
 	}
-	cols, from := issueSQL(envArg)
+	cols, from := issueWithAssigneeSQL(envArg)
 	q := fmt.Sprintf(`SELECT %s FROM %s
 		WHERE %s ORDER BY %s DESC, i.id DESC LIMIT %d`,
 		cols, from, strings.Join(where, " AND "), col, limit+1)
@@ -257,7 +253,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 	if err != nil {
 		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
 	}
-	issues, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Issue, error) { return scanIssue(r) })
+	issues, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Issue, error) { return scanIssueWithAssignee(r) })
 	if err != nil {
 		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
 	}
@@ -283,15 +279,34 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 }
 
 // termSQL es la condición de un término de la búsqueda, sin su negación.
-func (s *Store) termSQL(ctx context.Context, t search.Term, arg func(any) string) (string, error) {
+func (s *Store) termSQL(ctx context.Context, t search.Term, viewer *Actor, arg func(any) string) (string, error) {
 	switch t.Key {
 	case "":
 		return fmt.Sprintf("(i.title ILIKE %s OR i.culprit ILIKE %[1]s)", arg(likePattern(t.Value))), nil
 	case "is":
-		if t.Value == "regressed" {
+		switch t.Value {
+		case "regressed":
 			return "(i.status = 'open' AND i.last_regressed_at IS NOT NULL)", nil
+		case "assigned":
+			return "(i.assignee IS NOT NULL)", nil
+		case "unassigned":
+			return "(i.assignee IS NULL)", nil
 		}
 		return "(i.status = " + arg(t.Value) + ")", nil
+	case "assigned":
+		// Con assignee vacío la condición es false, no NULL, para que !assigned: la deje pasar.
+		if strings.EqualFold(t.Value, search.Me) {
+			if viewer == nil {
+				return "", fmt.Errorf("%w: assigned:me necesita saber quién busca", ErrInvalid)
+			}
+			if viewer.Kind == ActorToken {
+				// El token activo con ese nombre es quien busca; los de uno revocado con el mismo nombre no son suyos.
+				return fmt.Sprintf(`(i.assignee_token_id IS NOT NULL AND i.assignee_token_id =
+					COALESCE((SELECT id FROM api_tokens WHERE name = %s AND revoked_at IS NULL), 0))`, arg(viewer.Name)), nil
+			}
+			return fmt.Sprintf("(i.assignee IS NOT NULL AND i.assignee_kind = %s AND i.assignee = %s)", arg(viewer.Kind), arg(viewer.Name)), nil
+		}
+		return fmt.Sprintf("(i.assignee IS NOT NULL AND lower(i.assignee) = lower(%s))", arg(t.Value)), nil
 	case "project":
 		return fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(t.Value)), nil
 	case "user":
@@ -319,8 +334,8 @@ func (s *Store) IssueIn(ctx context.Context, id int64, env string) (Issue, error
 	if env != "" {
 		envArg, args = "$2", append(args, env)
 	}
-	cols, from := issueSQL(envArg)
-	i, err := scanIssue(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM `+from+` WHERE i.id = $1`, args...))
+	cols, from := issueWithAssigneeSQL(envArg)
+	i, err := scanIssueWithAssignee(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM `+from+` WHERE i.id = $1`, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Issue{}, ErrNotFound
 	}

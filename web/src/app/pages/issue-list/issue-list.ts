@@ -22,7 +22,8 @@ import {
 import { environment } from '../../core/environment';
 import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
 import { I18n, type Key, plural } from '../../core/i18n';
-import { DEFAULT_QUERY, type SearchStatus, setTerm, termValue } from '../../core/search';
+import { DEFAULT_QUERY, MINE, type SearchStatus, setTerm, termValue } from '../../core/search';
+import { Avatar } from '../../ui/avatar';
 import { Icon } from '../../ui/icon';
 import { Pick, type PickOption } from '../../ui/pick';
 import { Sparkline } from '../../ui/sparkline';
@@ -57,11 +58,13 @@ interface Row {
   unit: string;
   users: string;
   regression: boolean;
+  /** «Asignado a Ana», para el title y el lector de pantalla. */
+  assignee: string;
 }
 
 @Component({
   selector: 'app-issue-list',
-  imports: [RouterLink, Icon, Pick, Sparkline, SearchBar],
+  imports: [RouterLink, Avatar, Icon, Pick, Sparkline, SearchBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './issue-list.html',
   styleUrl: './issue-list.css',
@@ -117,6 +120,7 @@ export class IssueListPage {
     const s = termValue(this.search(), 'is') ?? 'all';
     return STATUS_OPTIONS.some((o) => o.value === s) ? s : '';
   });
+  protected readonly mine = computed(() => termValue(this.search(), 'assigned') === MINE);
   protected readonly projectValue = computed(() => termValue(this.search(), 'project') ?? '');
   protected readonly projectNames = computed(() => this.projects().map((p) => p.name));
   protected readonly sortValue = computed<IssueSort>(() => {
@@ -156,6 +160,11 @@ export class IssueListPage {
         unit: plural('list.unit', issue.count),
         users: issue.user_count > 0 ? plural('list.users', issue.user_count) : '',
         regression: issue.status === 'open' && !!issue.last_regression,
+        assignee: issue.assignee
+          ? this.t(issue.assignee.active ? 'list.assignedTo' : 'list.assignedToRevoked', {
+              name: issue.assignee.display_name || issue.assignee.name,
+            })
+          : '',
       };
     });
   });
@@ -236,6 +245,10 @@ export class IssueListPage {
   /** Los filtros en píldora escriben su término en la búsqueda. */
   protected setStatus(value: string): void {
     this.setQuery(setTerm(this.search(), 'is', value === 'all' ? null : value));
+  }
+
+  protected toggleMine(): void {
+    this.setQuery(setTerm(this.search(), 'assigned', this.mine() ? null : MINE));
   }
 
   protected setProject(value: string): void {

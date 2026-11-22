@@ -29,7 +29,7 @@ func TestMCPInstructionsAndAnnotations(t *testing.T) {
 	}
 	readOnly := map[string]bool{
 		"list_issues": true, "get_issue": true, "get_issue_context": true, "get_issue_tags": true, "get_stacktrace": true,
-		"list_events": true, "get_event": true, "list_comments": true, "list_releases": true, "get_release": true,
+		"list_events": true, "get_event": true, "list_comments": true, "list_releases": true, "get_release": true, "list_assignees": true,
 		"list_monitors": true, "get_monitor": true,
 	}
 	for _, tool := range tools.Tools {

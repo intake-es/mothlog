@@ -33,6 +33,19 @@
                 }
                 @if (r.entry.type === 'comment') {
                   <span>{{ t('history.commented') }} </span>
+                } @else if (r.entry.type === 'assignment') {
+                  @if (r.self) {
+                    <span>{{ t('history.selfAssigned') }} </span>
+                  } @else if (r.entry.assignee; as to) {
+                    <span>{{ t('history.assigned') }} </span>
+                    <strong class="item__who">{{ to.name }} </strong>
+                    @if (to.kind === 'token') {
+                      <span class="item__kind">{{ t('history.token') }} </span>
+                    }
+                  } @else if (r.entry.previous; as prev) {
+                    <span>{{ t('history.unassigned') }} </span>
+                    <strong class="item__who">{{ prev.name }} </strong>
+                  }
                 } @else {
                   <span>{{ t('history.changed') }} </span>
                   @if (r.entry.from; as from) {

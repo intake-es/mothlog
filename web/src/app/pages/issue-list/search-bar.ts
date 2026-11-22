@@ -13,10 +13,17 @@ import {
   viewChild,
 } from '@angular/core';
 import type { Subscription } from 'rxjs';
-import { Api, type QueryError, type TagKey, type TagValueCount } from '../../core/api';
+import {
+  Api,
+  type Assignee,
+  type QueryError,
+  type TagKey,
+  type TagValueCount,
+} from '../../core/api';
 import { I18n, type Key, plural } from '../../core/i18n';
 import {
   BUILTIN_KEYS,
+  MINE,
   replaceToken,
   type SearchStatus,
   STATUSES,
@@ -47,10 +54,13 @@ const STATUS_LABEL: Record<SearchStatus, Key> = {
   resolved_next: 'filter.resolved_next',
   silenced: 'filter.silenced',
   regressed: 'filter.regressed',
+  assigned: 'search.is.assigned',
+  unassigned: 'search.is.unassigned',
 };
 
 const KEY_LABEL: Record<(typeof BUILTIN_KEYS)[number], Key> = {
   is: 'search.key.is',
+  assigned: 'search.key.assigned',
   release: 'search.key.release',
   environment: 'search.key.environment',
   level: 'search.key.level',
@@ -60,6 +70,8 @@ const KEY_LABEL: Record<(typeof BUILTIN_KEYS)[number], Key> = {
 
 const EXAMPLES: { query: string; label: Key }[] = [
   { query: 'is:regressed', label: 'search.ex.regressed' },
+  { query: 'assigned:me', label: 'search.ex.mine' },
+  { query: 'is:unassigned', label: 'search.ex.unassigned' },
   { query: 'browser:Safari', label: 'search.ex.browser' },
   { query: 'os:"Mac OS"', label: 'search.ex.os' },
   { query: '!environment:staging', label: 'search.ex.notEnv' },
@@ -97,6 +109,8 @@ export class SearchBar {
   private readonly values = signal<{ key: string; prefix: string; data: TagValueCount[] } | null>(
     null,
   );
+  private readonly assignees = signal<Assignee[]>([]);
+  private assigneesAsked = false;
   private valuesSub?: Subscription;
   private valuesTimer?: ReturnType<typeof setTimeout>;
   private readonly input = viewChild.required<ElementRef<HTMLInputElement>>('input');
@@ -160,6 +174,20 @@ export class SearchBar {
         .map((p) => value(p, ''));
       return [{ title, items }];
     }
+    if (key === 'assigned') {
+      const items = [
+        value(MINE, this.t('search.assigned.me')),
+        ...this.assignees().map((a) =>
+          value(
+            a.name,
+            a.kind === 'token'
+              ? this.t('search.assigned.agent')
+              : a.display_name || this.t('search.assigned.person'),
+          ),
+        ),
+      ].filter((s) => s.label.toLowerCase().startsWith(prefix));
+      return [{ title, items }];
+    }
     if (key === 'user') {
       return [{ title, items: [], hint: this.t('search.userHint') }];
     }
@@ -212,6 +240,13 @@ export class SearchBar {
 
   private askValues(tok: Token, focused: boolean): void {
     const key = tok.key;
+    if (focused && key === 'assigned' && !this.assigneesAsked) {
+      this.assigneesAsked = true;
+      this.api.assignees().subscribe({
+        next: (page) => this.assignees.set(page.data),
+        error: () => this.assignees.set([]),
+      });
+    }
     if (!focused || key === null || (BUILTIN_KEYS as readonly string[]).includes(key)) {
       return;
     }

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/intake-es/intake-errors/internal/store"
 )
 
 // Register añade /auth/session, /auth/github/login, /auth/github/callback,
@@ -106,8 +108,9 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var user struct {
-		Login string `json:"login"`
-		Name  string `json:"name"`
+		Login     string `json:"login"`
+		Name      string `json:"name"`
+		AvatarURL string `json:"avatar_url"`
 	}
 	if code, err := a.githubGet(ctx, token, "/user", &user); err != nil || code != http.StatusOK || user.Login == "" {
 		a.log.Warn("login: GET /user", "status", code, "err", err)
@@ -137,6 +140,7 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
+	a.savePerson(ctx, store.Person{Login: user.Login, Name: name, AvatarURL: &user.AvatarURL})
 	a.log.Info("login", "login", user.Login)
 	http.Redirect(w, r, st.Next, http.StatusFound)
 }
@@ -199,10 +203,11 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := a.setSession(w, devLogin, "Modo desarrollo"); err != nil {
+	if err := a.setSession(w, devLogin, devName); err != nil {
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
+	a.savePerson(r.Context(), store.Person{Login: devLogin, Name: devName})
 	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusFound)
 }
 

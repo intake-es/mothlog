@@ -16,9 +16,31 @@ export interface Token {
 
 const KEY = /^[A-Za-z_][\w.-]*$/;
 
-export const BUILTIN_KEYS = ['is', 'release', 'environment', 'level', 'project', 'user'] as const;
-export const STATUSES = ['open', 'resolved', 'resolved_next', 'silenced', 'regressed'] as const;
+export const BUILTIN_KEYS = [
+  'is',
+  'release',
+  'environment',
+  'level',
+  'project',
+  'user',
+  'assigned',
+] as const;
+export const STATUSES = [
+  'open',
+  'resolved',
+  'resolved_next',
+  'silenced',
+  'regressed',
+  'assigned',
+  'unassigned',
+] as const;
 export type SearchStatus = (typeof STATUSES)[number];
+
+/** Los is: que miran el asignado y no el estado: el filtro de estado no los toca. */
+const ASSIGNMENT: readonly string[] = ['assigned', 'unassigned'];
+
+/** assigned:me son los de quien busca. */
+export const MINE = 'me';
 
 /** La búsqueda de la lista cuando no hay otra. */
 export const DEFAULT_QUERY = 'is:open';
@@ -112,9 +134,16 @@ export function replaceToken(
   return { query, caret: t.start + spaced.length };
 }
 
+/** Si t es un término key: sin negar; los is: de asignación no cuentan como estado. */
+function isTerm(t: Token, key: string): boolean {
+  return (
+    t.key === key && !t.negate && !(key === 'is' && ASSIGNMENT.includes(t.value.toLowerCase()))
+  );
+}
+
 /** El valor del primer término key: sin negar, o null. */
 export function termValue(q: string, key: string): string | null {
-  const t = tokenize(q).find((t) => t.key === key && !t.negate);
+  const t = tokenize(q).find((t) => isTerm(t, key));
   return t ? t.value : null;
 }
 
@@ -124,8 +153,8 @@ export function termValue(q: string, key: string): string | null {
  */
 export function setTerm(q: string, key: string, value: string | null): string {
   const tokens = tokenize(q);
-  const at = tokens.findIndex((t) => t.key === key && !t.negate);
-  const kept = tokens.filter((t) => !(t.key === key && !t.negate)).map((t) => t.raw);
+  const at = tokens.findIndex((t) => isTerm(t, key));
+  const kept = tokens.filter((t) => !isTerm(t, key)).map((t) => t.raw);
   if (value !== null) {
     kept.splice(at < 0 ? 0 : at, 0, term(key, value));
   }

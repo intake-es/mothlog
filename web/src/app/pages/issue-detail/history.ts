@@ -46,6 +46,8 @@ interface Row {
   system: string;
   source: string;
   comment: IssueComment | null;
+  /** Una asignación a quien la hizo. */
+  self: boolean;
 }
 
 /** El historial del error: comentarios y cambios de estado, con un cuadro para comentar. */
@@ -102,10 +104,19 @@ export class History {
         entry,
         when: ago(entry.at),
         title: fullDate(entry.at),
-        icon: entry.to ? STATUS_ICON[entry.to] : 'user',
+        icon: entry.to
+          ? STATUS_ICON[entry.to]
+          : entry.type === 'assignment' && !entry.assignee
+            ? 'user-circle-dashed'
+            : 'user',
         system,
         source: source ? this.t(source) : '',
         comment,
+        self:
+          !!entry.author &&
+          !!entry.assignee &&
+          entry.author.name === entry.assignee.name &&
+          entry.author.kind === entry.assignee.kind,
       };
     }),
   );

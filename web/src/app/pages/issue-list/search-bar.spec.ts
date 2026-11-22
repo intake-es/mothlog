@@ -108,6 +108,50 @@ describe('SearchBar', () => {
     );
   });
 
+  it('los valores de assigned: e is: de asignación, en los dos idiomas', async () => {
+    const { fixture, el, submitted, type, items, key } = await render();
+    await type('assigned:');
+    http.expectOne('/api/0/assignees/').flush({
+      data: [
+        { name: 'ana', kind: 'user', display_name: 'Ana Pérez', active: true },
+        { name: 'dev', kind: 'user', active: true },
+        { name: 'agente', kind: 'token', active: true },
+      ],
+    });
+    await fixture.whenStable();
+    expect(items()).toEqual([
+      ['me', 'Tú'],
+      ['ana', 'Ana Pérez'],
+      ['dev', 'Persona'],
+      ['agente', 'Agente (token)'],
+    ]);
+    await type('!assigned:a');
+    expect(items()).toEqual([
+      ['ana', 'Ana Pérez'],
+      ['agente', 'Agente (token)'],
+    ]);
+    await type('is:un');
+    expect(items()).toEqual([['unassigned', 'Sin asignar']]);
+    await type('is:as');
+    expect(items()).toEqual([['assigned', 'Con alguien asignado']]);
+    await type('');
+    expect(items()).toContainEqual(['assigned:me', 'Los asignados a ti']);
+    expect(items()).toContainEqual(['assigned:', 'Quién lo lleva: me, un login o un token']);
+
+    TestBed.inject(I18n).set('en');
+    await type('assigned:m');
+    expect(items()).toEqual([['me', 'You']]);
+    await type('is:un');
+    expect(items()).toEqual([['unassigned', 'Unassigned']]);
+    await type('!assigned:');
+    expect(items()).toContainEqual(['agente', 'Agent (token)']);
+    expect(spanishLeft(el)).toEqual([]);
+    await key('ArrowDown');
+    await key('Enter');
+    expect(submitted).toEqual(['!assigned:me']);
+    lang.set('es');
+  });
+
   it('sin nada escrito enseña las claves con su explicación y ejemplos', async () => {
     const { el, submitted, type, items } = await render();
     await type('');
@@ -157,7 +201,7 @@ describe('SearchBar', () => {
     });
     await fixture.whenStable();
     expect(el.querySelector('#search-error')?.textContent?.trim()).toBe(
-      'Character 4: is:abierto doesn’t exist; use open, resolved, resolved_next, silenced or regressed.',
+      'Character 4: is:abierto doesn’t exist; use open, resolved, resolved_next, silenced, regressed, assigned or unassigned.',
     );
     expect(spanishLeft(el)).toEqual([]);
   });

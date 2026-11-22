@@ -87,6 +87,7 @@ func writeContext(c store.IssueContext, url string, l level, max int) string {
 	w("- Estado: %s\n", status)
 	w("- Nivel: %s\n", orNone(c.Level))
 	w("- Proyecto: %s\n", c.Project)
+	w("- Asignado: %s\n", assignee(c.Assignee))
 	if c.Culprit != "" {
 		w("- Culprit: %s\n", oneLine(c.Culprit))
 	}
@@ -278,6 +279,22 @@ func actor(a *store.Actor) string {
 	return a.Name
 }
 
+func assignee(a *store.Assignee) string {
+	if a == nil {
+		return "(nadie)"
+	}
+	s := a.Name
+	switch {
+	case a.Kind == store.ActorToken && !a.Active:
+		s += " (token revocado)"
+	case a.Kind == store.ActorToken:
+		s += " (token)"
+	case a.DisplayName != "":
+		s += " (" + a.DisplayName + ")"
+	}
+	return s
+}
+
 func writeHistory(b *strings.Builder, h []store.HistoryEntry, keep int) {
 	b.WriteString("\n## Historial\n\n")
 	if len(h) == 0 {
@@ -294,6 +311,12 @@ func writeHistory(b *strings.Builder, h []store.HistoryEntry, keep int) {
 		case "comment":
 			fmt.Fprintf(b, "- %s, %s comentó:\n", ts(e.At), actor(e.Author))
 			quote(b, e.Body)
+		case "assignment":
+			if e.Assignee == nil {
+				fmt.Fprintf(b, "- %s, %s %s: desasignó a %s\n", ts(e.At), actor(e.Author), sourceNames[e.Source], actor(e.Previous))
+			} else {
+				fmt.Fprintf(b, "- %s, %s %s: asignó a %s\n", ts(e.At), actor(e.Author), sourceNames[e.Source], actor(e.Assignee))
+			}
 		default:
 			fmt.Fprintf(b, "- %s, %s %s: %s → %s", ts(e.At), actor(e.Author), sourceNames[e.Source], e.From, e.To)
 			if e.Release != nil {
@@ -320,6 +343,7 @@ func writeActions(b *strings.Builder, c store.IssueContext) {
 	w := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
 	w("\n## Qué puedes hacer\n\n")
 	w("Con el MCP de intake-errors (entre paréntesis, la misma acción con la API):\n\n")
+	w("- Asignártelo al ponerte con él: `assign_issue` con `{\"issue_id\": %d, \"assignee\": \"me\"}` (`POST /api/0/issues/%d/assignee`). Los tuyos, con `list_issues` y `assigned:me`.\n", id, id)
 	release := ""
 	if c.LatestEvent != nil {
 		release = c.LatestEvent.Event.Release

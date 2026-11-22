@@ -1,0 +1,89 @@
+<button
+  type="button"
+  class="trigger"
+  [class.trigger--none]="!assignee()"
+  [attr.aria-label]="t('assignee.label') + ': ' + label()"
+  aria-haspopup="menu"
+  [attr.aria-expanded]="open()"
+  [disabled]="busy()"
+  (click)="toggle()"
+>
+  @if (assignee(); as a) {
+    <app-avatar [who]="a" [size]="20" />
+  } @else {
+    <svg appIcon="user-circle-dashed" class="trigger__none"></svg>
+  }
+  <span class="trigger__label">{{ label() }}</span>
+  @if (assignee()?.kind === 'token') {
+    <span class="trigger__kind">{{ t('history.token') }}</span>
+  }
+</button>
+
+@if (open()) {
+  <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="close()"></button>
+  <div class="menu picker" role="menu" [attr.aria-label]="t('assignee.label')">
+    <form class="picker__filter" (submit)="pickFirst($event)">
+      <svg appIcon="magnifying-glass"></svg>
+      <input
+        #filterInput
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        [attr.aria-label]="t('assignee.filter')"
+        [placeholder]="t('assignee.filter')"
+        [value]="filter()"
+        (input)="onFilter($event)"
+      />
+    </form>
+    @if (me() && !mine() && !filter()) {
+      <button type="button" class="menu__item" role="menuitem" (click)="assignMe()">
+        <svg appIcon="user"></svg>
+        {{ t('assignee.me') }}
+      </button>
+    }
+    @if (assignee() && !filter()) {
+      <button type="button" class="menu__item" role="menuitem" (click)="choose(null)">
+        <svg appIcon="user-circle-dashed"></svg>
+        {{ t('assignee.clear') }}
+      </button>
+    }
+    @if (failed()) {
+      <p class="picker__empty">{{ t('assignee.error') }}</p>
+    } @else if (options() === null) {
+      <p class="picker__empty">{{ t('assignee.loading') }}</p>
+    } @else {
+      @if (people().length) {
+        <div class="menu__label">{{ t('assignee.people') }}</div>
+        @for (o of people(); track o.name) {
+          <button type="button" class="menu__item" role="menuitemradio" [attr.aria-checked]="current(o)" (click)="choose(o)">
+            <app-avatar [who]="o" [size]="18" />
+            <span class="picker__name">
+              {{ o.display_name || o.name }}
+              @if (o.display_name) {
+                <small>{{ o.name }}</small>
+              }
+            </span>
+            @if (current(o)) {
+              <svg appIcon="check" class="menu__check"></svg>
+            }
+          </button>
+        }
+      }
+      @if (agents().length) {
+        <div class="menu__label">{{ t('assignee.agents') }}</div>
+        @for (o of agents(); track o.name) {
+          <button type="button" class="menu__item" role="menuitemradio" [attr.aria-checked]="current(o)" (click)="choose(o)">
+            <app-avatar [who]="o" [size]="18" />
+            <span class="picker__name">{{ o.name }}</span>
+            @if (current(o)) {
+              <svg appIcon="check" class="menu__check"></svg>
+            }
+          </button>
+        }
+      }
+      @if (!people().length && !agents().length) {
+        <p class="picker__empty">{{ t('assignee.noMatch') }}</p>
+      }
+    }
+  </div>
+}

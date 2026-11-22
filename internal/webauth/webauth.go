@@ -4,6 +4,7 @@
 package webauth
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/intake-es/intake-errors/internal/api"
+	"github.com/intake-es/intake-errors/internal/store"
 )
 
 const (
@@ -24,6 +26,7 @@ const (
 	sessionTTL    = 7 * 24 * time.Hour
 	stateTTL      = 10 * time.Minute
 	devLogin      = "dev"
+	devName       = "Modo desarrollo"
 )
 
 type Config struct {
@@ -68,6 +71,25 @@ type Auth struct {
 	// desarrollo sin PUBLIC_URL, 127.0.0.1 y localhost con el puerto de LISTEN_ADDR.
 	origins []string
 	secure  bool
+	people  PeopleSaver
+}
+
+// PeopleSaver guarda a quien entra, para poder asignarle issues.
+type PeopleSaver interface {
+	SavePerson(ctx context.Context, p store.Person) error
+}
+
+// SavePeople hace que cada login guarde a la persona en people.
+func (a *Auth) SavePeople(people PeopleSaver) { a.people = people }
+
+// savePerson no impide entrar si falla: solo se pierde poder elegirla al asignar.
+func (a *Auth) savePerson(ctx context.Context, p store.Person) {
+	if a.people == nil {
+		return
+	}
+	if err := a.people.SavePerson(ctx, p); err != nil {
+		a.log.Error("login: guardar la persona", "login", p.Login, "err", err)
+	}
 }
 
 // New valida la configuración. Sin GitHub ni modo de desarrollo, la interfaz

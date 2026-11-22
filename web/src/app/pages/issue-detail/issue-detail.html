@@ -206,6 +206,16 @@
 
       <aside class="side">
         <section class="side__block">
+          <h3 class="block__title block__title--gap">{{ t('assignee.label') }}</h3>
+          <app-assignee-picker
+            [issueId]="d.id"
+            [assignee]="d.assignee"
+            (changed)="onAssigned($event)"
+            (notice)="notify($event)"
+          />
+        </section>
+
+        <section class="side__block">
           <h3 class="block__title block__title--gap">{{ t('detail.facts') }}</h3>
           <dl class="facts">
             @for (f of facts(); track f.key) {

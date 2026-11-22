@@ -7,6 +7,17 @@
   </h1>
 
   <div class="titlebar__actions">
+    <button
+      type="button"
+      class="mine"
+      [class.mine--on]="mine()"
+      [attr.aria-pressed]="mine()"
+      [attr.title]="t('list.mineHint')"
+      (click)="toggleMine()"
+    >
+      <svg appIcon="user"></svg>
+      {{ t('list.mine') }}
+    </button>
     <app-pick
       icon="squares-four"
       [label]="t('list.project')"
@@ -120,6 +131,12 @@
             <time [attr.datetime]="row.issue.last_seen" [attr.title]="row.seenTitle">{{ row.seen }}</time>
             @if (row.first) {
               <time class="row__first" [attr.datetime]="row.issue.first_seen" [attr.title]="row.firstTitle">{{ row.first }}</time>
+            }
+          </div>
+          <div class="row__who" [attr.title]="row.assignee || null">
+            @if (row.issue.assignee; as a) {
+              <app-avatar [who]="a" [size]="22" />
+              <span class="visually-hidden">{{ row.assignee }}</span>
             }
           </div>
         </a>

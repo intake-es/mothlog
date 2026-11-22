@@ -171,6 +171,55 @@ describe('IssueListPage', () => {
     );
   });
 
+  it('«Míos» pone y quita assigned:me, y cada fila enseña a quién está asignada', async () => {
+    const fixture = await render({ query: 'assigned:me is:open' });
+    const req = http.expectOne((r) => r.url === '/api/0/issues/');
+    expect(req.request.params.get('query')).toBe('assigned:me is:open');
+    req.flush({
+      data: [
+        issue({ assignee: { name: 'dev', kind: 'user', display_name: 'Dev', active: true } }),
+        issue({ id: 2, assignee: { name: 'agente', kind: 'token', active: false } }),
+        issue({ id: 3 }),
+      ],
+    });
+    await fixture.whenStable();
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    const el: HTMLElement = fixture.nativeElement;
+    const mine = el.querySelector<HTMLButtonElement>('.mine');
+    expect(mine?.textContent?.trim()).toBe('Míos');
+    expect(mine?.getAttribute('aria-pressed')).toBe('true');
+    // La píldora de estado sigue en Abiertos.
+    expect(el.querySelectorAll('app-pick .pick')[1].textContent).toContain('Abiertos');
+
+    const rows = el.querySelectorAll('a.row');
+    expect(rows[0].querySelector('.row__who')?.getAttribute('title')).toBe('Asignado a Dev');
+    expect(rows[0].querySelector('app-avatar')?.textContent?.trim()).toBe('D');
+    expect(rows[1].querySelector('.row__who')?.getAttribute('title')).toBe(
+      'Asignado a agente (token revocado)',
+    );
+    expect(rows[1].querySelector('app-avatar svg')).not.toBeNull();
+    expect(rows[2].querySelector('app-avatar')).toBeNull();
+
+    mine?.click();
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { query: null, status: null, project: null } }),
+    );
+    fixture.componentRef.setInput('query', 'is:open');
+    await fixture.whenStable();
+    http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: [] });
+    await fixture.whenStable();
+    expect(mine?.getAttribute('aria-pressed')).toBe('false');
+    mine?.click();
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { query: 'assigned:me is:open', status: null, project: null },
+      }),
+    );
+  });
+
   it('un error de sintaxis se ve en la barra y en la lista, en los dos idiomas', async () => {
     const fixture = await render({ query: 'os:"Mac OS' });
     const req = http.expectOne((r) => r.url === '/api/0/issues/');
@@ -272,6 +321,26 @@ describe('IssueListPage', () => {
       expect(rows[2].querySelector('.sp-badge')?.textContent).toBe('Resolved in the next release');
       expect(rows[0].querySelector('app-sparkline svg')?.getAttribute('aria-label')).toBe(
         '3 events in the last 14 days',
+      );
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('«Míos» y el asignado de cada fila, en inglés', async () => {
+      lang.set('en');
+      const fixture = await render({ query: 'assigned:me' });
+      http
+        .expectOne((r) => r.url === '/api/0/issues/')
+        .flush({
+          data: [issue({ assignee: { name: 'agente', kind: 'token', active: false } })],
+        });
+      await fixture.whenStable();
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.mine')?.textContent?.trim()).toBe('Mine');
+      expect(el.querySelector('.mine')?.getAttribute('title')).toBe(
+        'Errors assigned to you (assigned:me)',
+      );
+      expect(el.querySelector('.row__who')?.getAttribute('title')).toBe(
+        'Assigned to agente (revoked token)',
       );
       expect(spanishLeft(el)).toEqual([]);
     });
