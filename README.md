@@ -101,14 +101,17 @@ Para conectarlo con Claude Code:
 claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
 
-Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events` y `set_issue_status`; las de leer aceptan `environment`, como la API. Hacen las mismas consultas que la API:
+Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_tags`, `get_stacktrace`, `list_events` y `set_issue_status`; las de leer aceptan `environment`, como la API. Hacen las mismas consultas que la API:
 
 | Ruta | Qué devuelve |
 |---|---|
 | `GET /api/0/projects/` | id, nombre, DSN y etiquetas de Linear propias (`linear_label_ids`) de cada proyecto |
-| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=&daily=&environment=` | issues; `status` es `open` (por defecto), `resolved`, `resolved_next`, `silenced` o `all`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `query` busca en título y culprit; `project`, id o nombre; con `daily=1`, cada issue lleva `daily`, sus eventos por día de los últimos 14 días como en el detalle; con `environment`, solo los issues con eventos en ese entorno, y sus eventos, primera y última vez y `daily` son los de ese entorno |
+| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=&daily=&environment=` | issues, con `user_count`, los usuarios distintos afectados; `query` va en el [lenguaje de búsqueda](#búsqueda); `status` es `open`, `resolved`, `resolved_next`, `silenced` o `all`, y vacío es `open` salvo que `query` traiga `is:`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `project`, id o nombre; con `daily=1`, cada issue lleva `daily`, sus eventos por día de los últimos 14 días como en el detalle; con `environment`, solo los issues con eventos en ese entorno, y sus eventos, primera y última vez y `daily` son los de ese entorno (`user_count` sigue siendo el de todos) |
 | `GET /api/0/issues/{id}/?environment=` | el issue con su último evento, los eventos por día de los últimos 14 días, los valores más frecuentes de entorno, release, usuario y `organization_id`, y su `first_release`, `last_release` y `fixed_in_release`; con `environment`, todo de ese entorno |
 | `GET /api/0/issues/{id}/events/?environment=` | sus eventos, del más nuevo al más viejo |
+| `GET /api/0/issues/{id}/tags/` | `user_count` y, de cada etiqueta, el total de eventos que la traían, cuántos valores distintos tiene y los 10 más frecuentes con su recuento, su porcentaje y su última vez |
+| `GET /api/0/tags/?project=` | las claves de etiqueta que hay, con en cuántos issues sale cada una; para autocompletar |
+| `GET /api/0/tags/{key}/values/?prefix=&project=` | los 20 valores más frecuentes de una clave que empiezan por `prefix`, sin distinguir mayúsculas |
 | `GET /api/0/issues/{id}/stacktrace.md` | el último evento en Markdown, pensado para un modelo |
 | `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}`; `resolved_next` guarda el release del último evento (409 si no tiene) |
 | `GET /api/0/environments/?project=` y `GET /api/0/projects/{id}/environments/` | los entornos de los eventos, con cuántos issues y eventos tienen y cuándo se vio el último |
@@ -123,12 +126,41 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events
 
 Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
 
+### Búsqueda
+
+La `query` de la lista (en la API, en `list_issues` del MCP y en la barra de la interfaz) son términos separados por espacios que se cumplen todos a la vez:
+
+| Término | Qué busca |
+|---|---|
+| `is:open`, `is:resolved`, `is:resolved_next`, `is:silenced` | el estado |
+| `is:regressed` | los abiertos que volvieron tras resolverse |
+| `release:1.4.0`, `environment:production`, `level:warning` | issues con algún evento de ese release, entorno o nivel |
+| `project:web` | el proyecto, por nombre o id |
+| `user:ana@example.com` | issues que le han pasado a ese usuario, por id, email (sin distinguir mayúsculas), username o IP; hace falta el valor exacto, porque los usuarios se guardan con hash |
+| `browser:Safari`, `os:"Mac OS"`, `device:iPhone`, `runtime:CPython`, `component:api` | cualquier etiqueta, con su valor exacto: las que salen de `contexts` y del user agent (`browser`, `os`, `device`, `runtime`) y las `tags` del SDK |
+| `!browser:Chrome`, `!is:resolved`, `!timeout` | `!` delante niega: issues sin ningún evento con ese valor, o sin ese texto |
+| `timeout`, `"division by zero"` | texto en el título o el culprit, sin distinguir mayúsculas; las comillas agrupan espacios (`\"` y `\\` dentro) |
+
+Ejemplos:
+
+```text
+is:open browser:Safari                    # abiertos que pasan en Safari
+is:regressed release:1.4.0                # reabiertos que han vuelto a pasar en el 1.4.0
+project:web os:"Mac OS" !environment:staging
+user:ana@example.com is:open              # lo que le está fallando a una persona
+"Cannot read properties" level:error
+```
+
+Una clave es una letra o `_` seguida de letras, números, `_`, `.` o `-`; lo que no tiene esa forma antes de los dos puntos (una URL, `12:30`) o no lleva nada detrás de ellos es texto, así que un título pegado tal cual, como `TypeError: Cannot read properties`, busca ese texto. Una búsqueda mal escrita da 400 con `query_error`: `code` (`unclosed_quote`, `empty_key`, `lone_negation`, `bad_status` o `after_quote`), `position` (el carácter, desde 0) y, si viene al caso, `key` y `value`; el mensaje de `error` dice lo mismo en español.
+
 
 ## Ingesta
 
 Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Solo se guardan los items `event`; el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
 
 Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo trae; si no, el tipo de la excepción lanzada y el módulo o fichero y la función de sus fotogramas `in_app` (sin líneas); y en los logs sin excepción, el logger y el mensaje con UUIDs, hexadecimales y números cambiados por marcadores. Un evento en un issue `resolved`, o en uno `resolved_next` con una release posterior, lo reabre como regresión ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)).
+
+Cada issue cuenta, con cada evento, los valores de sus etiquetas y su última vez: release, entorno, nivel, `browser`, `os` y `device` (de `contexts` o, si no vienen, del user agent), `runtime` y hasta 50 `tags` del SDK, con las claves de hasta 32 caracteres y los valores cortados a 200. También cuenta los usuarios distintos, por id, email, username o IP, en este orden: guarda solo los 16 primeros bytes de un sha256 con una clave aleatoria de la instalación (tabla `user_hash_key`): el recuento no guarda el dato en claro, aunque el evento guardado lo sigue llevando, como hasta ahora, hasta que la retención lo borra. Un evento repetido no cuenta dos veces; los que pasan del tope o quedan fuera de la muestra sí cuentan, igual que en el número de eventos.
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
 

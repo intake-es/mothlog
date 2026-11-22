@@ -20,6 +20,7 @@ const issue = (over: Partial<Issue>): Issue => ({
   level: 'error',
   status: 'open',
   count: 3,
+  user_count: 0,
   first_seen: iso(3 * 86_400_000),
   last_seen: iso(5 * 60_000),
   last_release: 'fixture-release-1',
@@ -64,11 +65,12 @@ describe('IssueListPage', () => {
   it('pinta cada error con su tipo, mensaje, culprit, proyecto, release, eventos y minigráfica', async () => {
     const fixture = await render();
     const req = http.expectOne((r) => r.url === '/api/0/issues/');
-    expect(req.request.params.get('status')).toBe('open');
+    expect(req.request.params.get('status')).toBe('all');
+    expect(req.request.params.get('query')).toBe('is:open');
     expect(req.request.params.get('daily')).toBe('1');
     req.flush({
       data: [
-        issue({}),
+        issue({ user_count: 3 }),
         issue({
           id: 2,
           title: 'ai.action_reported_failure',
@@ -102,6 +104,9 @@ describe('IssueListPage', () => {
     expect(rows[1].querySelector('.row__type')).toBeNull();
     expect(rows[1].querySelector('.row__count')?.textContent).toContain('12.345');
     expect(rows[1].querySelector('.sp-badge--yellow')?.textContent).toBe('Regresión');
+    expect(rows[0].querySelector('.row__users')?.textContent).toBe('3 usuarios');
+    expect(rows[1].querySelector('.row__users')).toBeNull();
+    expect((el.querySelector('app-search-bar input') as HTMLInputElement).value).toBe('is:open');
   });
 
   it('con 0 errores abiertos dice que no hay', async () => {
@@ -113,20 +118,24 @@ describe('IssueListPage', () => {
     expect(el.querySelector('.titlebar__count')?.textContent).toBe('(0)');
   });
 
-  it('con filtros y sin resultados ofrece quitarlos', async () => {
+  it('con filtros y sin resultados ofrece quitarlos; los enlaces de antes pasan a la búsqueda', async () => {
     const fixture = await render({ query: 'nada', status: 'all', project: 'backend' });
     const req = http.expectOne((r) => r.url === '/api/0/issues/');
-    expect(req.request.params.get('query')).toBe('nada');
+    expect(req.request.params.get('query')).toBe('project:backend nada');
     expect(req.request.params.get('status')).toBe('all');
-    expect(req.request.params.get('project')).toBe('backend');
+    expect(req.request.params.has('project')).toBe(false);
     req.flush({ data: [] });
     await fixture.whenStable();
     const el: HTMLElement = fixture.nativeElement;
     expect(el.querySelector('.state__title')?.textContent).toBe('Ningún error con estos filtros');
-    expect((el.querySelector('.search input') as HTMLInputElement).value).toBe('nada');
+    expect((el.querySelector('app-search-bar input') as HTMLInputElement).value).toBe(
+      'project:backend nada',
+    );
+    expect(el.querySelectorAll('app-pick .pick')[0].textContent).toContain('backend');
+    expect(el.querySelectorAll('app-pick .pick')[1].textContent).toContain('Todos los estados');
   });
 
-  it('cambiar el estado pone el filtro en la URL', async () => {
+  it('los filtros en píldora escriben en la búsqueda', async () => {
     const fixture = await render();
     http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: [] });
     await fixture.whenStable();
@@ -143,8 +152,49 @@ describe('IssueListPage', () => {
     resolved?.click();
     expect(navigate).toHaveBeenCalledWith(
       [],
-      expect.objectContaining({ queryParams: { status: 'resolved' } }),
+      expect.objectContaining({
+        queryParams: { query: 'is:resolved', status: null, project: null },
+      }),
     );
+
+    const projectPick = el.querySelectorAll<HTMLButtonElement>('app-pick .pick')[0];
+    projectPick.click();
+    fixture.detectChanges();
+    Array.from(el.querySelectorAll<HTMLButtonElement>('.menu__item'))
+      .find((b) => b.textContent?.trim() === 'backend')
+      ?.click();
+    expect(navigate).toHaveBeenLastCalledWith(
+      [],
+      expect.objectContaining({
+        queryParams: { query: 'project:backend is:open', status: null, project: null },
+      }),
+    );
+  });
+
+  it('un error de sintaxis se ve en la barra y en la lista, en los dos idiomas', async () => {
+    const fixture = await render({ query: 'os:"Mac OS' });
+    const req = http.expectOne((r) => r.url === '/api/0/issues/');
+    expect(req.request.params.get('query')).toBe('os:"Mac OS');
+    req.flush(
+      {
+        error: 'parámetro no válido: búsqueda, carácter 4: faltan las comillas de cierre',
+        query_error: { code: 'unclosed_quote', position: 3 },
+      },
+      { status: 400, statusText: 'Bad Request' },
+    );
+    await fixture.whenStable();
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('.state__title')?.textContent).toBe('La búsqueda no es válida');
+    expect(el.querySelector('#search-error')?.textContent?.trim()).toBe(
+      'Carácter 4: faltan las comillas de cierre.',
+    );
+    TestBed.inject(I18n).set('en');
+    await fixture.whenStable();
+    expect(el.querySelector('.state__title')?.textContent).toBe('The search isn’t valid');
+    expect(el.querySelector('#search-error')?.textContent?.trim()).toBe(
+      'Character 4: the closing quote is missing.',
+    );
+    expect(spanishLeft(el)).toEqual([]);
   });
 
   it('muestra el error de la API y deja reintentar', async () => {
@@ -206,7 +256,7 @@ describe('IssueListPage', () => {
         p.getAttribute('aria-label'),
       );
       expect(picks).toEqual(['Project: All projects', 'Status: All statuses', 'Sort: Last seen']);
-      expect(el.querySelector('[aria-label="Search"]')).not.toBeNull();
+      expect(el.querySelector('app-search-bar .visually-hidden')?.textContent).toBe('Search');
       expect(Array.from(el.querySelectorAll('.list__head span')).map((s) => s.textContent)).toEqual(
         ['Error', '14 days', 'Events', 'Seen'],
       );
@@ -234,18 +284,17 @@ describe('IssueListPage', () => {
       const el: HTMLElement = fixture.nativeElement;
       expect(el.querySelector('.state__title')?.textContent).toBe('No errors match these filters');
       expect(el.querySelector('.state .btn')?.textContent).toBe('Clear filters');
-      expect(el.querySelector('.search input')?.getAttribute('placeholder')).toBe(
-        'Search the title and culprit',
+      expect(el.querySelector('app-search-bar input')?.getAttribute('placeholder')).toBe(
+        'Search: text, is:open, browser:Safari…',
       );
       expect(spanishLeft(el)).toEqual([]);
 
-      fixture.componentRef.setInput('query', '');
+      fixture.componentRef.setInput('query', undefined);
       await fixture.whenStable();
       http.expectOne((r) => r.url === '/api/0/issues/').flush({ data: [] });
       await fixture.whenStable();
       expect(el.querySelector('.state__title')?.textContent).toBe('No open errors');
 
-      (el.querySelector('.search__clear') as HTMLButtonElement | null)?.click();
       fixture.componentRef.setInput('status', 'resolved');
       await fixture.whenStable();
       http

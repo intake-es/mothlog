@@ -17,6 +17,7 @@ import {
   type EventSummary,
   type IssueDetail,
   type IssueStatus,
+  type IssueTags,
   type StoredEvent,
 } from '../../core/api';
 import { copyText } from '../../core/clipboard';
@@ -28,6 +29,7 @@ import { DayChart } from '../../ui/day-chart';
 import { Icon } from '../../ui/icon';
 import { Breadcrumbs } from './breadcrumbs';
 import { Stacktrace } from './stacktrace';
+import { TagsPanel } from './tags-panel';
 
 interface Action {
   status: IssueStatus;
@@ -45,13 +47,6 @@ interface Fact {
   link?: (string | number)[];
 }
 
-const TOP_LABELS: Record<string, Key> = {
-  release: 'top.release',
-  environment: 'top.environment',
-  organization_id: 'top.organization_id',
-  user: 'top.user',
-};
-
 const STATUS_TOAST: Record<IssueStatus, Key> = {
   open: 'toast.reopened',
   resolved: 'toast.resolved',
@@ -61,7 +56,7 @@ const STATUS_TOAST: Record<IssueStatus, Key> = {
 
 @Component({
   selector: 'app-issue-detail',
-  imports: [RouterLink, Icon, DayChart, Stacktrace, Breadcrumbs],
+  imports: [RouterLink, Icon, DayChart, Stacktrace, Breadcrumbs, TagsPanel],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown.escape)': 'menuOpen.set(false)' },
   templateUrl: './issue-detail.html',
@@ -84,6 +79,7 @@ export class IssueDetailPage {
     this.failure() === null ? '' : apiError(this.failure()),
   );
   protected readonly notFound = signal(false);
+  protected readonly issueTags = signal<IssueTags | null>(null);
 
   protected readonly events = signal<EventSummary[]>([]);
   protected readonly eventsMore = signal(false);
@@ -205,13 +201,6 @@ export class IssueDetailPage {
     Object.entries(this.event()?.event.tags ?? {}).sort(([a], [b]) => a.localeCompare(b)),
   );
 
-  protected readonly top = computed(() => {
-    const tv = this.detail()?.top_values ?? {};
-    return Object.keys(TOP_LABELS)
-      .filter((k) => (tv[k] ?? []).length > 0)
-      .map((k) => ({ key: k, label: TOP_LABELS[k], values: tv[k] }));
-  });
-
   protected readonly eventPosition = computed(() => {
     const n = this.events().length;
     return n
@@ -263,6 +252,7 @@ export class IssueDetailPage {
     this.failure.set(null);
     this.notFound.set(false);
     this.index.set(0);
+    this.issueTags.set(null);
     if (!Number.isInteger(id) || id <= 0) {
       this.notFound.set(true);
       this.loading.set(false);
@@ -290,6 +280,10 @@ export class IssueDetailPage {
           this.eventsMore.set(!!page.next_cursor);
         },
         error: () => this.events.set([]),
+      }),
+      this.api.issueTags(id).subscribe({
+        next: (tags) => this.issueTags.set(tags),
+        error: () => this.issueTags.set(null),
       }),
     ];
   }

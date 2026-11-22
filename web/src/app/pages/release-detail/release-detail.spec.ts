@@ -22,6 +22,7 @@ const issue = (over: Partial<ReleaseIssue>): ReleaseIssue => ({
   level: 'error',
   status: 'open',
   count: 5,
+  user_count: 0,
   first_seen: iso(2 * HOUR),
   last_seen: iso(HOUR),
   last_release: 'web@1.1.0',

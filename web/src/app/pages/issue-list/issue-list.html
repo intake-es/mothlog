@@ -11,9 +11,9 @@
       icon="squares-four"
       [label]="t('list.project')"
       [options]="projectOptions()"
-      [value]="project() ?? ''"
-      [highlight]="!!project()"
-      (changed)="setFilter('project', $event)"
+      [value]="projectValue()"
+      [highlight]="!!projectValue()"
+      (changed)="setProject($event)"
     />
     <app-pick
       icon="circle-dashed"
@@ -21,7 +21,7 @@
       [options]="statusOptions()"
       [value]="statusValue()"
       [highlight]="statusValue() !== 'open'"
-      (changed)="setFilter('status', $event)"
+      (changed)="setStatus($event)"
     />
     <app-pick
       icon="sort-descending"
@@ -29,32 +29,18 @@
       align="end"
       [options]="sortOptions()"
       [value]="sortValue()"
-      (changed)="setFilter('sort', $event)"
+      (changed)="setSort($event)"
     />
-    @if (searchOpen()) {
-      <label class="search">
-        <svg appIcon="magnifying-glass"></svg>
-        <span class="visually-hidden">{{ t('list.search') }}</span>
-        <input
-          #search
-          type="search"
-          [placeholder]="t('list.search')"
-          autocomplete="off"
-          [value]="searchText()"
-          (input)="onSearch($any($event.target).value)"
-          (keydown.escape)="closeSearch()"
-        />
-        <button type="button" class="search__clear" [attr.aria-label]="t('list.closeSearch')" (click)="closeSearch()">
-          <svg appIcon="x"></svg>
-        </button>
-      </label>
-    } @else {
-      <button type="button" class="btn btn--square" [attr.aria-label]="t('list.openSearch')" (click)="openSearch()">
-        <svg appIcon="magnifying-glass"></svg>
-      </button>
-    }
   </div>
 </header>
+
+<app-search-bar
+  class="searchbar"
+  [query]="search()"
+  [error]="badQuery()"
+  [projects]="projectNames()"
+  (submitted)="setQuery($event)"
+/>
 
 <div class="content">
   @if (loading()) {
@@ -65,6 +51,12 @@
           <span class="sp-skeleton" style="width: 28%; height: 0.65rem"></span>
         </div>
       }
+    </div>
+  } @else if (badQuery()) {
+    <div class="state state--error">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('list.badQuery') }}</p>
+      <button type="button" class="btn" (click)="clearFilters()">{{ t('list.clearFilters') }}</button>
     </div>
   } @else if (error()) {
     <div class="state state--error" role="alert">
@@ -114,6 +106,9 @@
                 <span class="row__culprit">{{ row.issue.culprit }}</span>
               }
               <span class="row__fact"><svg appIcon="squares-four"></svg>{{ row.issue.project }}</span>
+              @if (row.users) {
+                <span class="row__fact row__users"><svg appIcon="user"></svg>{{ row.users }}</span>
+              }
               @if (row.issue.last_release) {
                 <span class="row__fact row__release"><svg appIcon="tag"></svg>{{ row.issue.last_release }}</span>
               }

@@ -27,6 +27,8 @@ export interface Issue {
   level: string;
   status: IssueStatus;
   count: number;
+  /** Usuarios distintos afectados, por id, email o IP. */
+  user_count: number;
   first_seen: string;
   last_seen: string;
   last_release: string | null;
@@ -106,6 +108,46 @@ export interface EventSummary {
   environment: string;
   user: string;
   message: string;
+}
+
+export interface TagValue {
+  value: string;
+  count: number;
+  percent: number;
+  last_seen: string;
+}
+
+export interface TagDistribution {
+  key: string;
+  total: number;
+  distinct: number;
+  values: TagValue[];
+}
+
+export interface IssueTags {
+  issue_id: number;
+  events: number;
+  user_count: number;
+  tags: TagDistribution[];
+}
+
+export interface TagKey {
+  key: string;
+  issues: number;
+}
+
+export interface TagValueCount {
+  value: string;
+  issues: number;
+  count: number;
+}
+
+/** El error de sintaxis de una búsqueda, como lo da la API con 400. */
+export interface QueryError {
+  code: string;
+  position: number;
+  key?: string;
+  value?: string;
 }
 
 export interface Page<T> {
@@ -243,6 +285,21 @@ export class Api {
     return this.http.get<StoredEvent>(`${BASE}/events/${id}/`);
   }
 
+  issueTags(issueId: number): Observable<IssueTags> {
+    return this.http.get<IssueTags>(`${BASE}/issues/${issueId}/tags/`);
+  }
+
+  tagKeys(): Observable<Page<TagKey>> {
+    return this.http.get<Page<TagKey>>(`${BASE}/tags/`);
+  }
+
+  tagValues(key: string, prefix: string): Observable<Page<TagValueCount>> {
+    const params = new HttpParams().set('prefix', prefix);
+    return this.http.get<Page<TagValueCount>>(`${BASE}/tags/${encodeURIComponent(key)}/values/`, {
+      params,
+    });
+  }
+
   stacktrace(issueId: number): Observable<string> {
     return this.http.get(`${BASE}/issues/${issueId}/stacktrace.md`, { responseType: 'text' });
   }
@@ -254,6 +311,11 @@ export class Api {
 
 function envParams(environment: string): HttpParams {
   return environment ? new HttpParams({ fromObject: { environment } }) : new HttpParams();
+}
+
+export function queryError(err: unknown): QueryError | null {
+  const e = err as { status?: number; error?: { query_error?: QueryError } };
+  return e?.status === 400 && e.error?.query_error ? e.error.query_error : null;
 }
 
 /** El mensaje de un error de la API, que responde {"error": "..."} y se pinta tal cual. */

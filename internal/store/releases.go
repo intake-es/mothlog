@@ -436,7 +436,7 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 			var ri ReleaseIssue
 			i := &ri.Issue
 			err := row.Scan(&i.ID, &i.ProjectID, &i.Project, &i.Title, &i.Culprit, &i.Type, &i.Level, &i.Status,
-				&i.Count, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression,
+				&i.Count, &i.UserCount, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression,
 				&i.FirstRelease, &i.FixedInRelease, &ri.ReleaseEvents, &ri.ReleaseLastSeen)
 			return ri, err
 		})

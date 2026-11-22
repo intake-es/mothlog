@@ -216,25 +216,19 @@
           </dl>
         </section>
 
-        @if (top().length) {
-          <section class="side__block">
-            <h3 class="block__title block__title--gap">{{ t('detail.top') }}</h3>
-            @for (group of top(); track group.key) {
-              <div class="top">
-                <p class="top__label">{{ t(group.label) }}</p>
-                @for (v of group.values; track v.value) {
-                  <div class="top__row">
-                    <span class="top__value" [attr.title]="v.value">{{ v.value }}</span>
-                    <span class="top__count tnum">{{ count(v.count) }}</span>
-                  </div>
-                }
-              </div>
-            }
-          </section>
-        }
+        <section class="side__block">
+          <h3 class="block__title block__title--gap">{{ t('detail.users') }}</h3>
+          <p class="users tnum">{{ count(issueTags()?.user_count ?? d.user_count) }}</p>
+          <p class="users__note">{{ t('detail.usersNote') }}</p>
+        </section>
 
         <section class="side__block">
           <h3 class="block__title block__title--gap">{{ t('detail.tags') }}</h3>
+          <app-tags-panel [tags]="issueTags()" />
+        </section>
+
+        <section class="side__block">
+          <h3 class="block__title block__title--gap">{{ t('detail.eventTags') }}</h3>
           @if (tags().length) {
             <ul class="tags">
               @for (tag of tags(); track tag[0]) {

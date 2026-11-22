@@ -3,13 +3,11 @@ import {
   Component,
   computed,
   DestroyRef,
-  type ElementRef,
   effect,
   inject,
   input,
   signal,
   untracked,
-  viewChild,
 } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import type { Subscription } from 'rxjs';
@@ -19,19 +17,22 @@ import {
   type Issue,
   type IssueSort,
   type Project,
-  type StatusFilter,
+  queryError,
 } from '../../core/api';
 import { environment } from '../../core/environment';
 import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
 import { I18n, type Key, plural } from '../../core/i18n';
+import { DEFAULT_QUERY, type SearchStatus, setTerm, termValue } from '../../core/search';
 import { Icon } from '../../ui/icon';
 import { Pick, type PickOption } from '../../ui/pick';
 import { Sparkline } from '../../ui/sparkline';
+import { SearchBar } from './search-bar';
 
 const PAGE = 50;
 
-const STATUS_OPTIONS: { value: StatusFilter; label: Key }[] = [
+const STATUS_OPTIONS: { value: SearchStatus | 'all'; label: Key }[] = [
   { value: 'open', label: 'filter.open' },
+  { value: 'regressed', label: 'filter.regressed' },
   { value: 'resolved', label: 'filter.resolved' },
   { value: 'resolved_next', label: 'filter.resolved_next' },
   { value: 'silenced', label: 'filter.silenced' },
@@ -54,18 +55,20 @@ interface Row {
   firstTitle: string;
   count: string;
   unit: string;
+  users: string;
   regression: boolean;
 }
 
 @Component({
   selector: 'app-issue-list',
-  imports: [RouterLink, Icon, Pick, Sparkline],
+  imports: [RouterLink, Icon, Pick, Sparkline, SearchBar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './issue-list.html',
   styleUrl: './issue-list.css',
 })
 export class IssueListPage {
-  // Los filtros viven en la URL (?project=&status=&sort=&query=) para que atrás y un enlace los conserven.
+  // La búsqueda y el orden viven en la URL (?query=&sort=) para que atrás y un enlace los conserven.
+  // Sin query, la búsqueda es DEFAULT_QUERY; project y status son los de los enlaces de antes.
   readonly project = input<string>();
   readonly status = input<string>();
   readonly sort = input<string>();
@@ -94,15 +97,28 @@ export class IssueListPage {
   protected readonly error = computed(() =>
     this.failure() === null ? '' : apiError(this.failure()),
   );
+  protected readonly badQuery = computed(() => queryError(this.failure()));
 
-  protected readonly searchOpen = signal(false);
-  protected readonly searchText = signal('');
-  private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('search');
-
-  protected readonly statusValue = computed<StatusFilter>(() => {
-    const s = this.status();
-    return STATUS_OPTIONS.some((o) => o.value === s) ? (s as StatusFilter) : 'open';
+  /** La búsqueda que se aplica: la de la URL con los filtros de los enlaces de antes dentro. */
+  protected readonly search = computed(() => {
+    let q = this.query() ?? DEFAULT_QUERY;
+    const status = this.status();
+    if (status) {
+      q = setTerm(q, 'is', status === 'all' ? null : status);
+    }
+    const project = this.project();
+    if (project) {
+      q = setTerm(q, 'project', project);
+    }
+    return q;
   });
+
+  protected readonly statusValue = computed(() => {
+    const s = termValue(this.search(), 'is') ?? 'all';
+    return STATUS_OPTIONS.some((o) => o.value === s) ? s : '';
+  });
+  protected readonly projectValue = computed(() => termValue(this.search(), 'project') ?? '');
+  protected readonly projectNames = computed(() => this.projects().map((p) => p.name));
   protected readonly sortValue = computed<IssueSort>(() => {
     const s = this.sort();
     return SORT_OPTIONS.some((o) => o.value === s) ? (s as IssueSort) : 'last_seen';
@@ -111,9 +127,7 @@ export class IssueListPage {
     { value: '', label: this.t('list.allProjects') },
     ...this.projects().map((p) => ({ value: p.name, label: p.name })),
   ]);
-  protected readonly filtered = computed(
-    () => !!this.project() || !!this.query() || this.statusValue() !== 'open',
-  );
+  protected readonly filtered = computed(() => this.search().trim() !== DEFAULT_QUERY);
 
   protected readonly title = computed(() => {
     if (this.loading() || this.error()) {
@@ -140,13 +154,13 @@ export class IssueListPage {
         firstTitle: this.t('list.firstSeenAt', { date: fullDate(issue.first_seen) }),
         count: count(issue.count),
         unit: plural('list.unit', issue.count),
+        users: issue.user_count > 0 ? plural('list.users', issue.user_count) : '',
         regression: issue.status === 'open' && !!issue.last_regression,
       };
     });
   });
 
   private sub?: Subscription;
-  private searchTimer?: ReturnType<typeof setTimeout>;
 
   constructor() {
     this.api.projects().subscribe({
@@ -155,40 +169,19 @@ export class IssueListPage {
     });
 
     effect(() => {
-      const params = {
-        project: this.project() ?? '',
-        status: this.statusValue(),
-        sort: this.sortValue(),
-        query: this.query() ?? '',
-        environment: environment(),
-      };
-      untracked(() => {
-        this.searchText.set(params.query);
-        if (params.query) {
-          this.searchOpen.set(true);
-        }
-        this.load(params);
-      });
+      const params = this.params();
+      untracked(() => this.load(params));
     });
 
-    inject(DestroyRef).onDestroy(() => {
-      this.sub?.unsubscribe();
-      clearTimeout(this.searchTimer);
-    });
+    inject(DestroyRef).onDestroy(() => this.sub?.unsubscribe());
   }
 
-  private params(): {
-    project: string;
-    status: StatusFilter;
-    sort: IssueSort;
-    query: string;
-    environment: string;
-  } {
+  /** El estado va en la búsqueda (is:), así que a la API se le pide con status=all. */
+  private params(): { status: 'all'; sort: IssueSort; query: string; environment: string } {
     return {
-      project: this.project() ?? '',
-      status: this.statusValue(),
+      status: 'all',
       sort: this.sortValue(),
-      query: this.query() ?? '',
+      query: this.search(),
       environment: environment(),
     };
   }
@@ -233,38 +226,27 @@ export class IssueListPage {
     });
   }
 
-  protected setFilter(key: 'project' | 'status' | 'sort' | 'query', value: string): void {
-    const defaults: Record<string, string> = {
-      project: '',
-      status: 'open',
-      sort: 'last_seen',
-      query: '',
-    };
+  protected setSort(value: string): void {
     void this.router.navigate([], {
-      queryParams: { [key]: value === defaults[key] ? null : value },
+      queryParams: { sort: value === 'last_seen' ? null : value },
       queryParamsHandling: 'merge',
-      replaceUrl: key === 'query',
     });
   }
 
-  protected openSearch(): void {
-    this.searchOpen.set(true);
-    setTimeout(() => this.searchInput()?.nativeElement.focus());
+  /** Los filtros en píldora escriben su término en la búsqueda. */
+  protected setStatus(value: string): void {
+    this.setQuery(setTerm(this.search(), 'is', value === 'all' ? null : value));
   }
 
-  protected onSearch(value: string): void {
-    this.searchText.set(value);
-    clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => this.setFilter('query', value.trim()), 250);
+  protected setProject(value: string): void {
+    this.setQuery(setTerm(this.search(), 'project', value || null));
   }
 
-  protected closeSearch(): void {
-    clearTimeout(this.searchTimer);
-    this.searchText.set('');
-    this.searchOpen.set(false);
-    if (this.query()) {
-      this.setFilter('query', '');
-    }
+  protected setQuery(q: string): void {
+    void this.router.navigate([], {
+      queryParams: { query: q === DEFAULT_QUERY ? null : q, status: null, project: null },
+      queryParamsHandling: 'merge',
+    });
   }
 
   protected clearFilters(): void {

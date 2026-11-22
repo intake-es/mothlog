@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/intake-errors/internal/search"
 )
 
 // ErrInvalid envuelve los errores de parámetros que vienen del cliente.
@@ -48,6 +49,7 @@ type Issue struct {
 	Level             string     `json:"level"`
 	Status            string     `json:"status"`
 	Count             int64      `json:"count"`
+	UserCount         int64      `json:"user_count"`
 	FirstSeen         time.Time  `json:"first_seen"`
 	LastSeen          time.Time  `json:"last_seen"`
 	LastRelease       *string    `json:"last_release"`
@@ -60,7 +62,7 @@ type Issue struct {
 }
 
 const issueColumns = `
-	i.id, i.project_id, p.name, i.title, i.culprit, i.type, i.level, i.status, i.event_count,
+	i.id, i.project_id, p.name, i.title, i.culprit, i.type, i.level, i.status, i.event_count, i.user_count,
 	i.first_seen, i.last_seen,
 	(SELECT e.release FROM events e
 	  WHERE e.issue_id = i.id AND e.release IS NOT NULL AND e.release <> ''
@@ -77,7 +79,7 @@ func issueSQL(envArg string) (cols, from string) {
 		return issueColumns, issueFrom
 	}
 	cols = `
-	i.id, i.project_id, p.name, i.title, i.culprit, i.type, i.level, i.status, es.n,
+	i.id, i.project_id, p.name, i.title, i.culprit, i.type, i.level, i.status, es.n, i.user_count,
 	es.first_seen, es.last_seen,
 	(SELECT e.release FROM events e
 	  WHERE e.issue_id = i.id AND e.environment = ` + envArg + ` AND e.release IS NOT NULL AND e.release <> ''
@@ -94,7 +96,7 @@ func issueSQL(envArg string) (cols, from string) {
 func scanIssue(r pgx.Row) (Issue, error) {
 	var i Issue
 	err := r.Scan(&i.ID, &i.ProjectID, &i.Project, &i.Title, &i.Culprit, &i.Type, &i.Level, &i.Status,
-		&i.Count, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression,
+		&i.Count, &i.UserCount, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression,
 		&i.FirstRelease, &i.FixedInRelease)
 	return i, err
 }
@@ -103,9 +105,10 @@ func scanIssue(r pgx.Row) (Issue, error) {
 type IssueFilter struct {
 	// Project es el id o el nombre del proyecto; vacío, todos.
 	Project string
-	// Status: open (por defecto), resolved, resolved_next, silenced o all.
+	// Status: open, resolved, resolved_next, silenced o all. Vacío es open,
+	// salvo que Query traiga is:, y entonces all.
 	Status string
-	// Query busca en el título y el culprit, sin distinguir mayúsculas.
+	// Query va en el lenguaje de internal/search.
 	Query string
 	// Environment deja los issues con eventos en ese entorno y cuenta solo los suyos; vacío, todos.
 	Environment string
@@ -179,8 +182,15 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 	if !ok {
 		return IssuePage{}, fmt.Errorf("%w: sort es last_seen, first_seen o count", ErrInvalid)
 	}
+	query, err := search.Parse(f.Query)
+	if err != nil {
+		return IssuePage{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
 	if f.Status == "" {
 		f.Status = "open"
+		if len(query.Status()) > 0 {
+			f.Status = "all"
+		}
 	}
 	if f.Status != "all" && !slices.Contains(Statuses, f.Status) {
 		return IssuePage{}, fmt.Errorf("%w: status es open, resolved, resolved_next, silenced o all", ErrInvalid)
@@ -208,8 +218,15 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 	if f.Status != "all" {
 		where = append(where, "i.status = "+arg(f.Status))
 	}
-	if q := strings.TrimSpace(f.Query); q != "" {
-		where = append(where, fmt.Sprintf("(i.title ILIKE %s OR i.culprit ILIKE %[1]s)", arg(likePattern(q))))
+	for _, t := range query.Terms {
+		cond, err := s.termSQL(ctx, t, arg)
+		if err != nil {
+			return IssuePage{}, err
+		}
+		if t.Negate {
+			cond = "NOT " + cond
+		}
+		where = append(where, cond)
 	}
 	if f.Cursor != "" {
 		c, err := decodeCursor(f.Cursor, f.Sort)
@@ -258,6 +275,33 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		page.Issues = []Issue{}
 	}
 	return page, nil
+}
+
+// termSQL es la condición de un término de la búsqueda, sin su negación.
+func (s *Store) termSQL(ctx context.Context, t search.Term, arg func(any) string) (string, error) {
+	switch t.Key {
+	case "":
+		return fmt.Sprintf("(i.title ILIKE %s OR i.culprit ILIKE %[1]s)", arg(likePattern(t.Value))), nil
+	case "is":
+		if t.Value == "regressed" {
+			return "(i.status = 'open' AND i.last_regressed_at IS NOT NULL)", nil
+		}
+		return "(i.status = " + arg(t.Value) + ")", nil
+	case "project":
+		return fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(t.Value)), nil
+	case "user":
+		key, err := s.userHashKey(ctx)
+		if err != nil {
+			return "", err
+		}
+		var hashes [][]byte
+		for _, id := range userIdents(t.Value) {
+			hashes = append(hashes, UserHash(key, id))
+		}
+		return "EXISTS (SELECT 1 FROM issue_users u WHERE u.issue_id = i.id AND u.user_hash = ANY(" + arg(hashes) + "))", nil
+	}
+	return fmt.Sprintf("EXISTS (SELECT 1 FROM issue_tag_values t WHERE t.issue_id = i.id AND t.key = %s AND t.value = %s)",
+		arg(t.Key), arg(t.Value)), nil
 }
 
 func (s *Store) Issue(ctx context.Context, id int64) (Issue, error) {

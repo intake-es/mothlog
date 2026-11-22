@@ -81,7 +81,7 @@ func TestMCP(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	if want := []string{"get_issue", "get_stacktrace", "list_events", "list_issues", "set_issue_status"}; !slices.Equal(names, want) {
+	if want := []string{"get_issue", "get_issue_tags", "get_stacktrace", "list_events", "list_issues", "set_issue_status"}; !slices.Equal(names, want) {
 		t.Errorf("herramientas = %v", names)
 	}
 

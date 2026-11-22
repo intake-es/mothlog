@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { IssueDetail, StoredEvent } from '../../core/api';
+import type { IssueDetail, IssueTags, StoredEvent } from '../../core/api';
 import { environment } from '../../core/environment';
 import { I18n, lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
@@ -69,6 +69,7 @@ const detail = (over: Partial<IssueDetail> = {}): IssueDetail => ({
   level: 'error',
   status: 'open',
   count: 2,
+  user_count: 3,
   first_seen: new Date(Date.now() - 86_400_000).toISOString(),
   last_seen: new Date().toISOString(),
   last_release: 'fixture-release-1',
@@ -88,6 +89,35 @@ const detail = (over: Partial<IssueDetail> = {}): IssueDetail => ({
   ...over,
 });
 
+const issueTags = (): IssueTags => ({
+  issue_id: 5,
+  events: 4,
+  user_count: 3,
+  tags: [
+    {
+      key: 'release',
+      total: 4,
+      distinct: 1,
+      values: [{ value: 'fixture-release-1', count: 4, percent: 100, last_seen: '' }],
+    },
+    {
+      key: 'browser',
+      total: 4,
+      distinct: 2,
+      values: [
+        { value: 'Safari', count: 3, percent: 75, last_seen: '' },
+        { value: 'Chrome', count: 1, percent: 25, last_seen: '' },
+      ],
+    },
+    {
+      key: 'os',
+      total: 4,
+      distinct: 1,
+      values: [{ value: 'Mac OS', count: 4, percent: 100, last_seen: '' }],
+    },
+  ],
+});
+
 describe('IssueDetailPage', () => {
   let http: HttpTestingController;
 
@@ -101,11 +131,12 @@ describe('IssueDetailPage', () => {
 
   afterEach(() => http.verify());
 
-  async function render(d: IssueDetail = detail()) {
+  async function render(d: IssueDetail = detail(), tags: IssueTags = issueTags()) {
     const fixture = TestBed.createComponent(IssueDetailPage);
     fixture.componentRef.setInput('id', '5');
     fixture.detectChanges();
     http.expectOne('/api/0/issues/5/').flush(d);
+    http.expectOne('/api/0/issues/5/tags/').flush(tags);
     http
       .expectOne((r) => r.url === '/api/0/issues/5/events/')
       .flush({
@@ -160,6 +191,47 @@ describe('IssueDetailPage', () => {
     expect(el.querySelector('app-breadcrumbs')?.textContent).toContain('navigation');
     expect(el.querySelectorAll('.tag').length).toBe(2);
     expect(el.querySelector('.pager__pos')?.textContent).toBe('1 de 2');
+  });
+
+  it('el panel de etiquetas da los porcentajes, busca al pulsar un valor y dice los usuarios', async () => {
+    const fixture = await render();
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('.users')?.textContent).toBe('3');
+    expect(el.querySelector('.users__note')?.textContent).toContain('no guarda el dato en claro');
+    const groups = Array.from(el.querySelectorAll('app-tags-panel .group'));
+    // Navegador y sistema primero; el resto detrás.
+    expect(groups.map((g) => g.querySelector('.group__key')?.textContent)).toEqual([
+      'browser',
+      'os',
+      'release',
+    ]);
+    expect(groups[0].querySelector('.group__distinct')?.textContent).toBe('2 valores');
+    const bars = Array.from(groups[0].querySelectorAll<HTMLAnchorElement>('a.bar'));
+    expect(bars.map((b) => b.querySelector('.bar__value')?.textContent)).toEqual([
+      'Safari',
+      'Chrome',
+    ]);
+    expect(bars[0].querySelector('.bar__pct')?.textContent).toMatch(/^75\s?%$/);
+    expect(bars[0].querySelector<HTMLElement>('.bar__fill')?.style.width).toBe('75%');
+    expect(bars[0].getAttribute('title')).toBe('3 de 4 eventos');
+    expect(bars[0].getAttribute('href')).toBe('/?query=is:open%20browser:Safari');
+    const mac = groups[1].querySelector<HTMLAnchorElement>('a.bar');
+    expect(mac?.getAttribute('href')).toBe('/?query=is:open%20os:%22Mac%20OS%22');
+    expect(mac?.getAttribute('aria-label')).toMatch(/^Buscar errores con os:"Mac OS" · 100\s?%$/);
+  });
+
+  it('sin etiquetas aún, lo dice', async () => {
+    const fixture = await render(detail({ user_count: 0 }), {
+      issue_id: 5,
+      events: 0,
+      user_count: 0,
+      tags: [],
+    });
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('.users')?.textContent).toBe('0');
+    expect(el.querySelector('app-tags-panel')?.textContent).toContain(
+      'Aún no hay etiquetas: se cuentan con cada evento nuevo.',
+    );
   });
 
   it('resuelve con el botón principal y luego ofrece reabrir', async () => {
@@ -291,6 +363,9 @@ describe('IssueDetailPage', () => {
     http
       .expectOne((r) => r.url === '/api/0/issues/99/events/')
       .flush({ error: 'no encontrado' }, { status: 404, statusText: 'Not Found' });
+    http
+      .expectOne('/api/0/issues/99/tags/')
+      .flush({ error: 'no encontrado' }, { status: 404, statusText: 'Not Found' });
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('.state__title')?.textContent).toBe(
       'Este error no existe',
@@ -311,6 +386,7 @@ describe('IssueDetailPage', () => {
         detail({ first_release: 'web@1.0.0', status: 'resolved', fixed_in_release: 'web@1.1.0' }),
       );
       eventsReq.flush({ data: [] });
+      http.expectOne('/api/0/issues/5/tags/').flush(issueTags());
       await fixture.whenStable();
       const el: HTMLElement = fixture.nativeElement;
       const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.fact__link')).map((a) => [
@@ -355,13 +431,22 @@ describe('IssueDetailPage', () => {
         'Breadcrumbs',
         'Events',
         'Details',
-        'Most frequent',
+        'Affected users',
         'Tags',
+        'Tags on this event',
       ]);
       expect(el.querySelector('.block__aside')?.textContent).toBe('2 events');
       expect(el.querySelector('.pager__pos')?.textContent).toBe('1 of 2');
       expect(el.querySelector('.libs__toggle')?.textContent).toContain('1 library frame');
-      expect(el.querySelector('.top__label')?.textContent).toBe('Releases');
+      expect(el.querySelector('.users__note')?.textContent).toBe(
+        'Distinct by id, email, username or IP. The count uses a hash and doesn’t store them in plain text.',
+      );
+      const firstBar = el.querySelector('app-tags-panel a.bar');
+      expect(el.querySelector('.group__distinct')?.textContent).toBe('2 values');
+      expect(firstBar?.getAttribute('title')).toBe('3 of 4 events');
+      expect(firstBar?.getAttribute('aria-label')).toMatch(
+        /^Search errors with browser:Safari · 75\s?%$/,
+      );
       expect(el.querySelector('app-day-chart .axis')?.textContent).toContain('Today');
       const facts = factsOf(el);
       expect(Object.keys(facts)).toEqual([
@@ -443,6 +528,7 @@ describe('IssueDetailPage', () => {
       expect(factsOf(el)['Project']).toBe('front');
       expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Open');
       expect(el.querySelector('.pager__pos')?.textContent).toBe('1 of 2');
+      expect(el.querySelector('.group__distinct')?.textContent).toBe('2 values');
       expect(spanishLeft(el)).toEqual([]);
       TestBed.inject(I18n).set('es');
       await fixture.whenStable();

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,8 @@ import (
 var ErrNotFound = errors.New("no encontrado")
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	hashKey atomic.Pointer[[]byte]
 }
 
 type Project struct {

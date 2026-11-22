@@ -12,6 +12,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/markdown"
 	"github.com/intake-es/intake-errors/internal/mcpserver"
+	"github.com/intake-es/intake-errors/internal/search"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -53,6 +54,9 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/issues/{$}", h.issues)
 	route("GET /api/0/issues/{id}/{$}", h.issue)
 	route("GET /api/0/issues/{id}/events/{$}", h.issueEvents)
+	route("GET /api/0/issues/{id}/tags/{$}", h.issueTags)
+	route("GET /api/0/tags/{$}", h.tagKeys)
+	route("GET /api/0/tags/{key}/values/{$}", h.tagValues)
 	route("GET /api/0/issues/{id}/stacktrace.md", h.stacktrace)
 	route("POST /api/0/issues/{id}/status", h.setStatus)
 	route("GET /api/0/events/{id}/{$}", h.event)
@@ -159,14 +163,13 @@ func (h *handlers) issues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, err := h.st.ListIssues(r.Context(), store.IssueFilter{
-		Project: q.Get("project"),
-		Status:  q.Get("status"),
-		Query:   q.Get("query"),
-		Sort:    q.Get("sort"),
-		Cursor:  q.Get("cursor"),
-		Limit:   limit,
-
+		Project:     q.Get("project"),
+		Status:      q.Get("status"),
+		Query:       q.Get("query"),
 		Environment: q.Get("environment"),
+		Sort:        q.Get("sort"),
+		Cursor:      q.Get("cursor"),
+		Limit:       limit,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -229,6 +232,38 @@ func (h *handlers) issueEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, page)
+}
+
+func (h *handlers) issueTags(w http.ResponseWriter, r *http.Request) {
+	id, ok := idParam(w, r)
+	if !ok {
+		return
+	}
+	tags, err := h.st.IssueTags(r.Context(), id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, tags)
+}
+
+func (h *handlers) tagKeys(w http.ResponseWriter, r *http.Request) {
+	keys, err := h.st.TagKeys(r.Context(), r.URL.Query().Get("project"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": keys})
+}
+
+func (h *handlers) tagValues(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	vals, err := h.st.TagValues(r.Context(), q.Get("project"), r.PathValue("key"), q.Get("prefix"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": vals})
 }
 
 func (h *handlers) stacktrace(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +331,10 @@ func intParam(w http.ResponseWriter, s, name string) (int, bool) {
 }
 
 func (h *handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
+	var qe *search.Error
 	switch {
+	case errors.As(err, &qe):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": qe.Error(), "query_error": qe})
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no encontrado")
 	case errors.Is(err, store.ErrInvalid):

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	mrand "math/rand/v2"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -64,6 +65,7 @@ type Ingester struct {
 	log      *slog.Logger
 	now      func() time.Time
 	random   func() float64
+	hashKey  atomic.Pointer[[]byte]
 }
 
 // NewIngester acepta enricher y notifier nil: entonces no hacen nada.
@@ -261,7 +263,7 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		return res, err
 	}
 	if res.Dropped != "" {
-		return res, nil
+		return res, in.recordTags(ctx, tx, res.IssueID, ev)
 	}
 
 	var eventRow int64
@@ -277,7 +279,7 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 	if err != nil {
 		return res, fmt.Errorf("guardar evento: %w", err)
 	}
-	return res, nil
+	return res, in.recordTags(ctx, tx, res.IssueID, ev)
 }
 
 type lockedIssue struct {

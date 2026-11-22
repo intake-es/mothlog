@@ -1,0 +1,77 @@
+<div class="bar">
+  <label class="field" [class.field--error]="!!errorText()">
+    <svg appIcon="magnifying-glass"></svg>
+    <span class="visually-hidden">{{ t('list.searchLabel') }}</span>
+    <input
+      #input
+      type="text"
+      role="combobox"
+      aria-autocomplete="list"
+      aria-controls="search-suggestions"
+      [attr.aria-expanded]="open() && sections().length > 0"
+      [attr.aria-activedescendant]="active() >= 0 ? 'suggestion-' + active() : null"
+      [attr.aria-invalid]="errorText() ? 'true' : null"
+      [attr.aria-describedby]="errorText() ? 'search-error' : null"
+      spellcheck="false"
+      autocomplete="off"
+      [placeholder]="t('list.search')"
+      [value]="text()"
+      (input)="onInput($any($event.target).value)"
+      (keydown)="onKeydown($event)"
+      (keyup)="syncCaret()"
+      (click)="syncCaret(); open.set(true)"
+      (focus)="onFocus()"
+      (blur)="onBlur()"
+    />
+    @if (pending()) {
+      <kbd class="pending">{{ t('list.pressEnter') }}</kbd>
+    }
+    @if (text()) {
+      <button
+        type="button"
+        class="clear"
+        [attr.aria-label]="t('list.clearSearch')"
+        (mousedown)="$event.preventDefault()"
+        (click)="clear()"
+      >
+        <svg appIcon="x"></svg>
+      </button>
+    }
+  </label>
+
+  @if (errorText()) {
+    <p id="search-error" class="error" role="alert">
+      <svg appIcon="warning-circle"></svg>
+      {{ errorText() }}
+    </p>
+  }
+
+  @if (open() && sections().length) {
+    <div id="search-suggestions" class="suggest" role="listbox" (mousedown)="$event.preventDefault()">
+      @for (s of sections(); track s.title) {
+        <div class="suggest__label">{{ s.title }}</div>
+        @for (item of s.items; track item.text) {
+          <button
+            type="button"
+            role="option"
+            tabindex="-1"
+            class="suggest__item"
+            [id]="'suggestion-' + index(item)"
+            [class.suggest__item--on]="index(item) === active()"
+            [attr.aria-selected]="index(item) === active()"
+            (click)="choose(item)"
+          >
+            <code class="suggest__code">{{ item.label }}</code>
+            @if (item.detail) {
+              <span class="suggest__detail">{{ item.detail }}</span>
+            }
+          </button>
+        }
+        @if (s.hint) {
+          <p class="suggest__hint">{{ s.hint }}</p>
+        }
+      }
+      <p class="suggest__help">{{ t('search.help') }}</p>
+    </div>
+  }
+</div>
