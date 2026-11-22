@@ -207,7 +207,13 @@
               <div class="fact">
                 <dt>{{ t(f.key) }}</dt>
                 @if (f.link) {
-                  <dd class="mono" [attr.title]="f.value"><a class="fact__link" [routerLink]="f.link">{{ f.value }}</a></dd>
+                  <dd [class.mono]="f.mono" [attr.title]="f.title || f.value">
+                    @if (f.settings) {
+                      <a class="fact__link fact__link--settings" [routerLink]="f.link" [attr.aria-label]="t('fact.settings', { project: f.value })">{{ f.value }}<svg appIcon="gear"></svg></a>
+                    } @else {
+                      <a class="fact__link" [routerLink]="f.link">{{ f.value }}</a>
+                    }
+                  </dd>
                 } @else {
                   <dd [class.mono]="f.mono" [attr.title]="f.title || f.value">{{ f.value }}</dd>
                 }

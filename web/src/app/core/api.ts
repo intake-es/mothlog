@@ -211,6 +211,65 @@ export interface ReleaseQuery {
   limit?: number;
 }
 
+export type ActionType = 'slack' | 'linear' | 'email' | 'discord' | 'telegram' | 'ntfy' | 'webhook';
+
+export interface RuleAction {
+  id: string;
+  type: ActionType;
+  url?: string;
+  team_id?: string;
+  label_ids?: string[];
+  to?: string[];
+  bot_token?: string;
+  chat_id?: string;
+  token?: string;
+  secret?: string;
+}
+
+export interface RuleConditions {
+  new: boolean;
+  regressed: boolean;
+  frequency: { events: number; window_minutes: number } | null;
+  users: { users: number } | null;
+  environments: string[];
+  levels: string[];
+  tags: { key: string; value: string }[];
+}
+
+export interface Rule {
+  id: number;
+  project_id: number;
+  name: string;
+  enabled: boolean;
+  conditions: RuleConditions;
+  actions: RuleAction[];
+  throttle_minutes: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type RuleInput = Omit<Rule, 'id' | 'project_id' | 'created_at' | 'updated_at'>;
+
+export interface Filters {
+  messages: string[];
+  exception_types: string[];
+  browser_extensions: boolean;
+  web_crawlers: boolean;
+  localhost: boolean;
+  environments: string[];
+  releases: string[];
+  events_per_issue_per_hour: number | null;
+  sample_rate: number;
+  rate_limit_per_minute: number | null;
+}
+
+export interface DroppedStats {
+  since: string;
+  total: number;
+  reasons: Record<string, number>;
+  daily: { date: string; reason: string; count: number }[];
+}
+
 export interface IssueQuery {
   project?: string;
   status?: StatusFilter;
@@ -306,6 +365,42 @@ export class Api {
 
   setStatus(issueId: number, status: IssueStatus): Observable<Issue> {
     return this.http.post<Issue>(`${BASE}/issues/${issueId}/status`, { status });
+  }
+
+  rules(projectId: number): Observable<Page<Rule>> {
+    return this.http.get<Page<Rule>>(`${BASE}/projects/${projectId}/rules`);
+  }
+
+  createRule(projectId: number, rule: RuleInput): Observable<Rule> {
+    return this.http.post<Rule>(`${BASE}/projects/${projectId}/rules`, rule);
+  }
+
+  updateRule(projectId: number, id: number, rule: RuleInput): Observable<Rule> {
+    return this.http.put<Rule>(`${BASE}/projects/${projectId}/rules/${id}`, rule);
+  }
+
+  deleteRule(projectId: number, id: number): Observable<void> {
+    return this.http.delete<void>(`${BASE}/projects/${projectId}/rules/${id}`);
+  }
+
+  testRule(projectId: number, id: number, actionId: string): Observable<{ ok: boolean }> {
+    return this.http.post<{ ok: boolean }>(`${BASE}/projects/${projectId}/rules/${id}/test`, {
+      action_id: actionId,
+    });
+  }
+
+  filters(projectId: number): Observable<Filters> {
+    return this.http.get<Filters>(`${BASE}/projects/${projectId}/filters`);
+  }
+
+  setFilters(projectId: number, f: Filters): Observable<Filters> {
+    return this.http.patch<Filters>(`${BASE}/projects/${projectId}/filters`, f);
+  }
+
+  dropped(projectId: number, days: number): Observable<DroppedStats> {
+    return this.http.get<DroppedStats>(`${BASE}/projects/${projectId}/dropped`, {
+      params: new HttpParams().set('days', days),
+    });
   }
 }
 

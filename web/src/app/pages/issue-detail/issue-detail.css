@@ -344,6 +344,24 @@
   text-decoration-color: currentColor;
 }
 
+.fact__link--settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-decoration: none;
+}
+
+.fact__link--settings svg {
+  width: 13px;
+  height: 13px;
+  color: var(--text-subtle);
+}
+
+.fact__link--settings:hover,
+.fact__link--settings:hover svg {
+  color: var(--text);
+}
+
 .fact dd.mono {
   font-family: var(--font-mono);
   font-size: 0.76rem;

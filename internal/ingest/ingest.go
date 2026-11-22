@@ -97,8 +97,9 @@ func LimitsOf(f store.Filters) Limits {
 }
 
 type Result struct {
-	IssueID int64
-	Outcome Outcome
+	IssueID   int64
+	ProjectID int64
+	Outcome   Outcome
 	// Duplicate indica que el event_id ya estaba guardado y no se ha contado.
 	Duplicate bool
 	// ResolvedAt es, en una regresión, desde cuándo estaba resuelto el issue.
@@ -146,6 +147,7 @@ func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.E
 		if err != nil {
 			return err
 		}
+		res.ProjectID = projectID
 		if err := in.notifier.IssueChanged(ctx, tx, ev, res); err != nil {
 			return fmt.Errorf("avisar: %w", err)
 		}

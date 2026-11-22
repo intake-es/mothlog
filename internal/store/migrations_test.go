@@ -235,3 +235,59 @@ func TestMigrationReleases(t *testing.T) {
 		t.Fatalf("bajar: %v", err)
 	}
 }
+
+func TestMigrationAlertRules(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 11); err != nil {
+		t.Fatal(err)
+	}
+	var issue int64
+	if err := pool.QueryRow(ctx, `
+		WITH p AS (INSERT INTO projects (name, public_key) VALUES ('web', 'clave-web') RETURNING id)
+		INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		SELECT id, 'fp', 'TypeError', now(), now(), 1 FROM p RETURNING id`).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO alert_outbox (issue_id, channel, kind, event_at) VALUES ($1, 'slack', 'new', now())`, issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 12); err != nil {
+		t.Fatal(err)
+	}
+	var rule int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO alert_rules (project_id, name, conditions, actions)
+		SELECT project_id, 'r', '{"new": true}', '[{"id": "a", "type": "webhook"}]' FROM issues WHERE id = $1 RETURNING id`, issue).Scan(&rule); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO alert_outbox (issue_id, channel, kind, event_at, rule_id, action_id) VALUES ($1, 'webhook', 'frequency', now(), $2, 'a')`, issue, rule); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO alert_outbox (issue_id, channel, kind, event_at) VALUES ($1, 'sms', 'new', now())`, issue); err == nil {
+		t.Error("el canal sms no debería caber")
+	}
+	if _, err := p.DownTo(ctx, 11); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	var n int
+	var channel string
+	if err := pool.QueryRow(ctx, `SELECT count(*), max(channel) FROM alert_outbox`).Scan(&n, &channel); err != nil || n != 1 || channel != "slack" {
+		t.Errorf("tras bajar: %d avisos, %q, %v; quiero solo el de Slack de antes", n, channel, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+}

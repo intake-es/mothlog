@@ -43,8 +43,9 @@ interface Fact {
   value: string;
   title?: string;
   mono?: boolean;
-  /** Enlace a la release, en las de primera, última y resuelto con. */
+  /** Enlace a la release (primera, última y resuelto con) o, con settings, a los ajustes del proyecto. */
   link?: (string | number)[];
+  settings?: boolean;
 }
 
 const STATUS_TOAST: Record<IssueStatus, Key> = {
@@ -154,7 +155,12 @@ export class IssueDetailPage {
     const user = u ? u.email || u.username || u.id || u.ip_address || '' : '';
     const req = e?.request ? [e.request.method, e.request.url].filter(Boolean).join(' ') : '';
     const facts: Fact[] = [
-      { key: 'fact.project', value: d.project },
+      {
+        key: 'fact.project',
+        value: d.project,
+        link: ['/projects', d.project_id, 'settings'],
+        settings: true,
+      },
       { key: 'fact.firstSeen', value: ago(d.first_seen), title: fullDate(d.first_seen) },
       { key: 'fact.lastSeen', value: ago(d.last_seen), title: fullDate(d.last_seen) },
       { key: 'fact.events', value: count(d.count) },

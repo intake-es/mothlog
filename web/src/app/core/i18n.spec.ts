@@ -41,12 +41,17 @@ const ALLOWED = new Set([
   ...['textarea', 'readonly', 'fixed', 'copy', 'system', 'light', 'dark', 'lang', 'theme'],
   ...['user', 'es', 'en', 'login', 'regular', 'duotone', 'start', 'end', 'true', 'false'],
   ...['element', 'UTC'],
-  ...['releases', 'env', 'page', 'new', 'continued', 'stopped'],
+  ...['releases', 'env', 'page', 'new', 'continued', 'stopped', 'issues'],
   // Claves y valores del lenguaje de búsqueda, y las teclas del autocompletado.
   ...['is', 'release', 'environment', 'regressed', 'browser', 'os', 'device', 'runtime'],
   ...['prefix', 'percent', 'input', 'ArrowDown', 'ArrowUp', 'Tab', 'Enter', 'Escape'],
   'os:"Mac OS"',
   '"division by zero"',
+  ...['unit', 'disjunction', 'alerts', 'filters'],
+  ...['slack', 'linear', 'email', 'discord', 'telegram', 'ntfy', 'webhook'],
+  ...['fatal', 'error', 'warning', 'info', 'debug', 'settings', 'page', 'id', 'days', 'ok'],
+  ...['messages', 'environments', 'releases', 'localhost', 'perIssue', 'sample', 'rateLimit'],
+  ...['url', 'labels', 'to', 'token', 'secret', 'sending', '\\n'],
   'fill: currentColor; stroke: none',
 ]);
 

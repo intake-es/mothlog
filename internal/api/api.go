@@ -21,16 +21,19 @@ type Options struct {
 	PublicURL string
 	// Auth envuelve cada ruta. Por defecto, RequireAuth(BearerToken(st)).
 	Auth func(http.Handler) http.Handler
+	// Alerts comprueba y prueba las reglas de aviso; sin él, no se prueban.
+	Alerts Alerts
 }
 
 type handlers struct {
 	st        *store.Store
 	publicURL *url.URL
+	alerts    Alerts
 }
 
 // Register añade las rutas de la API y del MCP a mux.
 func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
-	h := &handlers{st: st}
+	h := &handlers{st: st, alerts: opts.Alerts}
 	if opts.PublicURL != "" {
 		u, err := url.Parse(opts.PublicURL)
 		if err != nil || u.Host == "" {
@@ -51,6 +54,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	}
 	route("GET /api/0/projects/{id}/dropped", h.dropped)
 	route("GET /api/0/projects/{id}/dropped/{$}", h.dropped)
+	h.registerRules(route)
 	route("GET /api/0/issues/{$}", h.issues)
 	route("GET /api/0/issues/{id}/{$}", h.issue)
 	route("GET /api/0/issues/{id}/events/{$}", h.issueEvents)

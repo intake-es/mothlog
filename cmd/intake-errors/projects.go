@@ -14,17 +14,19 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/intake-es/intake-errors/internal/alert"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
 const projectsUsage = "uso: intake-errors projects create <nombre> | projects list | projects labels <nombre> [<id>[,<id>…] | --clear]" +
-	" | projects filters <nombre> [set <clave> [<valor>…]] | projects dropped <nombre> [<días>]"
+	" | projects filters <nombre> [set <clave> [<valor>…]] | projects dropped <nombre> [<días>]" +
+	" | projects rules <nombre> [show|create|edit|delete|test …]"
 
 func projects(cfg config, args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New(projectsUsage)
 	}
-	if !slices.Contains([]string{"labels", "filters", "dropped"}, args[0]) {
+	if !slices.Contains([]string{"labels", "filters", "dropped", "rules"}, args[0]) {
 		if _, err := dsn(cfg.PublicURL, store.Project{}); err != nil {
 			return err
 		}
@@ -73,6 +75,12 @@ func projects(cfg config, args []string, out io.Writer) error {
 		return filtersCommand(ctx, db, args[1:], out)
 	case args[0] == "dropped" && (len(args) == 2 || len(args) == 3):
 		return droppedCommand(ctx, db, args[1:], out)
+	case args[0] == "rules" && len(args) >= 2:
+		alerts, err := alert.New(db, log, cfg.Alerts)
+		if err != nil {
+			return err
+		}
+		return rulesCommand(ctx, db, alerts, args[1:], os.Stdin, out)
 	default:
 		return errors.New(projectsUsage)
 	}

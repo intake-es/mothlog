@@ -389,10 +389,9 @@ describe('IssueDetailPage', () => {
       http.expectOne('/api/0/issues/5/tags/').flush(issueTags());
       await fixture.whenStable();
       const el: HTMLElement = fixture.nativeElement;
-      const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.fact__link')).map((a) => [
-        a.closest('.fact')?.querySelector('dt')?.textContent,
-        a.getAttribute('href'),
-      ]);
+      const links = Array.from(
+        el.querySelectorAll<HTMLAnchorElement>('.fact__link:not(.fact__link--settings)'),
+      ).map((a) => [a.closest('.fact')?.querySelector('dt')?.textContent, a.getAttribute('href')]);
       expect(links).toEqual([
         ['Primera release', '/releases/4/web@1.0.0'],
         ['Última release', '/releases/4/fixture-release-1'],
@@ -465,7 +464,7 @@ describe('IssueDetailPage', () => {
       ]);
       expect(facts['First seen']).toBe('yesterday');
       expect(
-        el.querySelector('.fact__link')?.getAttribute('href'),
+        el.querySelector('.fact__link:not(.fact__link--settings)')?.getAttribute('href'),
         'la última release enlaza a su detalle',
       ).toBe('/releases/4/fixture-release-1');
       expect(facts['Environment']).toBe('production');

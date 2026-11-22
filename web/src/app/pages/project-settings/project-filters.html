@@ -1,0 +1,103 @@
+@if (error()) {
+  <div class="state state--error" role="alert">
+    <svg appIcon="warning-circle" weight="duotone"></svg>
+    <p class="state__title">{{ t('settings.error') }}</p>
+    <p class="state__text">{{ error() }}</p>
+    <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+  </div>
+} @else if (draft(); as d) {
+  <form class="section" (submit)="$event.preventDefault(); save()">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">{{ t('filters.title') }}</h2>
+        <p class="section__lede">{{ t('filters.lede') }}</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <fieldset class="group">
+        <legend class="group__title">{{ t('filters.drop') }}</legend>
+        <div class="group__body">
+          @for (tg of toggles; track tg.field) {
+            <label class="check">
+              <input type="checkbox" class="switch" role="switch" [checked]="d.toggles[tg.field]" (change)="setToggle(tg.field, $any($event.target).checked)" />
+              {{ t(tg.label) }}
+            </label>
+          }
+          <div class="lists">
+            @for (l of lists; track l.field) {
+              <label class="field">
+                <span class="field__label">{{ t(l.label) }}</span>
+                <textarea class="textarea" rows="3" spellcheck="false" [value]="d.lists[l.field]" (input)="setList(l.field, $any($event.target).value)"></textarea>
+                <span class="field__hint">{{ t(l.hint) }}</span>
+              </label>
+            }
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend class="group__title">{{ t('filters.limits') }}</legend>
+        <div class="group__body limits">
+          <label class="field">
+            <span class="field__label">{{ t('filters.perIssue') }}</span>
+            <input class="input" type="number" min="1" [placeholder]="t('filters.default')" [value]="d.perIssue" (input)="set('perIssue', $any($event.target).value)" />
+            <span class="field__hint">{{ t('filters.perIssueHint', { n: defaultPerIssue }) }}</span>
+          </label>
+          <label class="field">
+            <span class="field__label">{{ t('filters.sample') }}</span>
+            <input class="input" type="number" min="0" max="100" step="any" [value]="d.sample" (input)="set('sample', $any($event.target).value)" />
+            <span class="field__hint">{{ t('filters.sampleHint') }}</span>
+          </label>
+          <label class="field">
+            <span class="field__label">{{ t('filters.rateLimit') }}</span>
+            <input class="input" type="number" min="1" [placeholder]="t('filters.default')" [value]="d.rateLimit" (input)="set('rateLimit', $any($event.target).value)" />
+            <span class="field__hint">{{ t('filters.rateLimitHint') }}</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="group foot">
+        @if (saveError()) {
+          <span class="err" role="alert">{{ saveError() }}</span>
+        } @else if (dirty()) {
+          <span class="field__hint">{{ t('settings.unsaved') }}</span>
+        }
+        <button type="submit" class="btn btn--primary foot__save" [disabled]="busy() || !dirty()">
+          {{ busy() ? t('editor.saving') : t('filters.save') }}
+        </button>
+      </div>
+    </div>
+  </form>
+
+  <section class="section">
+    <div class="section__head">
+      <div>
+        <h2 class="section__title">{{ t('dropped.title') }}</h2>
+        @if (dropped(); as st) {
+          <p class="section__lede">{{ st.total ? droppedTotal() : t('dropped.none', { days: days() }) }}</p>
+        }
+      </div>
+      <app-pick class="period" icon="calendar-blank" align="end" [label]="t('dropped.period')" [options]="periodOptions()" [value]="'' + days()" (changed)="setDays($event)" />
+    </div>
+    @if (droppedRows().length) {
+      <ul class="card drops" role="list">
+        @for (r of droppedRows(); track r.reason) {
+          <li class="drop">
+            <span class="drop__label">{{ r.label }}</span>
+            <span class="drop__bar"><span [style.width]="r.width"></span></span>
+            <span class="drop__count tnum">{{ r.count }}</span>
+          </li>
+        }
+      </ul>
+    }
+  </section>
+} @else {
+  <div class="card group" aria-busy="true" [attr.aria-label]="t('settings.loading')">
+    <span class="sp-skeleton" style="width: 40%; height: 0.8rem"></span>
+  </div>
+}
+
+@if (toast()) {
+  <div class="toast" role="status">{{ toast() }}</div>
+}

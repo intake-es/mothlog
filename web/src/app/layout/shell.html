@@ -6,8 +6,8 @@
   <a
     class="rail__nav"
     routerLink="/"
-    [class.rail__nav--on]="!onReleases()"
-    [attr.aria-current]="onReleases() ? null : 'page'"
+    [class.rail__nav--on]="section() === 'issues'"
+    [attr.aria-current]="section() === 'issues' ? 'page' : null"
     [attr.aria-label]="t('nav.issues')"
     [attr.title]="t('nav.issues')"
   >
@@ -16,12 +16,22 @@
   <a
     class="rail__nav"
     routerLink="/releases"
-    [class.rail__nav--on]="onReleases()"
-    [attr.aria-current]="onReleases() ? 'page' : null"
+    [class.rail__nav--on]="section() === 'releases'"
+    [attr.aria-current]="section() === 'releases' ? 'page' : null"
     [attr.aria-label]="t('nav.releases')"
     [attr.title]="t('nav.releases')"
   >
     <svg appIcon="package"></svg>
+  </a>
+  <a
+    class="rail__nav"
+    routerLink="/settings"
+    [class.rail__nav--on]="section() === 'settings'"
+    [attr.aria-current]="section() === 'settings' ? 'page' : null"
+    [attr.aria-label]="t('shell.settings')"
+    [attr.title]="t('shell.settings')"
+  >
+    <svg appIcon="gear"></svg>
   </a>
 
   <div class="rail__slot rail__slot--env">

@@ -1,0 +1,104 @@
+<section class="section">
+  <div class="section__head">
+    <div>
+      <h2 class="section__title">{{ t('rules.title') }}</h2>
+      <p class="section__lede">{{ t('rules.lede') }}</p>
+    </div>
+    @if (rules() !== null && editing() !== 0) {
+      <button type="button" class="btn btn--primary" (click)="edit(0)">
+        <svg appIcon="plus"></svg>
+        {{ t('rules.new') }}
+      </button>
+    }
+  </div>
+
+  @if (rules() === null) {
+    <div class="card group" aria-busy="true" [attr.aria-label]="t('settings.loading')">
+      <span class="sp-skeleton" style="width: 40%; height: 0.8rem"></span>
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('settings.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+    </div>
+  } @else {
+    @if (rules()?.length === 0 && editing() === null) {
+      <div class="note">
+        <svg appIcon="bell"></svg>
+        <div>
+          <p class="note__title">{{ t('rules.default.title') }}</p>
+          <p class="note__text">{{ t('rules.default.text') }}</p>
+        </div>
+      </div>
+    }
+    @if (allOff()) {
+      <div class="note">
+        <svg appIcon="bell-slash"></svg>
+        <p class="note__text">{{ t('rules.allOff') }}</p>
+      </div>
+    }
+
+    @if (editing() === 0) {
+      <app-rule-editor class="editor" [projectId]="projectId()" [rule]="null" (saved)="saved($event)" (cancelled)="editing.set(null)" />
+    }
+
+    @if (rows().length) {
+      <ul class="card rules" role="list">
+        @for (row of rows(); track row.rule.id) {
+          <li class="rule" [class.rule--open]="editing() === row.rule.id">
+            <div class="rule__line">
+              <input
+                type="checkbox"
+                class="switch"
+                role="switch"
+                [checked]="row.rule.enabled"
+                [attr.aria-label]="row.rule.name"
+                (change)="toggle(row.rule, $any($event.target).checked)"
+              />
+              <button type="button" class="rule__main" [attr.aria-expanded]="editing() === row.rule.id" [attr.aria-label]="t('rules.editNamed', { name: row.rule.name })" (click)="edit(row.rule.id)">
+                <span class="rule__name">
+                  {{ row.rule.name }}
+                  @if (!row.rule.enabled) {
+                    <span class="sp-badge sp-badge--sm sp-badge--gray">{{ t('rules.off') }}</span>
+                  }
+                </span>
+                <span class="rule__summary">{{ row.summary }}</span>
+              </button>
+              <span class="rule__actions">
+                @for (a of row.rule.actions; track a.id) {
+                  <span class="rule__action" [attr.title]="t($any('action.' + a.type))">
+                    <svg [appIcon]="icons[a.type]"></svg>
+                  </span>
+                }
+              </span>
+              <button type="button" class="icon-btn" [attr.aria-label]="t('rules.editNamed', { name: row.rule.name })" (click)="edit(row.rule.id)">
+                <svg [appIcon]="editing() === row.rule.id ? 'caret-down' : 'caret-right'"></svg>
+              </button>
+            </div>
+            @if (row.every && editing() !== row.rule.id) {
+              <p class="rule__every">{{ row.every }}</p>
+            }
+            @if (editing() === row.rule.id) {
+              <app-rule-editor
+                class="editor editor--inline"
+                [projectId]="projectId()"
+                [rule]="row.rule"
+                [secret]="revealed()?.rule === row.rule.id ? revealed()!.secret : ''"
+                (dismissed)="revealed.set(null)"
+                (saved)="saved($event)"
+                (deleted)="deleted($event)"
+                (cancelled)="editing.set(null)"
+              />
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+</section>
+
+@if (toast()) {
+  <div class="toast" role="status">{{ toast() }}</div>
+}

@@ -1,0 +1,91 @@
+:host {
+  display: block;
+}
+
+.editor {
+  display: block;
+}
+
+.rules {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rule + .rule {
+  border-top: 1px solid var(--border);
+}
+
+.rule__line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.75rem 0.75rem 1rem;
+}
+
+.rule__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.rule__name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.rule__summary {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rule__actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.rule__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.rule__action svg {
+  width: 14px;
+  height: 14px;
+}
+
+.rule__every {
+  margin: -0.4rem 0 0.7rem calc(1rem + 30px + 0.75rem);
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+}
+
+.editor--inline {
+  border-top: 1px solid var(--border);
+}
+
+.note + .note,
+.note + .editor,
+.note + .rules,
+.editor + .rules {
+  margin-top: 0.75rem;
+}

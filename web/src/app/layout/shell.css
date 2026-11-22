@@ -15,6 +15,7 @@
 }
 
 .rail__brand,
+.rail__nav,
 .rail__btn {
   display: inline-flex;
   align-items: center;
@@ -71,6 +72,8 @@
 
 .rail__brand:hover,
 .rail__btn:hover,
+.rail__nav:hover,
+.rail__nav--on,
 .rail__btn[aria-expanded='true'] {
   background: var(--bg-hover);
   color: var(--text);

@@ -28,6 +28,8 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `LINEAR_TEAM_ID` | equipo de Linear donde se crean las issues | obligatoria con `LINEAR_API_KEY` |
 | `LINEAR_LABEL_IDS` | ids de etiquetas de Linear para todas las issues, separados por comas | vacío |
 | `LINEAR_API_URL` | endpoint GraphQL de Linear; solo para probar contra uno falso | `https://api.linear.app/graphql` |
+| `SMTP_URL` | servidor de correo de las reglas que avisan por correo: `smtp://usuario:clave@host:587` (STARTTLS si el servidor lo ofrece) o `smtps://…:465` | vacío: sin correo |
+| `SMTP_FROM` | remitente de esos correos, como `intake-errors <avisos@ejemplo.com>` | obligatoria con `SMTP_URL` |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |
 | `GITHUB_ORG` | org cuyos miembros activos pueden entrar | vacía |
 | `SESSION_SECRET` | firma la cookie de sesión; 32 caracteres o más, obligatoria con GitHub | vacía |
@@ -72,18 +74,87 @@ intake-errors projects labels backend --clear         # las quita
 intake-errors projects filters backend                # enseña sus filtros, el tope por issue y el muestreo
 intake-errors projects filters backend set <clave> [<valor>…]   # cambia uno; ver Filtros, tope y muestreo
 intake-errors projects dropped backend [<días>]       # lo descartado por motivo, 30 días por defecto
+intake-errors projects rules backend [<orden> …]      # sus reglas de aviso; ver Reglas de aviso
 ```
 
 Las issues de Linear de un proyecto llevan dos grupos de etiquetas: las de `LINEAR_LABEL_IDS`, que llevan las issues de todos los proyectos, y las propias del proyecto, que se ponen con `projects labels` y sirven para lo que cada uno quiera (el equipo que se encarga, una prioridad, que las recoja otro servicio…). Los ids son los de Linear, no los nombres de las etiquetas.
 
 ## Avisos
 
-Un error nuevo, o una regresión (un evento que reabre un issue resuelto), avisa en cada canal configurado. Un evento más de un issue abierto no avisa.
+Un proyecto sin [reglas de aviso](#reglas-de-aviso) avisa así: un error nuevo, o una regresión (un evento que reabre un issue resuelto), avisa en cada canal configurado con las variables de entorno. Un evento más de un issue abierto no avisa.
 
 - **Slack**: un mensaje de Block Kit con el tipo de aviso, el proyecto y el entorno (y, en una regresión, cuándo se resolvió); el error; la línea que falla (el fotograma propio más cercano al error del último evento, con su línea de código); el release, el espacio (`organization_name` u `organization_id`), el número de eventos en una regresión y el id del usuario o la petición sin query string; y botones a `<PUBLIC_URL>/issues/<id>` y a la issue de Linear. Si hay Linear, el aviso de Slack espera hasta 2 minutos a que se envíe el de Linear para llevar su botón.
 - **Linear**: con un error nuevo, una issue `[<proyecto>] <título>` en `LINEAR_TEAM_ID` con las etiquetas de `LINEAR_LABEL_IDS` más las del proyecto, sin repetir; su descripción es el enlace a la interfaz y el Markdown de `stacktrace.md`. Con una regresión, esa misma issue vuelve al primer estado de tipo `unstarted` del equipo (sea cual sea su nombre), recibe las etiquetas del proyecto que le falten y un comentario con el release y la fecha; si se ha borrado en Linear, se crea otra. Hay una issue de Linear por error.
 
 La ingesta deja los avisos en `alert_outbox` dentro de su transacción, así que un evento que no se guarda no avisa, y si encolar falla, el evento se guarda igual. Cada 5 segundos se envía lo pendiente; cada réplica coge filas con `FOR UPDATE SKIP LOCKED`, así que ninguna manda lo que ya está mandando otra, y los avisos de un mismo issue y canal salen en orden. Si un envío falla se reintenta al cabo de 1 min, 5 min, 30 min, 2 h, 6 h, 12 h y luego cada 24 h; tras 10 intentos se abandona, con el último error en `last_error`.
+
+### Reglas de aviso
+
+Con reglas, el proyecto deja de avisar como arriba y avisa de lo que digan sus reglas, a donde digan; si todas están desactivadas, no avisa. Se editan en la interfaz (Ajustes del proyecto → Avisos), con la API o con la CLI. Una regla salta cuando se cumple alguna de sus condiciones y todos sus filtros:
+
+- **Condiciones**: error nuevo (`new`), regresión (`regressed`), más de N eventos en una ventana de hasta 24 h (`frequency`, contando también los eventos que no se guardan por el tope o el muestreo) y más de N usuarios afectados (`users`). Las dos últimas cuentan, por regla, solo los eventos que pasan sus filtros, y avisan una vez por cruce: la primera vez que se pueda (fuera del límite de la regla) mientras siga por encima del umbral; la frecuencia vuelve a avisar cuando baja del umbral y lo pasa otra vez. Un issue silenciado no avisa.
+- **Filtros**: entornos, niveles (`fatal`, `error`, `warning`, `info`, `debug`) y etiquetas, con valor o solo con que estén.
+- **Acciones**: Slack (su webhook), Linear (equipo y etiquetas; sin ellos, `LINEAR_TEAM_ID` y `LINEAR_LABEL_IDS`; con `LINEAR_API_KEY`), correo (`SMTP_URL`), Discord (su webhook), Telegram (token del bot y chat), ntfy (URL del tema y, si lo pide, token) y el webhook genérico. Los avisos de Slack y Linear son como los de arriba; en Linear, la frecuencia y los usuarios comentan en la issue sin cambiar su estado.
+- **Límite**: `throttle_minutes`, lo menos que pasa entre dos avisos de la misma regla por el mismo issue.
+
+Todo sale por `alert_outbox`, con los mismos reintentos. Cada réplica recuerda 30 segundos si un proyecto tiene reglas, para no consultarlo con cada evento: lo que se guarda por la API de esa réplica vale al momento, y lo de otra réplica o de la CLI, en 30 segundos como mucho. «Probar» manda en el momento, sin pasar por la tabla, un aviso de prueba por una acción de la regla guardada. Las URL de los webhooks y de los temas de ntfy y los tokens no se devuelven enteros: al editar, dejarlos como llegan (o vacíos) los conserva. El secreto del webhook genérico, si no se pone, se genera y se devuelve entero solo al guardar.
+
+`users` cuenta, de momento, los usuarios distintos (id, correo, nombre o IP) desde que existe la regla, no los de antes; cuando cada issue lleve su cuenta de usuarios afectados, usará esa.
+
+```sh
+intake-errors projects rules backend                          # lista las reglas
+intake-errors projects rules backend create regla.json        # o - para leerla de stdin
+intake-errors projects rules backend edit <id> regla.json
+intake-errors projects rules backend test <id> [<acción>]     # aviso de prueba por una acción o por todas
+intake-errors projects rules backend delete <id>
+```
+
+```json
+{
+  "name": "Pagos en producción",
+  "conditions": {"new": true, "regressed": true, "frequency": {"events": 100, "window_minutes": 10},
+                 "environments": ["production"], "tags": [{"key": "area", "value": "pagos"}]},
+  "actions": [{"type": "webhook", "url": "https://agente.ejemplo.com/avisos"},
+              {"type": "email", "to": ["guardia@ejemplo.com"]}],
+  "throttle_minutes": 30
+}
+```
+
+#### El webhook genérico
+
+Un `POST` con `Content-Type: application/json`:
+
+```json
+{
+  "type": "new",
+  "delivery": "outbox-812",
+  "sent_at": "2026-11-21T10:00:00Z",
+  "rule": {"id": 3, "name": "Pagos en producción"},
+  "project": "backend",
+  "issue": {"id": 42, "title": "TypeError: …", "culprit": "…", "level": "error", "status": "open", "count": 1,
+            "first_seen": "…", "last_seen": "…", "url": "https://errores.ejemplo.com/issues/42"},
+  "event": {"event_id": "…", "timestamp": "…", "level": "error", "release": "…", "environment": "production",
+            "error": "TypeError: …", "location": "app/pagos.py:88 en cobrar", "user": "…", "request": "POST /pagos", "tags": {}},
+  "trigger": {"events": 100, "window_minutes": 10},
+  "markdown": "# TypeError: …"
+}
+```
+
+`type` es `new`, `regressed`, `frequency`, `users` o `test`; `trigger` solo va en `frequency` y `users`, y `resolved_at` en las regresiones; `markdown` es el `stacktrace.md`, listo para un agente; `delivery` es el mismo en los reintentos de un aviso. Lo acompañan `X-Intake-Errors-Event` (el tipo), `X-Intake-Errors-Delivery` y `X-Intake-Errors-Signature: t=<segundos Unix>,v1=<firma>`, donde la firma es el HMAC-SHA256 en hexadecimal, con el secreto de la acción, de `<t>.<cuerpo>`. Para comprobarla, con el cuerpo tal cual llega, sin volver a serializarlo:
+
+```python
+import hashlib, hmac, time
+
+def firma_valida(secreto: str, cabecera: str, cuerpo: bytes, margen: int = 300) -> bool:
+    partes = dict(p.split("=", 1) for p in cabecera.split(","))
+    t, v1 = partes.get("t", ""), partes.get("v1", "")
+    if not t.isdigit() or abs(time.time() - int(t)) > margen:
+        return False  # sin fecha o demasiado vieja: puede ser una repetición
+    esperada = hmac.new(secreto.encode(), f"{t}.".encode() + cuerpo, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(esperada, v1)
+```
+
+Un 2xx da el aviso por entregado; otra respuesta o ninguna en 15 segundos, por fallido, y se reintenta.
 
 ## API y MCP
 
@@ -123,6 +194,9 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_tags`, `get_stacktr
 | `GET /api/0/projects/{id}/filters` | los filtros, el tope por issue, el muestreo y el límite por minuto del proyecto |
 | `PATCH /api/0/projects/{id}/filters` | cambia los campos que trae el cuerpo, con los mismos nombres; `null` en un número vuelve a su valor por defecto; 400 con un valor no válido |
 | `GET /api/0/projects/{id}/dropped?days=` | lo descartado en los últimos `days` días (30 por defecto, hoy incluido): `total`, `reasons` con cada motivo y `daily` por día y motivo |
+| `GET`, `POST /api/0/projects/{id}/rules` | sus reglas de aviso, con los secretos tapados; crea una (201) |
+| `GET`, `PUT`, `DELETE /api/0/projects/{id}/rules/{rule}` | una regla; la sustituye entera; la borra (204) |
+| `POST /api/0/projects/{id}/rules/{rule}/test` | con `{"action_id": "..."}`, manda un aviso de prueba por esa acción; 502 con el error si el destino falla |
 
 Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
 

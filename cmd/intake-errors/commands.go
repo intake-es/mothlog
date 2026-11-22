@@ -24,6 +24,7 @@ const usage = `uso:
   intake-errors projects filters <nombre> set <clave> [<valor>…]  cambia uno
   intake-errors projects dropped <nombre> [<días>]  cuenta lo descartado por motivo (30 días por defecto)
   intake-errors releases new <proyecto> <versión> [--env <entorno>]  crea la release y, con --env, apunta un despliegue
+  intake-errors projects rules <nombre> [<orden> …]  lista, crea, edita, borra y prueba sus reglas de aviso
   intake-errors tokens create <nombre>  crea un token de la API y lo imprime una sola vez
   intake-errors tokens list             lista los tokens
   intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre`

@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -25,7 +24,6 @@ const maxLinearTitle = 255
 
 type linear struct {
 	st       *store.Store
-	base     string
 	endpoint string
 	key      string
 	client   *http.Client
@@ -46,11 +44,20 @@ type linearRef struct {
 	URL        string
 }
 
+// send crea la issue de Linear o, si ya hay una, la reabre en una regresión y
+// la comenta en el resto de avisos. tx es nil en los avisos de prueba.
 func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
+	if p.linear != "" && p.kind == "new" {
+		return nil
+	}
 	var is linearRef
 	var err error
 	if p.linear != "" {
-		is, err = l.reopen(ctx, p)
+		if p.kind == "regressed" {
+			is, err = l.reopen(ctx, p)
+		} else {
+			is, err = l.commentOnly(ctx, p)
+		}
 		if err != nil && !errors.Is(err, errLinearNotFound) {
 			return err
 		}
@@ -59,6 +66,9 @@ func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
 		if is, err = l.create(ctx, p); err != nil {
 			return err
 		}
+	}
+	if tx == nil {
+		return nil
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE issues SET linear_issue_id = $2,
@@ -79,12 +89,12 @@ func (l *linear) labelIDs(p *pending) []string {
 }
 
 func (l *linear) create(ctx context.Context, p *pending) (linearRef, error) {
-	d, err := l.st.IssueDetail(ctx, p.issueID, time.Now())
+	d, err := issueDetail(ctx, l.st, p)
 	if err != nil {
-		return linearRef{}, fmt.Errorf("leer issue %d: %w", p.issueID, err)
+		return linearRef{}, err
 	}
 	var desc strings.Builder
-	if link := issueLink(l.base, p.issueID); link != "" {
+	if link := p.link; link != "" {
 		fmt.Fprintf(&desc, "[Ver en intake-errors](%s)\n\n", link)
 	}
 	desc.WriteString(markdown.Issue(d))
@@ -158,13 +168,29 @@ func (l *linear) reopenAndComment(ctx context.Context, p *pending) error {
 		return err
 	}
 
-	body := fmt.Sprintf("Ha vuelto a ocurrir: release %s, %s.",
-		orNone(p.release, "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
-	if link := issueLink(l.base, p.issueID); link != "" {
+	return l.comment(ctx, p, "Ha vuelto a ocurrir")
+}
+
+func (l *linear) commentOnly(ctx context.Context, p *pending) (linearRef, error) {
+	is, found, _, err := l.lookup(ctx, p.linear)
+	if err != nil {
+		return is, err
+	}
+	if !found {
+		return is, errLinearNotFound
+	}
+	what, _ := kindText(p)
+	return is, l.comment(ctx, p, what)
+}
+
+func (l *linear) comment(ctx context.Context, p *pending, what string) error {
+	body := fmt.Sprintf("%s: release %s, %s.",
+		what, orNone(p.release, "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
+	if link := p.link; link != "" {
 		body += fmt.Sprintf("\n\n[Ver en intake-errors](%s)", link)
 	}
 	var com struct{ CommentCreate struct{ Success bool } }
-	err = l.do(ctx, `mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success } }`,
+	err := l.do(ctx, `mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success } }`,
 		map[string]any{"input": map[string]any{"issueId": p.linear, "body": body}}, &com)
 	if err != nil {
 		return err

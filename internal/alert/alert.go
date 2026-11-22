@@ -1,10 +1,12 @@
-// Package alert avisa en Slack y Linear de los errores nuevos y las
-// regresiones. La ingesta deja los avisos en alert_outbox, en su misma
+// Package alert avisa de los errores. Sin reglas, un proyecto avisa en Slack y
+// Linear de los errores nuevos y las regresiones; con reglas, de lo que digan y
+// a donde digan. La ingesta deja los avisos en alert_outbox, en su misma
 // transacción, y un bucle los envía y reintenta.
 package alert
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -45,6 +48,12 @@ type Options struct {
 	LinearAPIURL   string
 	LinearTeamID   string
 	LinearLabelIDs []string
+	// SMTPURL es smtp://usuario:clave@host:puerto (STARTTLS si el servidor lo
+	// ofrece) o smtps:// (TLS desde el principio). SMTPFrom es el remitente.
+	SMTPURL  string
+	SMTPFrom string
+	// TelegramAPIURL vacío es la API de Telegram.
+	TelegramAPIURL string
 	Interval       time.Duration
 	HTTPClient     *http.Client
 }
@@ -57,7 +66,33 @@ type Alerter struct {
 	// order fija el orden en que se encolan los canales.
 	order []string
 	now   func() time.Time
+
+	base           string
+	client         *http.Client
+	linearKey      string
+	linearEndpoint string
+	linearTeam     string
+	linearLabels   []string
+	smtp           *smtpConfig
+	telegramAPI    string
+
+	mu      sync.Mutex
+	linears map[string]*linear
+
+	rulesMu sync.Mutex
+	// hasRules dice, por proyecto, si tiene reglas y desde cuándo se sabe.
+	hasRules map[int64]rulesSeen
 }
+
+type rulesSeen struct {
+	has bool
+	at  time.Time
+}
+
+// RulesCacheTTL es cuánto se fía el Alerter de si un proyecto tiene reglas.
+// Las que se guardan por la API de esta réplica valen al momento; las de
+// otra réplica o de la CLI, como mucho pasado este tiempo.
+const RulesCacheTTL = 30 * time.Second
 
 type sender interface {
 	send(ctx context.Context, tx pgx.Tx, a *pending) error
@@ -73,6 +108,15 @@ type pending struct {
 	createID    string
 	resolvedAt  *time.Time
 
+	// ruleID es 0 en los avisos sin regla.
+	ruleID   int64
+	ruleName string
+	actionID string
+	detail   ruleDetail
+	link     string
+	ev       *event.Event
+	issue    *store.IssueDetail
+
 	project          string
 	labels           []string
 	title            string
@@ -84,31 +128,41 @@ type pending struct {
 }
 
 func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
-	a := &Alerter{st: st, log: log, interval: o.Interval, channels: map[string]sender{}, now: time.Now}
+	a := &Alerter{st: st, log: log, interval: o.Interval, channels: map[string]sender{}, now: time.Now,
+		linears: map[string]*linear{}, hasRules: map[int64]rulesSeen{}}
 	if a.interval <= 0 {
 		a.interval = DefaultInterval
 	}
-	base := strings.TrimRight(o.PublicURL, "/")
-	client := o.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+	a.base = strings.TrimRight(o.PublicURL, "/")
+	a.client = o.HTTPClient
+	if a.client == nil {
+		a.client = &http.Client{Timeout: 15 * time.Second}
+	}
+	a.linearKey, a.linearTeam, a.linearLabels = o.LinearAPIKey, o.LinearTeamID, o.LinearLabelIDs
+	a.linearEndpoint = o.LinearAPIURL
+	if a.linearEndpoint == "" {
+		a.linearEndpoint = LinearEndpoint
+	}
+	a.telegramAPI = strings.TrimRight(o.TelegramAPIURL, "/")
+	if a.telegramAPI == "" {
+		a.telegramAPI = TelegramEndpoint
+	}
+	if o.SMTPURL != "" {
+		c, err := parseSMTP(o.SMTPURL, o.SMTPFrom)
+		if err != nil {
+			return nil, err
+		}
+		a.smtp = c
 	}
 	if o.SlackWebhookURL != "" {
-		a.channels[channelSlack] = &slack{st: st, url: o.SlackWebhookURL, client: client, base: base}
+		a.channels[channelSlack] = &slack{url: o.SlackWebhookURL, client: a.client}
 		a.order = append(a.order, channelSlack)
 	}
 	if o.LinearAPIKey != "" {
 		if o.LinearTeamID == "" {
 			return nil, errors.New("con LINEAR_API_KEY hace falta LINEAR_TEAM_ID")
 		}
-		endpoint := o.LinearAPIURL
-		if endpoint == "" {
-			endpoint = LinearEndpoint
-		}
-		a.channels[channelLinear] = &linear{
-			st: st, base: base, endpoint: endpoint, key: o.LinearAPIKey, client: client,
-			team: o.LinearTeamID, labels: o.LinearLabelIDs,
-		}
+		a.channels[channelLinear] = a.linearFor(o.LinearTeamID, o.LinearLabelIDs)
 		a.order = append(a.order, channelLinear)
 	}
 	return a, nil
@@ -117,33 +171,37 @@ func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 // Channels dice qué canales están configurados, en el orden en que se encolan.
 func (a *Alerter) Channels() []string { return append([]string(nil), a.order...) }
 
-// IssueChanged encola un aviso por canal si el issue es nuevo o ha vuelto.
-// Si falla, lo registra y deja seguir a la ingesta.
+// IssueChanged encola los avisos del evento: los de las reglas del proyecto o,
+// si no tiene ninguna, uno por canal si el issue es nuevo o ha vuelto. Si
+// falla, lo registra y deja seguir a la ingesta.
 func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
 	issueID := res.IssueID
-	if res.Outcome == ingest.Unchanged || len(a.order) == 0 {
+	if issueID == 0 {
 		return nil
+	}
+	// Sin reglas, como siempre: un evento que no cambia el issue no toca la base.
+	if res.ProjectID != 0 {
+		has, err := a.projectHasRules(ctx, tx, res.ProjectID)
+		if err != nil {
+			a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
+			return nil
+		}
+		if !has && (res.Outcome == ingest.Unchanged || len(a.order) == 0) {
+			return nil
+		}
 	}
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
 		return nil
 	}
-	ids := map[string]int64{}
-	for _, ch := range a.order {
-		var id int64
-		err = sp.QueryRow(ctx, `
-			INSERT INTO alert_outbox (issue_id, channel, kind, release, environment, event_at, resolved_at, next_attempt_at, created_at)
-			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $8)
-			RETURNING id`,
-			issueID, ch, res.Outcome.String(), ev.Release, ev.Environment, ev.Timestamp, res.ResolvedAt, a.now().UTC()).Scan(&id)
-		if err != nil {
-			break
+	rules, err := store.RulesOfIssue(ctx, sp, issueID)
+	if err == nil {
+		if len(rules) > 0 {
+			err = a.applyRules(ctx, sp, rules, ev, res)
+		} else {
+			err = a.enqueueDefault(ctx, sp, ev, res)
 		}
-		ids[ch] = id
-	}
-	if slackID, linearID := ids[channelSlack], ids[channelLinear]; err == nil && slackID != 0 && linearID != 0 {
-		_, err = sp.Exec(ctx, `UPDATE alert_outbox SET waits_for = $2 WHERE id = $1`, slackID, linearID)
 	}
 	if err == nil {
 		err = sp.Commit(ctx)
@@ -155,11 +213,72 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, 
 	return nil
 }
 
+// projectHasRules lo pregunta a la base como mucho una vez cada RulesCacheTTL
+// por proyecto. Va por la transacción de la ingesta, en un savepoint para que
+// un fallo no la tumbe: pedir otra conexión al pool con ella abierta puede
+// dejar la ingesta esperando cuando todas las conexiones están en uso.
+func (a *Alerter) projectHasRules(ctx context.Context, tx pgx.Tx, projectID int64) (bool, error) {
+	now := time.Now()
+	a.rulesMu.Lock()
+	seen, ok := a.hasRules[projectID]
+	a.rulesMu.Unlock()
+	if ok && now.Sub(seen.at) < RulesCacheTTL {
+		return seen.has, nil
+	}
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	var has bool
+	if err := sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1)`,
+		projectID).Scan(&has); err != nil {
+		_ = sp.Rollback(ctx)
+		return false, err
+	}
+	if err := sp.Commit(ctx); err != nil {
+		return false, err
+	}
+	a.rulesMu.Lock()
+	a.hasRules[projectID] = rulesSeen{has: has, at: now}
+	a.rulesMu.Unlock()
+	return has, nil
+}
+
+// RulesChanged olvida lo que se sabía de las reglas del proyecto: se llama al
+// crearlas, editarlas o borrarlas.
+func (a *Alerter) RulesChanged(projectID int64) {
+	a.rulesMu.Lock()
+	defer a.rulesMu.Unlock()
+	delete(a.hasRules, projectID)
+}
+
+// enqueueDefault es el aviso de un proyecto sin reglas.
+func (a *Alerter) enqueueDefault(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
+	if res.Outcome == ingest.Unchanged || len(a.order) == 0 {
+		return nil
+	}
+	ids := map[string]int64{}
+	for _, ch := range a.order {
+		var id int64
+		err := tx.QueryRow(ctx, `
+			INSERT INTO alert_outbox (issue_id, channel, kind, release, environment, event_at, resolved_at, next_attempt_at, created_at)
+			VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7, $8, $8)
+			RETURNING id`,
+			res.IssueID, ch, res.Outcome.String(), ev.Release, ev.Environment, ev.Timestamp, res.ResolvedAt, a.now().UTC()).Scan(&id)
+		if err != nil {
+			return err
+		}
+		ids[ch] = id
+	}
+	if slackID, linearID := ids[channelSlack], ids[channelLinear]; slackID != 0 && linearID != 0 {
+		_, err := tx.Exec(ctx, `UPDATE alert_outbox SET waits_for = $2 WHERE id = $1`, slackID, linearID)
+		return err
+	}
+	return nil
+}
+
 // Run envía lo pendiente cada Interval hasta que se cancela ctx.
 func (a *Alerter) Run(ctx context.Context) {
-	if len(a.order) == 0 {
-		return
-	}
 	t := time.NewTicker(a.interval)
 	defer t.Stop()
 	for {
@@ -199,29 +318,40 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	var p pending
 	var channel string
 	var attempts int
-	// El primer NOT EXISTS mantiene el orden por issue y canal: una regresión
-	// no se manda antes de que se mande (o se abandone) el aviso de error nuevo.
-	// El segundo hace que Slack espere a Linear, como mucho SlackWaitsForLinear.
+	var ruleID *int64
+	var detail []byte
+	// El primer NOT EXISTS mantiene el orden por issue y canal (y regla y
+	// acción): una regresión no se manda antes de que se mande (o se abandone)
+	// el aviso de error nuevo. El segundo hace que Slack espere a Linear, como
+	// mucho SlackWaitsForLinear. Los avisos sin regla solo salen por los canales
+	// configurados.
 	err = tx.QueryRow(ctx, `
 		SELECT o.id, o.issue_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
-			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts
+			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail
 		FROM alert_outbox o
 		WHERE o.sent_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= $1
-			AND o.channel = ANY($2)
+			AND (o.rule_id IS NOT NULL OR o.channel = ANY($2))
 			AND NOT EXISTS (SELECT 1 FROM alert_outbox b
 				WHERE b.issue_id = o.issue_id AND b.channel = o.channel AND b.id < o.id
+					AND b.rule_id IS NOT DISTINCT FROM o.rule_id AND b.action_id IS NOT DISTINCT FROM o.action_id
 					AND b.sent_at IS NULL AND b.failed_at IS NULL)
 			AND NOT (o.created_at > $3 AND EXISTS (SELECT 1 FROM alert_outbox w
 				WHERE w.id = o.waits_for AND w.sent_at IS NULL AND w.failed_at IS NULL))
 		ORDER BY o.next_attempt_at, o.id
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, now, a.order, now.Add(-SlackWaitsForLinear)).
-		Scan(&p.id, &p.issueID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID, &attempts)
+		Scan(&p.id, &p.issueID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
+			&attempts, &ruleID, &p.actionID, &detail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("coger aviso: %w", err)
+	}
+	if len(detail) > 0 {
+		if err := json.Unmarshal(detail, &p.detail); err != nil {
+			return false, fmt.Errorf("aviso %d: %w", p.id, err)
+		}
 	}
 	err = tx.QueryRow(ctx, `
 		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
@@ -232,14 +362,32 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("leer issue %d: %w", p.issueID, err)
 	}
+	p.link = issueLink(a.base, p.issueID)
 
-	sendErr := a.channels[channel].send(ctx, tx, &p)
+	var snd sender
+	var sendErr error
+	if ruleID == nil {
+		snd = a.channels[channel]
+	} else {
+		p.ruleID = *ruleID
+		snd, sendErr = a.ruleSender(ctx, tx, &p)
+	}
+	if sendErr == nil {
+		if latest, err := a.st.LatestEvent(ctx, p.issueID); err != nil {
+			sendErr = err
+		} else if latest != nil {
+			p.ev = &latest.Event
+		}
+	}
+	if sendErr == nil {
+		sendErr = snd.send(ctx, tx, &p)
+	}
 	attempts++
 	switch {
 	case sendErr == nil:
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, sent_at = $3, last_error = NULL WHERE id = $1`,
 			p.id, attempts, a.now().UTC())
-	case attempts >= MaxAttempts:
+	case attempts >= MaxAttempts || errors.Is(sendErr, errGone):
 		a.log.ErrorContext(ctx, "aviso abandonado", "canal", channel, "issue", p.issueID, "intentos", attempts, "err", sendErr)
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, failed_at = $3, last_error = $4 WHERE id = $1`,
 			p.id, attempts, a.now().UTC(), sendErr.Error())
@@ -256,9 +404,22 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("guardar aviso %d: %w", p.id, err)
 	}
 	if sendErr == nil {
-		a.log.InfoContext(ctx, "aviso enviado", "canal", channel, "issue", p.issueID, "tipo", p.kind)
+		a.log.InfoContext(ctx, "aviso enviado", "canal", channel, "issue", p.issueID, "tipo", p.kind, "regla", p.ruleID)
 	}
 	return true, nil
+}
+
+// issueDetail es el issue con su último evento, para el Markdown.
+func issueDetail(ctx context.Context, st *store.Store, p *pending) (store.IssueDetail, error) {
+	if p.issue != nil {
+		return *p.issue, nil
+	}
+	d, err := st.IssueDetail(ctx, p.issueID, time.Now())
+	if err != nil {
+		return d, fmt.Errorf("leer issue %d: %w", p.issueID, err)
+	}
+	p.issue = &d
+	return d, nil
 }
 
 func issueLink(base string, id int64) string {

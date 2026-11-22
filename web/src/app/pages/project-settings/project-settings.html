@@ -1,0 +1,58 @@
+<header class="titlebar">
+  <h1 class="titlebar__title">{{ t('settings.title') }}</h1>
+  @if (projectOptions().length) {
+    <div class="titlebar__actions titlebar__actions--start">
+      <app-pick
+        icon="squares-four"
+        [label]="t('settings.project')"
+        [options]="projectOptions()"
+        [value]="id() ?? ''"
+        (changed)="chooseProject($event)"
+      />
+    </div>
+  }
+</header>
+
+<div class="content">
+  @if (projects() === null) {
+    <div class="skeleton" aria-busy="true" [attr.aria-label]="t('settings.loading')">
+      <span class="sp-skeleton" style="width: 30%; height: 0.9rem"></span>
+      <span class="sp-skeleton" style="width: 60%; height: 0.7rem"></span>
+      <span class="sp-skeleton" style="width: 100%; height: 6rem"></span>
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('settings.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (projects()?.length === 0) {
+    <div class="state">
+      <svg appIcon="squares-four"></svg>
+      <p class="state__title">{{ t('settings.noProjects.title') }}</p>
+      <p class="state__text">{{ t('settings.noProjects.text') }}</p>
+    </div>
+  } @else if (project(); as p) {
+    <div class="page">
+      <nav class="tabs" [attr.aria-label]="t('settings.sections')">
+        @for (s of sections; track s.value) {
+          <a
+            class="tabs__tab"
+            [routerLink]="['/projects', p.id, 'settings', s.value]"
+            [attr.aria-current]="current() === s.value ? 'page' : null"
+            replaceUrl
+          >
+            <svg [appIcon]="s.icon"></svg>
+            {{ t(s.label) }}
+          </a>
+        }
+      </nav>
+      @if (current() === 'alerts') {
+        <app-alert-rules [projectId]="p.id" />
+      } @else {
+        <app-project-filters [projectId]="p.id" />
+      }
+    </div>
+  }
+</div>

@@ -14,6 +14,16 @@ const THEMES: { value: ThemeChoice; label: Key; icon: string }[] = [
   { value: 'dark', label: 'theme.dark', icon: 'moon' },
 ];
 
+function sectionOf(url: string): 'issues' | 'releases' | 'settings' {
+  if (url.startsWith('/releases')) {
+    return 'releases';
+  }
+  if (url.startsWith('/settings') || /^\/projects\/[^/]+\/settings/.test(url)) {
+    return 'settings';
+  }
+  return 'issues';
+}
+
 /** El raíl fino a la izquierda (arriba en el móvil) y el panel blanco con la pantalla. */
 @Component({
   selector: 'app-shell',
@@ -33,13 +43,13 @@ export class Shell {
   protected readonly menu = signal<'env' | 'lang' | 'theme' | 'user' | null>(null);
 
   private readonly router = inject(Router);
-  /** Qué sección del raíl se marca: las releases o, en el resto, los errores. */
-  protected readonly onReleases = toSignal(
+  /** Qué sección del raíl se marca: releases, ajustes o, en el resto, los errores. */
+  protected readonly section = toSignal(
     this.router.events.pipe(
       filter((e) => e instanceof NavigationEnd),
-      map(() => this.router.url.startsWith('/releases')),
+      map(() => sectionOf(this.router.url)),
     ),
-    { initialValue: this.router.url.startsWith('/releases') },
+    { initialValue: sectionOf(this.router.url) },
   );
 
   protected readonly env = inject(EnvironmentChoice);

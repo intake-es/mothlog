@@ -47,6 +47,8 @@ func loadConfig() (config, error) {
 			LinearAPIURL:    os.Getenv("LINEAR_API_URL"),
 			LinearTeamID:    os.Getenv("LINEAR_TEAM_ID"),
 			LinearLabelIDs:  splitList(os.Getenv("LINEAR_LABEL_IDS")),
+			SMTPURL:         os.Getenv("SMTP_URL"),
+			SMTPFrom:        os.Getenv("SMTP_FROM"),
 		},
 	}
 	c.Alerts.PublicURL = c.PublicURL
@@ -153,7 +155,7 @@ func run(args []string) error {
 
 	mux := routes(db, envelopes, maps.Register, auth.Register)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth}); err != nil {
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts}); err != nil {
 		return err
 	}
 	srv := &http.Server{

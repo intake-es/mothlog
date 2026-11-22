@@ -1,11 +1,8 @@
 package alert
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -16,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
 )
 
 // Límites de Block Kit.
@@ -33,9 +29,7 @@ const (
 )
 
 type slack struct {
-	st     *store.Store
 	url    string
-	base   string
 	client *http.Client
 }
 
@@ -91,10 +85,7 @@ func slackMessage(p *pending, ev *event.Event, link string) slackPayload {
 	}
 	headline = truncate(headline, maxHeadline)
 
-	what, fallback := "Nuevo error", "Nuevo error en "
-	if p.kind == "regressed" {
-		what, fallback = "Ha vuelto", "Ha vuelto un error en "
-	}
+	what, fallback := kindText(p)
 	meta := []string{"*" + what + "*", esc(p.project)}
 	if p.environment != "" {
 		meta = append(meta, esc(p.environment))
@@ -215,7 +206,7 @@ func slackFields(p *pending, ev *event.Event) []slackText {
 			add("Espacio", shortID(id))
 		}
 	}
-	if p.kind == "regressed" {
+	if p.kind == "regressed" || p.kind == "frequency" || p.kind == "users" {
 		add("Eventos", strconv.FormatInt(p.count, 10)+" en total")
 	}
 	if ev != nil {
@@ -275,35 +266,7 @@ func spanishDate(t, ref time.Time) string {
 }
 
 func (s *slack) send(ctx context.Context, _ pgx.Tx, p *pending) error {
-	latest, err := s.st.LatestEvent(ctx, p.issueID)
-	if err != nil {
-		return err
-	}
-	var ev *event.Event
-	if latest != nil {
-		ev = &latest.Event
-	}
-	var body bytes.Buffer
-	enc := json.NewEncoder(&body)
-	enc.SetEscapeHTML(false)
-	if err := enc.Encode(slackMessage(p, ev, issueLink(s.base, p.issueID))); err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.url, &body)
-	if err != nil {
-		return cleanErr(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("slack: %w", cleanErr(err))
-	}
-	defer func() { _ = resp.Body.Close() }()
-	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("slack: %s: %s", resp.Status, strings.TrimSpace(string(msg)))
-	}
-	return nil
+	return postJSON(ctx, s.client, "slack", s.url, slackMessage(p, p.ev, p.link), nil)
 }
 
 func oneLine(s string) string {

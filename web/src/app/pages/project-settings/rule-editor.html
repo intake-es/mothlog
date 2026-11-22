@@ -1,0 +1,238 @@
+<form class="rule-form" (submit)="$event.preventDefault(); save()">
+  @if (!rule()) {
+    <div class="group group--head">
+      <h3 class="group__title">{{ t('editor.newTitle') }}</h3>
+    </div>
+  }
+
+  @if (secret(); as secret) {
+    <div class="group">
+      <div class="note">
+        <svg appIcon="webhooks-logo"></svg>
+        <div class="secret">
+          <p class="note__title">{{ t('editor.secret.title') }}</p>
+          <p class="note__text">{{ t('editor.secret.text') }}</p>
+          <code class="secret__value">{{ secret }}</code>
+          <div class="row-end">
+            <button type="button" class="btn" (click)="copySecret(secret)">
+              <svg [appIcon]="secretCopied() ? 'check' : 'copy'"></svg>
+              {{ secretCopied() ? t('editor.secret.copied') : t('editor.secret.copy') }}
+            </button>
+            <button type="button" class="btn btn--ghost" (click)="dismissed.emit()">{{ t('editor.dismiss') }}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  <div class="group">
+    <div class="name-row">
+      <label class="field name-row__name">
+        <span class="field__label">{{ t('editor.name') }}</span>
+        <input
+          class="input"
+          type="text"
+          name="name"
+          maxlength="200"
+          required
+          [placeholder]="t('editor.namePlaceholder')"
+          [value]="draft().name"
+          (input)="patch({ name: $any($event.target).value })"
+        />
+      </label>
+      <label class="check name-row__on">
+        <input type="checkbox" class="switch" role="switch" [checked]="draft().enabled" (change)="patch({ enabled: $any($event.target).checked })" />
+        {{ t('editor.enabled') }}
+      </label>
+    </div>
+  </div>
+
+  <fieldset class="group">
+    <legend class="group__title">{{ t('editor.when') }}</legend>
+    <p class="group__hint">{{ t('editor.whenHint') }}</p>
+    <div class="group__body">
+      <label class="check">
+        <input type="checkbox" [checked]="draft().onNew" (change)="patch({ onNew: $any($event.target).checked })" />
+        {{ t('editor.new') }}
+      </label>
+      <label class="check">
+        <input type="checkbox" [checked]="draft().onRegressed" (change)="patch({ onRegressed: $any($event.target).checked })" />
+        {{ t('editor.regressed') }}
+      </label>
+      <div class="check check--inline">
+        <input
+          type="checkbox"
+          id="cond-frequency"
+          [checked]="draft().frequencyOn"
+          (change)="patch({ frequencyOn: $any($event.target).checked })"
+        />
+        @for (part of frequencyParts(); track $index) {
+          <label for="cond-frequency">{{ part.text }}</label>
+          @if (part.slot === 'events') {
+            <input class="input input--num" type="number" min="1" [attr.aria-label]="t('editor.eventsLabel')" [value]="draft().events" (input)="patch({ events: num($any($event.target).value), frequencyOn: true })" />
+          } @else if (part.slot === 'window') {
+            <input class="input input--num" type="number" min="1" max="1440" [attr.aria-label]="t('editor.windowLabel')" [value]="draft().window" (input)="patch({ window: num($any($event.target).value), frequencyOn: true })" />
+          }
+        }
+      </div>
+      <div>
+        <div class="check check--inline">
+          <input type="checkbox" id="cond-users" [checked]="draft().usersOn" (change)="patch({ usersOn: $any($event.target).checked })" />
+          @for (part of usersParts(); track $index) {
+            <label for="cond-users">{{ part.text }}</label>
+            @if (part.slot === 'users') {
+              <input class="input input--num" type="number" min="1" [attr.aria-label]="t('editor.usersLabel')" [value]="draft().users" (input)="patch({ users: num($any($event.target).value), usersOn: true })" />
+            }
+          }
+        </div>
+        @if (draft().usersOn) {
+          <p class="field__hint indent">{{ t('editor.usersHint') }}</p>
+        }
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="group">
+    <legend class="group__title">{{ t('editor.filters') }}</legend>
+    <p class="group__hint">{{ t('editor.filtersHint') }}</p>
+    <div class="group__body">
+      <label class="field">
+        <span class="field__label">{{ t('editor.environments') }}</span>
+        <input class="input" type="text" [placeholder]="t('editor.environmentsPlaceholder')" [value]="draft().environments" (input)="patch({ environments: $any($event.target).value })" />
+      </label>
+      <div class="field">
+        <span class="field__label">{{ t('editor.levels') }}</span>
+        <div class="chips">
+          @for (l of levels; track l) {
+            <button type="button" class="chip" [attr.aria-pressed]="draft().levels.includes(l)" (click)="toggleLevel(l)">{{ l }}</button>
+          }
+        </div>
+      </div>
+      <div class="field">
+        <span class="field__label">{{ t('editor.tags') }}</span>
+        @for (tag of draft().tags; track $index; let i = $index) {
+          <div class="tag-row">
+            <input class="input" type="text" [attr.aria-label]="t('editor.tagKey')" [placeholder]="t('editor.tagKey')" [value]="tag.key" (input)="setTag(i, { key: $any($event.target).value })" />
+            <input class="input" type="text" [attr.aria-label]="t('editor.tagValue')" [placeholder]="t('editor.tagValue')" [value]="tag.value" (input)="setTag(i, { value: $any($event.target).value })" />
+            <button type="button" class="icon-btn" [attr.aria-label]="t('editor.removeTag')" (click)="removeTag(i)"><svg appIcon="x"></svg></button>
+          </div>
+        }
+        <div>
+          <button type="button" class="btn btn--ghost btn--small" (click)="addTag()">
+            <svg appIcon="plus"></svg>
+            {{ t('editor.addTag') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="group">
+    <legend class="group__title">{{ t('editor.actions') }}</legend>
+    <div class="group__body">
+      @for (a of draft().actions; track a.id; let i = $index) {
+        <div class="dest">
+          <div class="dest__head">
+            <span class="dest__type">
+              <svg [appIcon]="icons[a.type]"></svg>
+              {{ actionLabel(a.type) }}
+            </span>
+            <div class="row-end">
+              @if (tests()[a.id]; as st) {
+                @if (st.state === 'ok') {
+                  <span class="ok" role="status">{{ t('editor.testOk') }}</span>
+                } @else if (st.state === 'error') {
+                  <span class="err" role="alert">{{ st.message }}</span>
+                }
+              }
+              @if (rule()) {
+                <button
+                  type="button"
+                  class="btn btn--small"
+                  [disabled]="!canTest(a) || tests()[a.id]?.state === 'sending'"
+                  [attr.title]="canTest(a) ? null : t('editor.testSaveFirst')"
+                  (click)="test(a)"
+                >
+                  <svg appIcon="paper-plane-tilt"></svg>
+                  {{ tests()[a.id]?.state === 'sending' ? t('editor.testing') : t('editor.test') }}
+                </button>
+              }
+              <button type="button" class="icon-btn" [attr.aria-label]="t('editor.removeAction')" [disabled]="draft().actions.length === 1" (click)="removeAction(i)">
+                <svg appIcon="trash"></svg>
+              </button>
+            </div>
+          </div>
+          <div class="dest__fields">
+            @for (f of fields[a.type]; track f.field) {
+              <label class="field">
+                <span class="field__label">{{ t(f.label) }}</span>
+                <input
+                  class="input"
+                  [class.mono]="f.secret"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  [value]="a[f.field]"
+                  (input)="setAction(i, f.field, $any($event.target).value)"
+                />
+                @if (f.secret && isMasked(a, f.field)) {
+                  <span class="field__hint">{{ t('editor.keepSecret') }}</span>
+                }
+              </label>
+            }
+            @if (hints[a.type]; as h) {
+              <p class="field__hint">{{ t(h) }}</p>
+            }
+          </div>
+        </div>
+      }
+      <div class="add">
+        <button type="button" class="btn btn--ghost btn--small" aria-haspopup="menu" [attr.aria-expanded]="addOpen()" (click)="addOpen.set(!addOpen())">
+          <svg appIcon="plus"></svg>
+          {{ t('editor.addAction') }}
+        </button>
+        @if (addOpen()) {
+          <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="addOpen.set(false)"></button>
+          <div class="menu add__menu" role="menu" [attr.aria-label]="t('editor.addAction')">
+            @for (type of types; track type) {
+              <button type="button" class="menu__item" role="menuitem" (click)="addAction(type)">
+                <svg [appIcon]="icons[type]"></svg>
+                {{ actionLabel(type) }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </fieldset>
+
+  <div class="group">
+    <div class="check check--inline">
+      @for (part of throttleParts(); track $index) {
+        <span>{{ part.text }}</span>
+        @if (part.slot === 'minutes') {
+          <input class="input input--num" type="number" min="0" [attr.aria-label]="t('editor.throttleLabel')" [value]="draft().throttle" (input)="patch({ throttle: num($any($event.target).value) })" />
+        }
+      }
+    </div>
+    <p class="field__hint">{{ t('editor.throttleHint') }}</p>
+  </div>
+
+  <div class="group foot">
+    @if (rule()) {
+      <button type="button" class="btn btn--ghost danger" [disabled]="busy()" (click)="remove()">
+        <svg appIcon="trash"></svg>
+        {{ confirmDelete() ? t('editor.confirmDelete') : t('editor.delete') }}
+      </button>
+    }
+    @if (error()) {
+      <span class="err foot__err" role="alert">{{ error() }}</span>
+    }
+    <div class="row-end foot__end">
+      <button type="button" class="btn" (click)="cancelled.emit()">{{ t('editor.cancel') }}</button>
+      <button type="submit" class="btn btn--primary" [disabled]="busy() || (rule() !== null && !dirty())">
+        {{ busy() ? t('editor.saving') : rule() ? t('editor.save') : t('editor.create') }}
+      </button>
+    </div>
+  </div>
+</form>

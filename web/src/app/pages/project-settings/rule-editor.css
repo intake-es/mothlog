@@ -1,0 +1,179 @@
+:host {
+  display: block;
+}
+
+.rule-form {
+  margin: 0;
+}
+
+:host(:not(.editor--inline)) .rule-form {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+}
+
+:host(.editor--inline) .rule-form {
+  background: var(--bg-surface);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+fieldset.group {
+  margin: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  min-width: 0;
+}
+
+fieldset.group:first-child {
+  border-top: 0;
+}
+
+legend.group__title {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+legend.group__title + * {
+  clear: both;
+}
+
+.group--head {
+  padding-bottom: 0;
+}
+
+.group--head + .group {
+  border-top: 0;
+}
+
+.name-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.name-row__name {
+  flex: 1 1 auto;
+}
+
+.name-row__on {
+  min-height: var(--control-h);
+  color: var(--text-muted);
+}
+
+.indent {
+  margin: 0.15rem 0 0 calc(15px + 0.55rem);
+}
+
+.tag-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 28px;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.btn--small {
+  min-height: 28px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.btn--ghost.btn--small {
+  padding-left: 0.35rem;
+}
+
+.dest {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+
+.dest__head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.45rem 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.dest__type {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.dest__type svg {
+  color: var(--text-muted);
+}
+
+.dest__head .row-end {
+  margin-left: auto;
+  min-width: 0;
+}
+
+.dest__head .err {
+  overflow: hidden;
+  max-width: 22rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dest__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.75rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.add {
+  position: relative;
+}
+
+.add__menu {
+  top: calc(100% + 4px);
+  left: 0;
+}
+
+.secret {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.secret__value {
+  overflow-wrap: anywhere;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  font-size: 0.75rem;
+}
+
+.foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.foot__end {
+  margin-left: auto;
+}
+
+.foot__err {
+  flex: 1 1 12rem;
+}
+
+.danger,
+.danger svg {
+  color: var(--danger);
+}
