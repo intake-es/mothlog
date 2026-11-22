@@ -2,10 +2,12 @@ import logging
 import random
 import secrets
 import sys
+import time
 import uuid
 
 import sentry_sdk
 from fastapi.testclient import TestClient
+from sentry_sdk.crons import monitor
 
 from app import app, reembolsar, sincronizar_stock
 
@@ -26,6 +28,34 @@ elif caso == "tarea":
         f"task failed id={uuid.uuid4().hex} name='enviar_factura' worker={secrets.token_hex(4)} "
         f"try=4 duration_ms={random.randint(1000, 300000)} error=TimeoutError('timed out')"
     )
+elif caso == "cron-ok":
+
+    @monitor(
+        monitor_slug="limpieza-nocturna",
+        monitor_config={
+            "schedule": {"type": "crontab", "value": "0 3 * * *"},
+            "timezone": "Europe/Madrid",
+            "checkin_margin": 5,
+            "max_runtime": 20,
+        },
+    )
+    def limpiar():
+        time.sleep(0.2)
+
+    limpiar()
+elif caso == "cron-error":
+
+    @monitor(
+        monitor_slug="enviar-facturas",
+        monitor_config={"schedule": {"type": "interval", "value": 2, "unit": "hour"}},
+    )
+    def enviar_facturas():
+        raise TimeoutError("el banco no responde")
+
+    try:
+        enviar_facturas()
+    except TimeoutError:
+        pass
 else:
     sys.exit(f"caso desconocido: {caso}")
 sentry_sdk.flush(10)

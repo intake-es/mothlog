@@ -77,6 +77,12 @@ export interface Draft {
   window: number;
   usersOn: boolean;
   users: number;
+  cronFailed: boolean;
+  cronMissed: boolean;
+  cronTimeout: boolean;
+  cronRecovered: boolean;
+  /** Los slugs separados por comas; vacío, todos. */
+  cronMonitors: string;
   environments: string;
   levels: string[];
   tags: { key: string; value: string }[];
@@ -114,6 +120,11 @@ export function newDraft(): Draft {
     window: 10,
     usersOn: false,
     users: 10,
+    cronFailed: false,
+    cronMissed: false,
+    cronTimeout: false,
+    cronRecovered: false,
+    cronMonitors: '',
     environments: '',
     levels: [],
     tags: [],
@@ -134,6 +145,11 @@ export function draftOf(r: Rule): Draft {
     window: c.frequency?.window_minutes ?? 10,
     usersOn: !!c.users,
     users: c.users?.users ?? 10,
+    cronFailed: !!c.cron?.failed,
+    cronMissed: !!c.cron?.missed,
+    cronTimeout: !!c.cron?.timeout,
+    cronRecovered: !!c.cron?.recovered,
+    cronMonitors: (c.cron?.monitors ?? []).join(', '),
     environments: c.environments.join(', '),
     levels: [...c.levels],
     tags: c.tags.map((tag) => ({ ...tag })),
@@ -169,6 +185,16 @@ export function inputOf(d: Draft): RuleInput {
       regressed: d.onRegressed,
       frequency: d.frequencyOn ? { events: d.events, window_minutes: d.window } : null,
       users: d.usersOn ? { users: d.users } : null,
+      cron:
+        d.cronFailed || d.cronMissed || d.cronTimeout || d.cronRecovered
+          ? {
+              failed: d.cronFailed,
+              missed: d.cronMissed,
+              timeout: d.cronTimeout,
+              recovered: d.cronRecovered,
+              monitors: list(d.cronMonitors),
+            }
+          : null,
       environments: list(d.environments),
       levels: d.levels,
       tags: d.tags.filter((tag) => tag.key.trim()),
@@ -226,6 +252,28 @@ export function summary(r: Rule): string {
   }
   if (c.users) {
     when.push(t('when.users', { users: nf.format(c.users.users) }));
+  }
+  if (c.cron) {
+    const cron = c.cron;
+    const kinds: Key[] = [];
+    if (cron.failed) {
+      kinds.push('when.cronFailed');
+    }
+    if (cron.missed) {
+      kinds.push('when.cronMissed');
+    }
+    if (cron.timeout) {
+      kinds.push('when.cronTimeout');
+    }
+    if (cron.recovered) {
+      kinds.push('when.cronRecovered');
+    }
+    const text = orList(kinds.map((k) => t(k)));
+    when.push(
+      cron.monitors.length
+        ? `${text} ${t('when.cronMonitors', { list: orList(cron.monitors) })}`
+        : text,
+    );
   }
   const parts = [orList(when)];
   if (c.environments.length) {

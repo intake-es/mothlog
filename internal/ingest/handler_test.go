@@ -60,6 +60,14 @@ var noEventFixtures = []string{
 	"web-sesion-1", "web-sesion-2",
 }
 
+// Fixtures con check-ins de crons, en el orden en que se mandaron.
+var checkInFixtures = []string{
+	"api-cron-ok-1", "api-cron-ok-2",
+	"api-cron-error-1", "api-cron-error-2",
+	"cli-monitors-run-1", "cli-monitors-run-2",
+	"cli-monitors-run-error-1", "cli-monitors-run-error-2",
+}
+
 type fixture struct {
 	Method  string            `json:"method"`
 	Path    string            `json:"path"`
@@ -276,8 +284,8 @@ func TestFixtureTablesCoverTestdata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != len(errorFixtures)+len(noEventFixtures) {
-		t.Fatalf("%d envelopes y %d filas en las tablas", len(files), len(errorFixtures)+len(noEventFixtures))
+	if rows := len(errorFixtures) + len(noEventFixtures) + len(checkInFixtures); len(files) != rows {
+		t.Fatalf("%d envelopes y %d filas en las tablas", len(files), rows)
 	}
 }
 

@@ -55,9 +55,11 @@ const ICONS = {
     'webhooks-logo',
     'bell-ringing',
     'x',
+    'heartbeat',
+    'speaker-simple-slash',
   ],
   fill: ['bug'],
-  duotone: ['check-circle', 'lock-key', 'magnifying-glass', 'warning-circle'],
+  duotone: ['check-circle', 'lock-key', 'magnifying-glass', 'warning-circle', 'heartbeat'],
 };
 
 const SUFFIX = { regular: '', fill: '-fill', duotone: '-duotone' };

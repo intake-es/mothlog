@@ -261,11 +261,21 @@ export interface RuleAction {
   secret?: string;
 }
 
+export interface CronCondition {
+  failed: boolean;
+  missed: boolean;
+  timeout: boolean;
+  recovered: boolean;
+  /** Slugs; vacío, todos los del proyecto. */
+  monitors: string[];
+}
+
 export interface RuleConditions {
   new: boolean;
   regressed: boolean;
   frequency: { events: number; window_minutes: number } | null;
   users: { users: number } | null;
+  cron?: CronCondition | null;
   environments: string[];
   levels: string[];
   tags: { key: string; value: string }[];
@@ -313,6 +323,58 @@ export interface IssueQuery {
   sort?: IssueSort;
   cursor?: string;
   limit?: number;
+}
+
+export type MonitorStatus = 'pending' | 'ok' | 'error' | 'missed' | 'timeout';
+export type CheckInStatus = 'in_progress' | 'ok' | 'error' | 'missed' | 'timeout';
+
+/** El horario como lo mandan los SDK: un crontab o cada N unidades. */
+export type Schedule =
+  | { type: 'crontab'; value: string }
+  | { type: 'interval'; value: number; unit: string };
+
+export interface CheckInMark {
+  status: CheckInStatus;
+  started_at: string;
+  duration_ms: number | null;
+}
+
+export interface Monitor {
+  id: number;
+  project_id: number;
+  project: string;
+  slug: string;
+  name: string;
+  schedule: Schedule;
+  timezone: string;
+  checkin_margin: number;
+  max_runtime: number;
+  environment: string;
+  muted: boolean;
+  status: MonitorStatus;
+  last_checkin_at: string | null;
+  next_checkin_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Las últimas ejecuciones, de la más nueva a la más vieja; solo en la lista. */
+  recent?: CheckInMark[];
+}
+
+export interface CheckIn {
+  id: number;
+  check_in_id: string;
+  status: CheckInStatus;
+  duration_ms: number | null;
+  environment: string;
+  release: string;
+  expected_at: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface MonitorDetail extends Monitor {
+  checkins: CheckIn[];
+  next_cursor?: string;
 }
 
 const BASE = '/api/0';
@@ -456,6 +518,37 @@ export class Api {
     return this.http.get<DroppedStats>(`${BASE}/projects/${projectId}/dropped`, {
       params: new HttpParams().set('days', days),
     });
+  }
+
+  monitors(project = ''): Observable<Page<Monitor>> {
+    const params = project ? new HttpParams().set('project', project) : new HttpParams();
+    return this.http.get<Page<Monitor>>(`${BASE}/monitors/`, { params });
+  }
+
+  monitor(projectId: number, slug: string): Observable<MonitorDetail> {
+    return this.http.get<MonitorDetail>(
+      `${BASE}/projects/${projectId}/monitors/${encodeURIComponent(slug)}/`,
+    );
+  }
+
+  monitorCheckIns(projectId: number, slug: string, cursor: string): Observable<Page<CheckIn>> {
+    return this.http.get<Page<CheckIn>>(
+      `${BASE}/projects/${projectId}/monitors/${encodeURIComponent(slug)}/checkins/`,
+      { params: new HttpParams().set('cursor', cursor) },
+    );
+  }
+
+  setMonitorMuted(projectId: number, slug: string, muted: boolean): Observable<Monitor> {
+    return this.http.patch<Monitor>(
+      `${BASE}/projects/${projectId}/monitors/${encodeURIComponent(slug)}/`,
+      { muted },
+    );
+  }
+
+  deleteMonitor(projectId: number, slug: string): Observable<void> {
+    return this.http.delete<void>(
+      `${BASE}/projects/${projectId}/monitors/${encodeURIComponent(slug)}/`,
+    );
   }
 }
 

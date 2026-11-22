@@ -64,11 +64,13 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 	subject := "[intake-errors] " + fallback + p.project + ": " + s.Headline
 	var body strings.Builder
 	body.WriteString(s.text(p.link))
-	d, err := issueDetail(ctx, e.st, p)
-	if err != nil {
-		return nil, err
+	if p.cron == nil {
+		d, err := issueDetail(ctx, e.st, p)
+		if err != nil {
+			return nil, err
+		}
+		body.WriteString("\n---\n\n" + markdown.Issue(d))
 	}
-	body.WriteString("\n---\n\n" + markdown.Issue(d))
 
 	var m strings.Builder
 	header := func(k, v string) { m.WriteString(k + ": " + v + "\r\n") }

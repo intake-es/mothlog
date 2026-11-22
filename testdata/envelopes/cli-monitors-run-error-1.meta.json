@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "path": "/api/1/envelope/",
+  "query": "",
+  "headers": {
+    "Host": "127.0.0.1:8299",
+    "Accept": "*/*",
+    "User-Agent": "sentry-cli/3.8.2",
+    "X-Sentry-Auth": "Sentry sentry_key=5b6d3a35fd6eb6e0f9d410fc5c0f6cbc, sentry_version=7, sentry_timestamp=1795362102.510373, sentry_client=sentry-cli/x86_64",
+    "Content-Length": "167"
+  }
+}

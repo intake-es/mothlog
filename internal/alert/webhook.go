@@ -36,16 +36,20 @@ func Sign(secret string, t time.Time, body []byte) string {
 }
 
 type WebhookPayload struct {
-	// Type es new, regressed, frequency, users o test.
+	// Type es new, regressed, frequency, users, test o, en los crons,
+	// cron_failed, cron_missed, cron_timeout y cron_recovered.
 	Type string `json:"type"`
 	// Delivery es el mismo en los reintentos del mismo aviso.
-	Delivery string          `json:"delivery"`
-	SentAt   time.Time       `json:"sent_at"`
-	Rule     WebhookRule     `json:"rule"`
-	Project  string          `json:"project"`
-	Issue    WebhookIssue    `json:"issue"`
-	Event    *WebhookEvent   `json:"event"`
-	Trigger  *WebhookTrigger `json:"trigger,omitempty"`
+	Delivery string      `json:"delivery"`
+	SentAt   time.Time   `json:"sent_at"`
+	Rule     WebhookRule `json:"rule"`
+	Project  string      `json:"project"`
+	// Issue va en los avisos de errores; Monitor y CheckIn, en los de crons.
+	Issue   *WebhookIssue   `json:"issue,omitempty"`
+	Monitor *WebhookMonitor `json:"monitor,omitempty"`
+	CheckIn *WebhookCheckIn `json:"check_in,omitempty"`
+	Event   *WebhookEvent   `json:"event"`
+	Trigger *WebhookTrigger `json:"trigger,omitempty"`
 	// ResolvedAt es, en una regresión, cuándo se había resuelto.
 	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
 	// Markdown es el error como en stacktrace.md.
@@ -107,7 +111,7 @@ func (w *webhook) payload(ctx context.Context, p *pending) (WebhookPayload, erro
 		SentAt:   w.now().UTC(),
 		Rule:     WebhookRule{ID: p.ruleID, Name: p.ruleName},
 		Project:  p.project,
-		Issue: WebhookIssue{ID: d.ID, Title: d.Title, Culprit: d.Culprit, Level: d.Level, Status: d.Status,
+		Issue: &WebhookIssue{ID: d.ID, Title: d.Title, Culprit: d.Culprit, Level: d.Level, Status: d.Status,
 			Count: d.Count, FirstSeen: d.FirstSeen, LastSeen: d.LastSeen, URL: p.link},
 		ResolvedAt: p.resolvedAt,
 		Markdown:   markdown.Issue(d),
@@ -134,8 +138,11 @@ func (w *webhook) payload(ctx context.Context, p *pending) (WebhookPayload, erro
 }
 
 func (w *webhook) send(ctx context.Context, _ pgx.Tx, p *pending) error {
-	pl, err := w.payload(ctx, p)
-	if err != nil {
+	var pl WebhookPayload
+	var err error
+	if p.cron != nil {
+		pl = w.cronPayload(p)
+	} else if pl, err = w.payload(ctx, p); err != nil {
 		return err
 	}
 	var body bytes.Buffer

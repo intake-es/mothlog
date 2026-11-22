@@ -182,6 +182,69 @@ describe('ProjectSettingsPage', () => {
     expect(secretInput.value).toBe('…ffff');
   });
 
+  it('crea una regla de crons para unos monitores y la resume en los dos idiomas', async () => {
+    const { fixture, el } = await render('alerts');
+    el.querySelector<HTMLButtonElement>('.btn--primary')?.click();
+    fixture.detectChanges();
+    const check = (label: string) =>
+      Array.from(el.querySelectorAll<HTMLLabelElement>('label.check'))
+        .find((l) => l.textContent?.includes(label))
+        ?.querySelector('input');
+    for (const label of ['Un error nuevo', 'Una regresión']) {
+      check(label)?.click();
+    }
+    check('Un cron que falla')?.click();
+    check('Un cron que no llega a su hora')?.click();
+    check('Un cron que se pasa del tiempo máximo')?.click();
+    const name = el.querySelector<HTMLInputElement>('input[name=name]')!;
+    name.value = 'Crons';
+    name.dispatchEvent(new Event('input'));
+    const monitors = el.querySelector<HTMLInputElement>(
+      'input[placeholder="copia-seguridad, enviar-facturas"]',
+    )!;
+    monitors.value = 'copia, facturas';
+    monitors.dispatchEvent(new Event('input'));
+    const url = el.querySelector<HTMLInputElement>('.dest input')!;
+    url.value = 'https://agente.example.com/crons';
+    url.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('button[type=submit]')?.click();
+
+    const req = http.expectOne('/api/0/projects/4/rules');
+    expect(req.request.body.conditions).toMatchObject({
+      new: false,
+      regressed: false,
+      cron: {
+        failed: true,
+        missed: true,
+        timeout: true,
+        recovered: false,
+        monitors: ['copia', 'facturas'],
+      },
+    });
+    const saved = rule({
+      id: 9,
+      name: 'Crons',
+      conditions: { ...rule().conditions, ...req.request.body.conditions, tags: [] },
+    });
+    req.flush(saved);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const summary = () =>
+      Array.from(el.querySelectorAll('.rule__summary')).map((n) => n.textContent)[0];
+    expect(summary()).toBe(
+      'Cron que falla, cron que no llega o cron que se pasa de tiempo (copia o facturas)',
+    );
+    TestBed.inject(I18n).set('en');
+    fixture.detectChanges();
+    expect(summary()).toBe(
+      'A cron fails, a cron is missed, or a cron times out (copia or facturas)',
+    );
+    const editor = el.querySelector('app-rule-editor')!;
+    expect(editor.textContent).toContain('A cron runs past its maximum runtime');
+    expect(spanishLeft(editor)).toEqual([]);
+  });
+
   it('el botón de prueba manda un aviso por esa acción y dice cómo ha ido', async () => {
     const { fixture, el } = await render('alerts', [rule()]);
     el.querySelector<HTMLButtonElement>('.rule__main')?.click();

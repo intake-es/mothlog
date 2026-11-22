@@ -1,0 +1,124 @@
+<header class="titlebar">
+  <a class="icon-btn" routerLink="/monitors" [attr.aria-label]="t('monitor.back')">
+    <svg appIcon="arrow-left"></svg>
+  </a>
+  <h1 class="titlebar__title crumbs">
+    <a routerLink="/monitors" class="crumbs__root">{{ t('monitors.title') }}</a>
+    <span class="crumbs__sep" aria-hidden="true">/</span>
+    <span class="crumbs__leaf">{{ detail()?.name ?? slug() }}</span>
+  </h1>
+
+  <div class="titlebar__actions">
+    @if (detail(); as d) {
+      <button type="button" class="btn" [disabled]="muting()" (click)="toggleMute()">
+        <svg [appIcon]="d.muted ? 'bell' : 'bell-slash'"></svg>
+        {{ d.muted ? t('monitor.unmute') : t('monitor.mute') }}
+      </button>
+    }
+  </div>
+</header>
+
+<div class="content">
+  @if (loading()) {
+    <div class="pad" aria-busy="true" [attr.aria-label]="t('monitor.loading')">
+      <span class="sp-skeleton" style="width: 40%; height: 1.4rem"></span>
+      <span class="sp-skeleton" style="width: 25%; height: 0.8rem; margin-top: 0.6rem"></span>
+      <span class="sp-skeleton" style="width: 100%; height: 72px; margin-top: 2rem; border-radius: 12px"></span>
+    </div>
+  } @else if (notFound()) {
+    <div class="state">
+      <svg appIcon="magnifying-glass" weight="duotone"></svg>
+      <p class="state__title">{{ t('monitor.notFound.title') }}</p>
+      <p class="state__text">{{ t('monitor.notFound.text') }}</p>
+      <a class="btn" routerLink="/monitors">{{ t('monitor.back') }}</a>
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('monitor.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (detail(); as d) {
+    <section class="head">
+      <div class="head__title">
+        <h2 class="head__name">{{ d.name }}</h2>
+        <span class="sp-badge" [class]="statusBadge[d.status]">{{ t(statusLabel[d.status]) }}</span>
+        @if (d.muted) {
+          <span class="sp-badge sp-badge--gray">{{ t('monitors.muted') }}</span>
+        }
+      </div>
+      <p class="head__meta">
+        <span class="head__fact"><svg appIcon="squares-four"></svg>{{ d.project }}</span>
+        <span class="head__fact mono">{{ d.slug }}</span>
+        @if (d.environment) {
+          <span class="head__fact"><svg appIcon="globe-simple"></svg>{{ d.environment }}</span>
+        }
+      </p>
+    </section>
+
+    @if (facts(); as f) {
+    <section class="block stats">
+      <div class="stat">
+        <span class="stat__label">{{ t('monitor.schedule') }}</span>
+        <span class="stat__v" [class.mono]="f.crontab">{{ f.schedule }}</span>
+        <span class="stat__sub">{{ d.timezone }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">{{ t('monitor.next') }}</span>
+        <span class="stat__v tnum" [attr.title]="f.nextTitle">{{ f.next }}</span>
+        <span class="stat__sub">{{ t('monitor.margin', { margin: f.margin }) }}</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">{{ t('monitor.last') }}</span>
+        <span class="stat__v tnum" [attr.title]="f.lastTitle">{{ f.last }}</span>
+        <span class="stat__sub">{{ t('monitor.runtime', { runtime: f.runtime }) }}</span>
+      </div>
+    </section>
+    }
+
+    @if (marks().length) {
+      <section class="block">
+        <h3 class="block__title">{{ t('monitor.recent') }}</h3>
+        <app-checkin-strip class="strip" [marks]="marks()" [slots]="60" />
+      </section>
+    }
+
+    <section class="block">
+      <h3 class="block__title">{{ t('monitor.history') }}</h3>
+      @if (rows().length) {
+        <div class="history" role="table" [attr.aria-label]="t('monitor.history')">
+          <div class="history__head" role="row">
+            <span role="columnheader">{{ t('monitor.col.status') }}</span>
+            <span role="columnheader">{{ t('monitor.col.started') }}</span>
+            <span role="columnheader" class="num">{{ t('monitor.col.duration') }}</span>
+            <span role="columnheader">{{ t('monitor.col.expected') }}</span>
+            <span role="columnheader">{{ t('monitor.col.environment') }}</span>
+            <span role="columnheader">{{ t('monitor.col.release') }}</span>
+          </div>
+          @for (r of rows(); track r.checkIn.id) {
+            <div class="history__row" role="row">
+              <span role="cell">
+                <span class="sp-badge sp-badge--sm" [class]="statusBadge[r.checkIn.status]">{{ t(checkInLabel[r.checkIn.status]) }}</span>
+              </span>
+              <span role="cell" class="tnum" [attr.title]="r.started">{{ r.startedAgo }}</span>
+              <span role="cell" class="num tnum">{{ r.duration }}</span>
+              <span role="cell" class="tnum muted">{{ r.expected }}</span>
+              <span role="cell">{{ r.checkIn.environment || '—' }}</span>
+              <span role="cell" class="mono ellipsis" [attr.title]="r.checkIn.release">{{ r.checkIn.release || '—' }}</span>
+            </div>
+          }
+        </div>
+        @if (nextCursor()) {
+          <div class="more">
+            <button type="button" class="btn" [disabled]="loadingMore()" (click)="more()">
+              {{ loadingMore() ? t('list.loadingMore') : t('list.more') }}
+            </button>
+          </div>
+        }
+      } @else {
+        <p class="muted">{{ t('monitor.noHistory') }}</p>
+      }
+    </section>
+  }
+</div>

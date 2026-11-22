@@ -5,6 +5,8 @@ import { Shell } from './layout/shell';
 import { IssueDetailPage } from './pages/issue-detail/issue-detail';
 import { IssueListPage } from './pages/issue-list/issue-list';
 import { LoginPage } from './pages/login/login';
+import { MonitorDetailPage } from './pages/monitor-detail/monitor-detail';
+import { MonitorListPage } from './pages/monitor-list/monitor-list';
 import { ProjectSettingsPage } from './pages/project-settings/project-settings';
 import { ReleaseDetailPage } from './pages/release-detail/release-detail';
 import { ReleaseListPage } from './pages/release-list/release-list';
@@ -29,6 +31,12 @@ export const routes: Routes = [
         path: 'releases/:project/:version',
         component: ReleaseDetailPage,
         title: 'title.release' satisfies Key,
+      },
+      { path: 'monitors', component: MonitorListPage, title: 'title.monitors' satisfies Key },
+      {
+        path: 'monitors/:project/:slug',
+        component: MonitorDetailPage,
+        title: 'title.monitor' satisfies Key,
       },
       { path: 'settings', component: ProjectSettingsPage, title: 'title.settings' satisfies Key },
       { path: 'projects/:id/settings', redirectTo: 'projects/:id/settings/alerts' },

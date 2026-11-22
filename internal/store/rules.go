@@ -58,13 +58,14 @@ type Rule struct {
 }
 
 // RuleConditions: la regla salta si se cumple alguno de los disparadores
-// (New, Regressed, Frequency, Users) y todos los filtros.
+// (New, Regressed, Frequency, Users o, en los crons, Cron) y todos los filtros.
 type RuleConditions struct {
 	New       bool                `json:"new"`
 	Regressed bool                `json:"regressed"`
 	Frequency *FrequencyCondition `json:"frequency"`
 	Users     *UsersCondition     `json:"users"`
-	// Environments, Levels y Tags vacíos no filtran.
+	Cron      *CronCondition      `json:"cron"`
+	// Environments, Levels y Tags vacíos no filtran. En los crons solo filtra Environments.
 	Environments []string    `json:"environments"`
 	Levels       []string    `json:"levels"`
 	Tags         []TagFilter `json:"tags"`
@@ -81,6 +82,39 @@ type FrequencyCondition struct {
 type UsersCondition struct {
 	Users int `json:"users"`
 }
+
+// CronCondition salta cuando un cron falla, no llega, se pasa de tiempo o
+// vuelve a ir bien. Monitors son los slugs; vacío, todos los del proyecto.
+type CronCondition struct {
+	Failed    bool     `json:"failed"`
+	Missed    bool     `json:"missed"`
+	Timeout   bool     `json:"timeout"`
+	Recovered bool     `json:"recovered"`
+	Monitors  []string `json:"monitors"`
+}
+
+// Kinds son los tipos de aviso de cron que pide la condición.
+func (c *CronCondition) Kinds() []string {
+	var out []string
+	for _, k := range []struct {
+		on   bool
+		kind string
+	}{{c.Failed, KindCronFailed}, {c.Missed, KindCronMissed}, {c.Timeout, KindCronTimeout}, {c.Recovered, KindCronRecovered}} {
+		if k.on {
+			out = append(out, k.kind)
+		}
+	}
+	return out
+}
+
+// ForIssues dice si la regla avisa de errores: si tiene algún disparador que no sea de cron.
+func (c RuleConditions) ForIssues() bool {
+	return c.New || c.Regressed || c.Frequency != nil || c.Users != nil
+}
+
+// IssueRulesSQL es la condición de ForIssues sobre alert_rules.
+const IssueRulesSQL = `(COALESCE((conditions->>'new')::boolean, false) OR COALESCE((conditions->>'regressed')::boolean, false)
+	OR jsonb_typeof(conditions->'frequency') = 'object' OR jsonb_typeof(conditions->'users') = 'object')`
 
 // TagFilter pide la etiqueta Key con el valor Value; sin valor, basta con que esté.
 type TagFilter struct {
@@ -226,8 +260,17 @@ func (r *Rule) Normalize() ([]string, error) {
 	}
 
 	c := &r.Conditions
-	if !c.New && !c.Regressed && c.Frequency == nil && c.Users == nil {
-		return nil, fmt.Errorf("%w: la regla necesita al menos una condición: new, regressed, frequency o users", ErrInvalid)
+	if !c.ForIssues() && c.Cron == nil {
+		return nil, fmt.Errorf("%w: la regla necesita al menos una condición: new, regressed, frequency, users o cron", ErrInvalid)
+	}
+	if cr := c.Cron; cr != nil {
+		if len(cr.Kinds()) == 0 {
+			return nil, fmt.Errorf("%w: cron necesita failed, missed, timeout o recovered", ErrInvalid)
+		}
+		var err error
+		if cr.Monitors, err = cleanList("cron.monitors", cr.Monitors, nil); err != nil {
+			return nil, err
+		}
 	}
 	if f := c.Frequency; f != nil {
 		if f.Events < 1 || f.Events > maxThreshold {
@@ -394,6 +437,15 @@ func (s *Store) rules(ctx context.Context, q querier, projectID int64) ([]Rule, 
 		return nil, fmt.Errorf("leer reglas: %w", err)
 	}
 	return out, nil
+}
+
+// RulesOfProject son las reglas del proyecto, para evaluarlas dentro de una transacción.
+func RulesOfProject(ctx context.Context, tx pgx.Tx, projectID int64) ([]Rule, error) {
+	rows, err := tx.Query(ctx, `SELECT `+ruleColumns+` FROM alert_rules WHERE project_id = $1 ORDER BY id`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("leer reglas: %w", err)
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Rule, error) { return scanRule(r) })
 }
 
 // RulesOfIssue son las reglas del proyecto del issue, para evaluarlas dentro de la transacción de la ingesta.

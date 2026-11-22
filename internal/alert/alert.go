@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,6 +117,8 @@ type pending struct {
 	link     string
 	ev       *event.Event
 	issue    *store.IssueDetail
+	// cron es el monitor de los avisos de cron; en el resto, nil.
+	cron *cronInfo
 
 	project          string
 	labels           []string
@@ -197,6 +200,7 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, 
 	}
 	rules, err := store.RulesOfIssue(ctx, sp, issueID)
 	if err == nil {
+		rules = slices.DeleteFunc(rules, func(r store.Rule) bool { return !r.Conditions.ForIssues() })
 		if len(rules) > 0 {
 			err = a.applyRules(ctx, sp, rules, ev, res)
 		} else {
@@ -230,7 +234,7 @@ func (a *Alerter) projectHasRules(ctx context.Context, tx pgx.Tx, projectID int6
 		return false, err
 	}
 	var has bool
-	if err := sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1)`,
+	if err := sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1 AND `+store.IssueRulesSQL+`)`,
 		projectID).Scan(&has); err != nil {
 		_ = sp.Rollback(ctx)
 		return false, err
@@ -318,7 +322,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	var p pending
 	var channel string
 	var attempts int
-	var ruleID *int64
+	var ruleID, issueID, monitorID, checkinID *int64
 	var detail []byte
 	// El primer NOT EXISTS mantiene el orden por issue y canal (y regla y
 	// acción): una regresión no se manda antes de que se mande (o se abandone)
@@ -326,13 +330,14 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	// mucho SlackWaitsForLinear. Los avisos sin regla solo salen por los canales
 	// configurados.
 	err = tx.QueryRow(ctx, `
-		SELECT o.id, o.issue_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
+		SELECT o.id, o.issue_id, o.monitor_id, o.checkin_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
 			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail
 		FROM alert_outbox o
 		WHERE o.sent_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= $1
 			AND (o.rule_id IS NOT NULL OR o.channel = ANY($2))
 			AND NOT EXISTS (SELECT 1 FROM alert_outbox b
-				WHERE b.issue_id = o.issue_id AND b.channel = o.channel AND b.id < o.id
+				WHERE b.issue_id IS NOT DISTINCT FROM o.issue_id AND b.monitor_id IS NOT DISTINCT FROM o.monitor_id
+					AND b.channel = o.channel AND b.id < o.id
 					AND b.rule_id IS NOT DISTINCT FROM o.rule_id AND b.action_id IS NOT DISTINCT FROM o.action_id
 					AND b.sent_at IS NULL AND b.failed_at IS NULL)
 			AND NOT (o.created_at > $3 AND EXISTS (SELECT 1 FROM alert_outbox w
@@ -340,7 +345,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		ORDER BY o.next_attempt_at, o.id
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, now, a.order, now.Add(-SlackWaitsForLinear)).
-		Scan(&p.id, &p.issueID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
+		Scan(&p.id, &issueID, &monitorID, &checkinID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
 			&attempts, &ruleID, &p.actionID, &detail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -353,26 +358,26 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 			return false, fmt.Errorf("aviso %d: %w", p.id, err)
 		}
 	}
-	err = tx.QueryRow(ctx, `
-		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
-			COALESCE(i.linear_issue_identifier, ''), COALESCE(i.linear_issue_url, '')
-		FROM issues i JOIN projects p ON p.id = i.project_id
-		WHERE i.id = $1`, p.issueID).
-		Scan(&p.project, &p.labels, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
-	if err != nil {
-		return false, fmt.Errorf("leer issue %d: %w", p.issueID, err)
-	}
-	p.link = issueLink(a.base, p.issueID)
-
 	var snd sender
 	var sendErr error
-	if ruleID == nil {
-		snd = a.channels[channel]
+	if monitorID != nil {
+		sendErr = a.loadCron(ctx, tx, &p, *monitorID, checkinID)
 	} else {
-		p.ruleID = *ruleID
-		snd, sendErr = a.ruleSender(ctx, tx, &p)
+		p.issueID = *issueID
+		sendErr = a.loadIssue(ctx, tx, &p)
+	}
+	if sendErr != nil && !errors.Is(sendErr, errGone) {
+		return false, sendErr
 	}
 	if sendErr == nil {
+		if ruleID == nil {
+			snd = a.channels[channel]
+		} else {
+			p.ruleID = *ruleID
+			snd, sendErr = a.ruleSender(ctx, tx, &p)
+		}
+	}
+	if sendErr == nil && p.cron == nil {
 		if latest, err := a.st.LatestEvent(ctx, p.issueID); err != nil {
 			sendErr = err
 		} else if latest != nil {
@@ -382,18 +387,38 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	if sendErr == nil {
 		sendErr = snd.send(ctx, tx, &p)
 	}
+	return a.finish(ctx, tx, &p, channel, attempts, now, sendErr)
+}
+
+func (a *Alerter) loadIssue(ctx context.Context, tx pgx.Tx, p *pending) error {
+	err := tx.QueryRow(ctx, `
+		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
+			COALESCE(i.linear_issue_identifier, ''), COALESCE(i.linear_issue_url, '')
+		FROM issues i JOIN projects p ON p.id = i.project_id
+		WHERE i.id = $1`, p.issueID).
+		Scan(&p.project, &p.labels, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
+	if err != nil {
+		return fmt.Errorf("leer issue %d: %w", p.issueID, err)
+	}
+	p.link = issueLink(a.base, p.issueID)
+	return nil
+}
+
+// finish apunta el resultado del envío: enviado, para reintentar o abandonado.
+func (a *Alerter) finish(ctx context.Context, tx pgx.Tx, p *pending, channel string, attempts int, now time.Time, sendErr error) (bool, error) {
+	var err error
 	attempts++
 	switch {
 	case sendErr == nil:
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, sent_at = $3, last_error = NULL WHERE id = $1`,
 			p.id, attempts, a.now().UTC())
 	case attempts >= MaxAttempts || errors.Is(sendErr, errGone):
-		a.log.ErrorContext(ctx, "aviso abandonado", "canal", channel, "issue", p.issueID, "intentos", attempts, "err", sendErr)
+		a.log.ErrorContext(ctx, "aviso abandonado", "canal", channel, p.target(), "intentos", attempts, "err", sendErr)
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, failed_at = $3, last_error = $4 WHERE id = $1`,
 			p.id, attempts, a.now().UTC(), sendErr.Error())
 	default:
 		next := now.Add(Backoff[min(attempts, len(Backoff))-1])
-		a.log.WarnContext(ctx, "aviso fallido", "canal", channel, "issue", p.issueID, "intentos", attempts, "siguiente", next, "err", sendErr)
+		a.log.WarnContext(ctx, "aviso fallido", "canal", channel, p.target(), "intentos", attempts, "siguiente", next, "err", sendErr)
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, next_attempt_at = $3, last_error = $4 WHERE id = $1`,
 			p.id, attempts, next, sendErr.Error())
 	}
@@ -404,9 +429,17 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("guardar aviso %d: %w", p.id, err)
 	}
 	if sendErr == nil {
-		a.log.InfoContext(ctx, "aviso enviado", "canal", channel, "issue", p.issueID, "tipo", p.kind, "regla", p.ruleID)
+		a.log.InfoContext(ctx, "aviso enviado", "canal", channel, p.target(), "tipo", p.kind, "regla", p.ruleID)
 	}
 	return true, nil
+}
+
+// target es de qué es el aviso, para el registro: el issue o el monitor.
+func (p *pending) target() slog.Attr {
+	if p.cron != nil {
+		return slog.Int64("monitor", p.cron.monitorID)
+	}
+	return slog.Int64("issue", p.issueID)
 }
 
 // issueDetail es el issue con su último evento, para el Markdown.

@@ -1,0 +1,95 @@
+<header class="titlebar">
+  <h1 class="titlebar__title">
+    {{ t('monitors.title') }}
+    @if (title(); as n) {
+      <span class="titlebar__count">({{ n }})</span>
+    }
+  </h1>
+
+  <div class="titlebar__actions">
+    <app-pick
+      icon="squares-four"
+      [label]="t('list.project')"
+      [options]="projectOptions()"
+      [value]="project() ?? ''"
+      [highlight]="!!project()"
+      (changed)="setProject($event)"
+    />
+  </div>
+</header>
+
+<div class="content">
+  @if (loading()) {
+    <div class="skeleton" aria-busy="true" [attr.aria-label]="t('monitors.loading')">
+      @for (i of [1, 2, 3, 4]; track i) {
+        <div class="skeleton__row">
+          <span class="sp-skeleton" style="width: 24%; height: 0.8rem"></span>
+          <span class="sp-skeleton" style="width: 36%; height: 0.65rem"></span>
+        </div>
+      }
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('monitors.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (rows().length === 0) {
+    <div class="state">
+      @if (project()) {
+        <svg appIcon="magnifying-glass" weight="duotone"></svg>
+        <p class="state__title">{{ t('monitors.noMatch.title') }}</p>
+        <p class="state__text">{{ t('monitors.noMatch.text') }}</p>
+      } @else {
+        <svg appIcon="heartbeat" weight="duotone"></svg>
+        <p class="state__title">{{ t('monitors.empty.title') }}</p>
+        <p class="state__text">{{ t('monitors.empty.text') }}</p>
+      }
+    </div>
+  } @else {
+    @if (failing()) {
+      <p class="summary" role="status">{{ failingText() }}</p>
+    }
+    <div class="list" role="list">
+      <div class="list__head" aria-hidden="true">
+        <span>{{ t('monitors.col.monitor') }}</span>
+        <span>{{ t('monitors.col.runs') }}</span>
+        <span>{{ t('monitors.col.status') }}</span>
+        <span class="list__num">{{ t('monitors.col.next') }}</span>
+        <span class="list__num">{{ t('monitors.col.last') }}</span>
+      </div>
+      @for (row of rows(); track row.monitor.id) {
+        <a class="row" role="listitem" [routerLink]="row.link">
+          <div class="row__main">
+            <div class="row__title">
+              <span class="row__name">{{ row.monitor.name }}</span>
+              @if (row.monitor.muted) {
+                <span class="sp-badge sp-badge--sm sp-badge--gray">
+                  <svg appIcon="speaker-simple-slash"></svg>{{ t('monitors.muted') }}
+                </span>
+              }
+            </div>
+            <div class="row__meta">
+              <span class="row__fact"><svg appIcon="squares-four"></svg>{{ row.monitor.project }}</span>
+              <span class="row__fact" [class.mono]="row.crontab"><svg appIcon="clock"></svg>{{ row.schedule }}</span>
+              @if (row.monitor.environment) {
+                <span class="row__fact"><svg appIcon="globe-simple"></svg>{{ row.monitor.environment }}</span>
+              }
+            </div>
+          </div>
+          <app-checkin-strip class="row__strip" [marks]="row.monitor.recent ?? []" />
+          <div class="row__status">
+            <span class="sp-badge sp-badge--sm" [class]="statusBadge[row.monitor.status]">{{ t(statusLabel[row.monitor.status]) }}</span>
+          </div>
+          <div class="row__when tnum">
+            <time [attr.datetime]="row.monitor.next_checkin_at" [attr.title]="row.nextTitle">{{ row.next }}</time>
+          </div>
+          <div class="row__when tnum">
+            <time [attr.datetime]="row.monitor.last_checkin_at" [attr.title]="row.lastTitle">{{ row.last }}</time>
+          </div>
+        </a>
+      }
+    </div>
+  }
+</div>

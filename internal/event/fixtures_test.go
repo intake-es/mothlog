@@ -87,6 +87,15 @@ var fixtures = map[string]want{
 	}),
 	"web-sesion-1": {key: keyWeb, noEvent: true},
 	"web-sesion-2": {key: keyWeb, noEvent: true},
+	// Check-ins de crons: los lee internal/monitor.
+	"api-cron-ok-1":            {key: keyAPI, noEvent: true},
+	"api-cron-ok-2":            {key: keyAPI, noEvent: true},
+	"api-cron-error-1":         {key: keyAPI, noEvent: true},
+	"api-cron-error-2":         {key: keyAPI, noEvent: true},
+	"cli-monitors-run-1":       {key: keyAPI, noEvent: true},
+	"cli-monitors-run-2":       {key: keyAPI, noEvent: true},
+	"cli-monitors-run-error-1": {key: keyAPI, noEvent: true},
+	"cli-monitors-run-error-2": {key: keyAPI, noEvent: true},
 }
 
 type meta struct {
@@ -164,7 +173,7 @@ func TestFixtures(t *testing.T) {
 				}
 				for _, it := range env.Items {
 					switch it.Header.Type {
-					case envelope.TypeSession, envelope.TypeSessions, envelope.TypeClientReport:
+					case envelope.TypeSession, envelope.TypeSessions, envelope.TypeClientReport, envelope.TypeCheckIn:
 					default:
 						t.Errorf("item inesperado %q", it.Header.Type)
 					}

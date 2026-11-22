@@ -16,6 +16,7 @@ import (
 	"github.com/intake-es/intake-errors/internal/alert"
 	"github.com/intake-es/intake-errors/internal/api"
 	"github.com/intake-es/intake-errors/internal/ingest"
+	"github.com/intake-es/intake-errors/internal/monitor"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/ui"
@@ -151,7 +152,10 @@ func run(args []string) error {
 	ingester := ingest.NewIngester(db.Pool(), maps, alerts, log)
 	drops := ingest.NewDrops(db)
 	go drops.Run(ctx, 10*time.Second, log)
-	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), drops, log)
+	monitors := monitor.New(db, alerts, log)
+	go monitors.Run(ctx, monitor.SweepInterval, time.Duration(cfg.RetentionDays)*24*time.Hour)
+	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), drops, log).
+		WithCheckIns(monitors)
 
 	mux := routes(db, envelopes, maps.Register, auth.Register)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())

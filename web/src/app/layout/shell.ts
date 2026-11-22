@@ -14,9 +14,12 @@ const THEMES: { value: ThemeChoice; label: Key; icon: string }[] = [
   { value: 'dark', label: 'theme.dark', icon: 'moon' },
 ];
 
-function sectionOf(url: string): 'issues' | 'releases' | 'settings' {
+function sectionOf(url: string): 'issues' | 'releases' | 'monitors' | 'settings' {
   if (url.startsWith('/releases')) {
     return 'releases';
+  }
+  if (url.startsWith('/monitors')) {
+    return 'monitors';
   }
   if (url.startsWith('/settings') || /^\/projects\/[^/]+\/settings/.test(url)) {
     return 'settings';
@@ -43,7 +46,7 @@ export class Shell {
   protected readonly menu = signal<'env' | 'lang' | 'theme' | 'user' | null>(null);
 
   private readonly router = inject(Router);
-  /** Qué sección del raíl se marca: releases, ajustes o, en el resto, los errores. */
+  /** Qué sección del raíl se marca: releases, monitores, ajustes o, en el resto, los errores. */
   protected readonly section = toSignal(
     this.router.events.pipe(
       filter((e) => e instanceof NavigationEnd),

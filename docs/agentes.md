@@ -83,6 +83,7 @@ curl -s https://errors.example.com/mcp \
 | `list_events`, `get_event` | los eventos de un issue y un evento entero | sí |
 | `list_comments` | el historial: comentarios y cambios de estado | sí |
 | `list_releases`, `get_release` | las releases y lo que trajo una (nuevos, regresiones, los que dejaron de salir) | sí |
+| `list_monitors`, `get_monitor` | los crons con su estado y la próxima ejecución esperada, y el historial de uno | sí |
 | `add_comment` | comentar en Markdown | no |
 | `set_issue_status` | `resolved_next`, `resolved`, `silenced` u `open`, con un `comment` opcional unido al cambio; idempotente | no |
 

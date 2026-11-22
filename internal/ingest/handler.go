@@ -16,6 +16,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/intake-errors/internal/monitor"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -32,12 +33,24 @@ type Projects interface {
 	Filters(ctx context.Context, projectID int64) (store.Filters, error)
 }
 
+// CheckIns guarda los check-ins de los crons.
+type CheckIns interface {
+	CheckIn(ctx context.Context, projectID int64, in store.CheckInInput) (store.CheckInResult, error)
+}
+
 type Handler struct {
 	projects Projects
 	ingester *Ingester
 	limiter  *RateLimiter
 	drops    *Drops
+	checkIns CheckIns
 	log      *slog.Logger
+}
+
+// WithCheckIns hace que el handler guarde los items check_in; sin él, se ignoran.
+func (h *Handler) WithCheckIns(c CheckIns) *Handler {
+	h.checkIns = c
+	return h
 }
 
 // NewHandler acepta drops nil: entonces no se cuentan los descartes.
@@ -129,10 +142,22 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		}
 		events = append(events, ev)
 	}
+	var checkIns []store.CheckInInput
+	if h.checkIns != nil {
+		for _, it := range env.CheckIns() {
+			in, err := monitor.Parse(it.Payload)
+			if err != nil {
+				// Un check-in roto no tumba los eventos que viajan con él.
+				h.log.WarnContext(ctx, "check-in ignorado", "proyecto", project.ID, "err", err)
+				continue
+			}
+			checkIns = append(checkIns, in)
+		}
+	}
 
 	lim := DefaultLimits()
 	perMinute := 0
-	if len(events) > 0 {
+	if len(events) > 0 || len(checkIns) > 0 {
 		filters, err := h.projects.Filters(ctx, project.ID)
 		if err != nil {
 			h.log.ErrorContext(ctx, "leer filtros", "proyecto", project.ID, "err", err)
@@ -156,13 +181,23 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		events = kept
 	}
 
-	if len(events) > 0 {
-		if ok, wait := h.limiter.AllowUpTo(project.ID, len(events), perMinute); !ok {
-			h.drops.Add(project.ID, store.DropRateLimit, len(events))
+	// Los check-ins cuentan en el mismo límite por minuto que los eventos.
+	if n := len(events) + len(checkIns); n > 0 {
+		if ok, wait := h.limiter.AllowUpTo(project.ID, n, perMinute); !ok {
+			if len(events) > 0 {
+				h.drops.Add(project.ID, store.DropRateLimit, len(events))
+			}
+			var cats []string
+			if len(events) > 0 {
+				cats = append(cats, "error")
+			}
+			if len(checkIns) > 0 {
+				cats = append(cats, "monitor")
+			}
 			secs := strconv.Itoa(max(1, int(math.Ceil(wait.Seconds()))))
 			hdr := w.Header()
 			hdr.Set("Retry-After", secs)
-			hdr.Set("X-Sentry-Rate-Limits", secs+":error:project")
+			hdr.Set("X-Sentry-Rate-Limits", secs+":"+strings.Join(cats, ";")+":project")
 			fail(w, http.StatusTooManyRequests, "demasiados eventos")
 			return
 		}
@@ -185,6 +220,13 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		}
 		h.log.DebugContext(ctx, "evento", "proyecto", project.ID, "event_id", ev.ID, "issue", res.IssueID,
 			"resultado", res.Outcome.String(), "repetido", res.Duplicate, "descartado", res.Dropped, "duración", time.Since(start))
+	}
+	for _, in := range checkIns {
+		if _, err := h.checkIns.CheckIn(ctx, project.ID, in); err != nil {
+			h.log.ErrorContext(ctx, "guardar check-in", "proyecto", project.ID, "monitor", in.Slug, "err", err)
+			fail(w, http.StatusInternalServerError, "error interno")
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": respID})
 }

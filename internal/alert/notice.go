@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/intake-errors/internal/store"
 )
 
 // errGone es un aviso que ya no se puede enviar nunca, como el de una acción
@@ -43,6 +44,9 @@ func kindText(p *pending) (string, string) {
 		return s, s + " en "
 	case kindTest:
 		return "Aviso de prueba", "Aviso de prueba de "
+	case store.KindCronFailed, store.KindCronMissed, store.KindCronTimeout, store.KindCronRecovered:
+		s := cronKindText(p.kind)
+		return s, s + " en "
 	default:
 		return "Nuevo error", "Nuevo error en "
 	}
@@ -79,6 +83,9 @@ type summary struct {
 }
 
 func summarize(p *pending) summary {
+	if p.cron != nil {
+		return cronSummary(p)
+	}
 	what, _ := kindText(p)
 	s := summary{What: what, Headline: headline(p), Meta: []string{p.project}}
 	if p.environment != "" {

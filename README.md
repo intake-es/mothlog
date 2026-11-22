@@ -39,7 +39,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 
 ## Interfaz
 
-El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos, su primera y última release, el historial con los comentarios y los cambios de estado (con un cuadro para comentar) y «Copiar para un agente», que copia el `context.md` del entorno elegido, y las releases (`/releases`) con lo que trajo cada una. El selector de entorno del raíl filtra todas las pantallas ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)). Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
+El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos, su primera y última release, el historial con los comentarios y los cambios de estado (con un cuadro para comentar) y «Copiar para un agente», que copia el `context.md` del entorno elegido, las releases (`/releases`) con lo que trajo cada una y los [monitores de cron](#monitores-de-cron) (`/monitors`) con su estado, sus últimas ejecuciones y el historial de cada uno. El selector de entorno del raíl filtra todas las pantallas ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)). Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
 
 La interfaz está en español y en inglés: empieza en español si el idioma del navegador empieza por `es` y en inglés en el resto, y se cambia desde el raíl, junto al tema, sin recargar; la elección se guarda en el navegador. Los textos están en `web/src/app/core/i18n/` (`es.ts` y `en.ts`, con las mismas claves); lo que viene del servidor, como los mensajes de error de la API o el Markdown de `stacktrace.md`, no se traduce.
 
@@ -81,7 +81,7 @@ Las issues de Linear de un proyecto llevan dos grupos de etiquetas: las de `LINE
 
 ## Avisos
 
-Un proyecto sin [reglas de aviso](#reglas-de-aviso) avisa así: un error nuevo, o una regresión (un evento que reabre un issue resuelto), avisa en cada canal configurado con las variables de entorno. Un evento más de un issue abierto no avisa.
+Un proyecto sin [reglas de aviso](#reglas-de-aviso) avisa así: un error nuevo, o una regresión (un evento que reabre un issue resuelto), avisa en cada canal configurado con las variables de entorno. Un evento más de un issue abierto no avisa. Un cron que falla, no llega o se pasa de tiempo también avisa por esos canales ([Monitores de cron](#monitores-de-cron)).
 
 - **Slack**: un mensaje de Block Kit con el tipo de aviso, el proyecto y el entorno (y, en una regresión, cuándo se resolvió); el error; la línea que falla (el fotograma propio más cercano al error del último evento, con su línea de código); el release, el espacio (`organization_name` u `organization_id`), el número de eventos en una regresión y el id del usuario o la petición sin query string; y botones a `<PUBLIC_URL>/issues/<id>` y a la issue de Linear. Si hay Linear, el aviso de Slack espera hasta 2 minutos a que se envíe el de Linear para llevar su botón.
 - **Linear**: con un error nuevo, una issue `[<proyecto>] <título>` en `LINEAR_TEAM_ID` con las etiquetas de `LINEAR_LABEL_IDS` más las del proyecto, sin repetir; su descripción es el enlace a la interfaz y el Markdown de `stacktrace.md`. Con una regresión, esa misma issue vuelve al primer estado de tipo `unstarted` del equipo (sea cual sea su nombre), recibe las etiquetas del proyecto que le falten y un comentario con el release y la fecha; si se ha borrado en Linear, se crea otra. Hay una issue de Linear por error.
@@ -90,9 +90,10 @@ La ingesta deja los avisos en `alert_outbox` dentro de su transacción, así que
 
 ### Reglas de aviso
 
-Con reglas, el proyecto deja de avisar como arriba y avisa de lo que digan sus reglas, a donde digan; si todas están desactivadas, no avisa. Se editan en la interfaz (Ajustes del proyecto → Avisos), con la API o con la CLI. Una regla salta cuando se cumple alguna de sus condiciones y todos sus filtros:
+Con reglas, el proyecto deja de avisar como arriba y avisa de lo que digan sus reglas, a donde digan; si todas están desactivadas, no avisa. Los errores y los crons van por separado: unas reglas solo de crons no quitan los avisos de los errores, ni al revés. Se editan en la interfaz (Ajustes del proyecto → Avisos), con la API o con la CLI. Una regla salta cuando se cumple alguna de sus condiciones y todos sus filtros:
 
 - **Condiciones**: error nuevo (`new`), regresión (`regressed`), más de N eventos en una ventana de hasta 24 h (`frequency`, contando también los eventos que no se guardan por el tope o el muestreo) y más de N usuarios afectados (`users`). Las dos últimas cuentan, por regla, solo los eventos que pasan sus filtros, y avisan una vez por cruce: la primera vez que se pueda (fuera del límite de la regla) mientras siga por encima del umbral; la frecuencia vuelve a avisar cuando baja del umbral y lo pasa otra vez. Un issue silenciado no avisa.
+- **Crons** (`cron`): un cron que falla (`failed`), que no llega a su hora (`missed`), que se pasa de su tiempo máximo (`timeout`) o que vuelve a ir bien tras fallar (`recovered`), de los monitores de `monitors` (sus slugs) o, vacío, de todos los del proyecto. Avisan al cambiar de estado, no con cada ejecución que sigue fallando, y un monitor silenciado no avisa; de los filtros, solo cuenta el entorno, y el límite de la regla no se aplica.
 - **Filtros**: entornos, niveles (`fatal`, `error`, `warning`, `info`, `debug`) y etiquetas, con valor o solo con que estén.
 - **Acciones**: Slack (su webhook), Linear (equipo y etiquetas; sin ellos, `LINEAR_TEAM_ID` y `LINEAR_LABEL_IDS`; con `LINEAR_API_KEY`), correo (`SMTP_URL`), Discord (su webhook), Telegram (token del bot y chat), ntfy (URL del tema y, si lo pide, token) y el webhook genérico. Los avisos de Slack y Linear son como los de arriba; en Linear, la frecuencia y los usuarios comentan en la issue sin cambiar su estado.
 - **Límite**: `throttle_minutes`, lo menos que pasa entre dos avisos de la misma regla por el mismo issue.
@@ -140,7 +141,7 @@ Un `POST` con `Content-Type: application/json`:
 }
 ```
 
-`type` es `new`, `regressed`, `frequency`, `users` o `test`; `trigger` solo va en `frequency` y `users`, y `resolved_at` en las regresiones; `markdown` es el `stacktrace.md`, listo para un agente; `delivery` es el mismo en los reintentos de un aviso. Lo acompañan `X-Intake-Errors-Event` (el tipo), `X-Intake-Errors-Delivery` y `X-Intake-Errors-Signature: t=<segundos Unix>,v1=<firma>`, donde la firma es el HMAC-SHA256 en hexadecimal, con el secreto de la acción, de `<t>.<cuerpo>`. Para comprobarla, con el cuerpo tal cual llega, sin volver a serializarlo:
+`type` es `new`, `regressed`, `frequency`, `users` o `test`, o en los crons `cron_failed`, `cron_missed`, `cron_timeout` o `cron_recovered`: esos no llevan `issue` ni `event`, sino `monitor` (id, slug, nombre, horario, zona, margen, tiempo máximo y `url`) y `check_in` (`check_in_id`, estado, `duration_ms`, entorno, release, `expected_at` y `started_at`), y `markdown` es un resumen del cron; `trigger` solo va en `frequency` y `users`, y `resolved_at` en las regresiones; `markdown` es el `stacktrace.md`, listo para un agente; `delivery` es el mismo en los reintentos de un aviso. Lo acompañan `X-Intake-Errors-Event` (el tipo), `X-Intake-Errors-Delivery` y `X-Intake-Errors-Signature: t=<segundos Unix>,v1=<firma>`, donde la firma es el HMAC-SHA256 en hexadecimal, con el secreto de la acción, de `<t>.<cuerpo>`. Para comprobarla, con el cuerpo tal cual llega, sin volver a serializarlo:
 
 ```python
 import hashlib, hmac, time
@@ -172,7 +173,7 @@ Para conectarlo con Claude Code:
 claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
 
-Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `list_releases` y `get_release`; las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` como idempotente. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
+Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `list_releases`, `get_release`, `list_monitors` y `get_monitor`; las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` como idempotente. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -200,6 +201,10 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issu
 | `GET /api/0/projects/{id}/dropped?days=` | lo descartado en los últimos `days` días (30 por defecto, hoy incluido): `total`, `reasons` con cada motivo y `daily` por día y motivo |
 | `GET`, `POST /api/0/projects/{id}/rules` | sus reglas de aviso, con los secretos tapados; crea una (201) |
 | `GET`, `PUT`, `DELETE /api/0/projects/{id}/rules/{rule}` | una regla; la sustituye entera; la borra (204) |
+| `GET /api/0/monitors/?project=&status=` y `GET /api/0/projects/{id}/monitors/` | los monitores de cron, primero los que fallan, con su horario, su estado (`pending`, `ok`, `error`, `missed` o `timeout`), `muted`, `last_checkin_at`, `next_checkin_at` (cuándo se espera la próxima) y `recent`, sus 30 últimas ejecuciones |
+| `POST /api/0/projects/{id}/monitors/` | crea uno con `{"name": "...", "schedule": {"type": "crontab", "value": "0 3 * * *"}}` (o `{"type": "interval", "value": 2, "unit": "hour"}`) y, si se quiere, `slug` (sin él, sale del nombre), `timezone`, `checkin_margin`, `max_runtime` (en minutos), `environment` y `muted` (201) |
+| `GET`, `PATCH`, `DELETE /api/0/projects/{id}/monitors/{slug}/` | el monitor con las primeras ejecuciones de su historial (`checkins`, `next_cursor`); cambia los campos que trae el cuerpo, con `{"muted": true}` lo silencia; lo borra con su historial (204) |
+| `GET /api/0/projects/{id}/monitors/{slug}/checkins/?cursor=&limit=` | su historial, de la más nueva a la más vieja: estado, duración, entorno, release, cuándo tocaba y cuándo empezó y acabó (`limit` hasta 200, 50 por defecto) |
 | `POST /api/0/projects/{id}/rules/{rule}/test` | con `{"action_id": "..."}`, manda un aviso de prueba por esa acción; 502 con el error si el destino falla |
 
 Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
@@ -317,6 +322,49 @@ sentry-cli deploys new -r "$SENTRY_RELEASE" -e production
 
 `tools/sentry-cli/prueba.sh` los prueba con `sentry-cli` 3.8.2 de verdad contra el binario, y `testdata/sentry-cli/releases/` es lo que mandó.
 
+## Monitores de cron
+
+Un cron que deja de ejecutarse o que falla sin lanzar una excepción no manda ningún error. Para enterarse, cada ejecución manda check-ins: `in_progress` al empezar y `ok` o `error` al acabar, con la duración. Los manda el SDK de Sentry (el item `check_in` del envelope) o `sentry-cli monitors run`, al mismo DSN que los errores.
+
+Un monitor es de un proyecto y se identifica por su slug. Lleva su horario (un crontab de cinco campos con su zona horaria, o cada N minutos, horas, días, semanas, meses o años), el margen que puede llegar tarde un check-in (`checkin_margin`, en minutos, 1 por defecto), lo que puede durar una ejecución (`max_runtime`, 30 por defecto) y el entorno que vigila. Se crea solo con el primer check-in que trae `monitor_config`, y el `monitor_config` de los siguientes lo actualiza (lo que no trae vuelve a su valor por defecto); también se crea, edita, silencia y borra con la [API](#api-y-mcp). Un check-in de un monitor que no existe y sin `monitor_config` se ignora. Un monitor creado por un check-in vale para cualquier entorno; con `environment` fijado por la API, se ignoran los check-ins de los demás. Un check-in solo crea monitores mientras el proyecto tenga menos de 500; por encima, se crean por la API. Los check-ins cuentan en el límite por minuto del proyecto, como los eventos (el 429 lleva la categoría `monitor`), y uno mal formado se salta sin rechazar el resto del envelope.
+
+Con Python:
+
+```python
+import sentry_sdk
+from sentry_sdk.crons import monitor
+
+sentry_sdk.init(dsn="https://<clave>@errores.ejemplo.com/1", environment="production")
+
+@monitor(
+    monitor_slug="limpieza-nocturna",
+    monitor_config={
+        "schedule": {"type": "crontab", "value": "0 3 * * *"},
+        "timezone": "Europe/Madrid",
+        "checkin_margin": 5,
+        "max_runtime": 20,
+    },
+)
+def limpiar():
+    ...
+```
+
+Con otro horario, `{"type": "interval", "value": 2, "unit": "hour"}`. Los demás SDK tienen lo mismo (`Sentry.withMonitor` en JavaScript, `capture_checkin` a mano en Python).
+
+Con `sentry-cli`, desde el propio crontab, envolviendo la orden (un código de salida distinto de 0 es `error`):
+
+```sh
+export SENTRY_DSN=https://<clave>@errores.ejemplo.com/1
+sentry-cli monitors run -s "0 3 * * *" --timezone Europe/Madrid --check-in-margin 5 --max-runtime 20 \
+  limpieza-nocturna -- /opt/limpieza.sh
+```
+
+**Estados.** El de un monitor es el de su último check-in cerrado: `ok`, `error`, `missed` (el siguiente no llegó dentro del margen) o `timeout` (un `in_progress` que no se cerró antes de `max_runtime`); `pending` hasta el primero. La próxima ejecución esperada se cuenta desde cada check-in que llega; hasta el primero no se espera ninguna. Un proceso dentro del propio servicio repasa cada 15 segundos los que no han llegado y los que se pasan, sin cron externo; con varias réplicas, cada una coge los monitores y las ejecuciones con `FOR UPDATE SKIP LOCKED`, así que nada se marca dos veces. Si el servicio ha estado parado y se han perdido varias, se apunta un `missed` y se espera la siguiente que aún puede llegar. Un `ok` que llega después de un `timeout` guarda la duración, pero la ejecución sigue en `timeout`.
+
+**Avisos.** Avisan al cambiar de estado: al empezar a fallar, no llegar o pasarse de tiempo (y al cambiar de uno a otro), y al volver a ir bien. Sin reglas de crons, un proyecto avisa por los canales por defecto de los que fallan, no llegan o se pasan de tiempo; con ellas, como digan ([Reglas de aviso](#reglas-de-aviso)). Un monitor silenciado no avisa, pero sigue apuntando sus ejecuciones.
+
+Las ejecuciones se guardan lo mismo que los eventos (`RETENTION_DAYS`), salvo la última de cada monitor.
+
 ## Source maps del front
 
 Los errores del navegador se traducen a su TypeScript original con los `.map` del build. Se guardan comprimidos por proyecto, release, dist y nombre del `.js` (los chunks de un build de producción llevan un hash en el nombre) y, si el build pasó por `sentry-cli sourcemaps inject`, también por su debug ID. Se suben con el endpoint de abajo o con `sentry-cli` ([Con sentry-cli](#con-sentry-cli)), y se borran a los `RETENTION_DAYS` días de subirlos.
@@ -375,4 +423,4 @@ La organización se acepta tal cual y el proyecto se busca por nombre (404 si no
 
 ## Fixtures
 
-`testdata/envelopes/` son envíos grabados de sentry-python 2.75.0 y `@sentry/browser` 11.15.0 desde dos apps de ejemplo (una de FastAPI y una página TypeScript compilada con esbuild), `testdata/sourcemaps/` el build de la página con sus mapas y `testdata/sentry-cli/` las subidas de ese build con sentry-cli 3.8.2. `tools/sentry-cli/prueba.sh` es la prueba de punta a punta con `sentry-cli` de verdad. Las apps, cómo regrabarlos y qué debe pasar con cada envío están en [`tools/fixtures/README.md`](tools/fixtures/README.md); `internal/event/fixtures_test.go` sigue esa tabla.
+`testdata/envelopes/` son envíos grabados de sentry-python 2.75.0 y `@sentry/browser` 11.15.0 desde dos apps de ejemplo (una de FastAPI y una página TypeScript compilada con esbuild), `testdata/sourcemaps/` el build de la página con sus mapas y `testdata/sentry-cli/` las subidas de ese build con sentry-cli 3.8.2; los check-ins de crons son de sentry-python y de `sentry-cli monitors run`. `tools/sentry-cli/prueba.sh` es la prueba de punta a punta con `sentry-cli` de verdad. Las apps, cómo regrabarlos y qué debe pasar con cada envío están en [`tools/fixtures/README.md`](tools/fixtures/README.md); `internal/event/fixtures_test.go` sigue esa tabla.

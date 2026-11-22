@@ -1,6 +1,6 @@
 # Envíos grabados de los SDK
 
-Grabados el 2026-11-19 con dos apps de ejemplo de este directorio, sin tocar los SDK:
+Grabados el 2026-11-19 (los de crons, el 2026-11-22) con dos apps de ejemplo de este directorio, sin tocar los SDK:
 
 - `python/`: una app de FastAPI con `sentry-sdk` 2.75.0 y `structlog`.
 - `navegador/`: una página TypeScript con `@sentry/browser` 11.15.0 y `mitt`, compilada con esbuild en dos ficheros con hash y sus source maps.
@@ -24,6 +24,10 @@ Cada envío son dos ficheros:
 | `web-typeerror-1` | `@sentry/browser` 11.15.0 | `TypeError` en `src/carrito.ts` al pulsar un botón, a través de `mitt`; lo captura el `addEventListener` envuelto del SDK; release `fixture-release-1` | Error nuevo; con los mapas de `testdata/sourcemaps/`, el último fotograma sale como `src/carrito.ts:7` y los de `mitt`, con `in_app` falso |
 | `web-sesion-1` y `-2` | 11.15.0 | `session` del navegador: la del arranque y la que cuenta el error | Se aceptan y se ignoran |
 | `web-cli-upload-1` | 11.15.0 | El mismo `TypeError`, con el build subido por `sentry-cli sourcemaps upload`; release `prueba-upload`, sin `debug_meta` | Error nuevo; con `testdata/sentry-cli/upload`, el último fotograma sale como `src/carrito.ts:7` por release y nombre |
+| `api-cron-ok-1` y `-2` | 2.75.0 | `check_in` del decorador `@monitor` de `limpieza-nocturna`: `in_progress` y `ok` con el mismo `check_in_id`, con `monitor_config` (crontab `0 3 * * *` en `Europe/Madrid`, margen 5 y máximo 20) | Crea el monitor; queda en `ok` con la duración, y el siguiente a las 3:00 de Madrid |
+| `api-cron-error-1` y `-2` | 2.75.0 | `check_in` de `enviar-facturas`, que lanza un `TimeoutError`: `in_progress` y `error`, con `monitor_config` de cada 2 horas | Crea el monitor, en `error` |
+| `cli-monitors-run-1` y `-2` | sentry-cli 3.8.2 | `monitors run -s "*/5 * * * *" --check-in-margin 2 --max-runtime 3 --timezone Europe/Madrid copia-seguridad -- sh -c 'echo copiando; sleep 1'`: `in_progress` con `monitor_config` y `ok` sin él | Crea el monitor, en `ok` |
+| `cli-monitors-run-error-1` y `-2` | sentry-cli 3.8.2 | `monitors run -e staging copia-seguridad -- sh -c 'exit 3'`: `in_progress` y `error` en `staging`, sin `monitor_config` | Cuentan: el monitor, creado por un check-in, vale para cualquier entorno; queda en `error` |
 | `web-cli-inject-1` | 11.15.0 | El mismo `TypeError`, con el build pasado por `sentry-cli sourcemaps inject`; release `prueba-inject` y `debug_meta` con el debug ID de los dos `.js` | Error nuevo; con `testdata/sentry-cli/inject`, el último fotograma sale como `src/carrito.ts:7` por debug ID; el evento guardado conserva `debug_meta` |
 
 Proyectos de los DSN: `api` es el `1`, `web` el `2` y `front` (el de los `web-cli-*`) el `3`. La clave pública va en `X-Sentry-Auth` (Python) o en `sentry_key` de la query (navegador).
@@ -65,7 +69,7 @@ Lo que mandó sentry-cli 3.8.2 al subir el build de `navegador/` a intake-errors
 
    ```sh
    cd tools/fixtures/python
-   for caso in excepcion validacion descartado log-exception log-error tarea tarea; do
+   for caso in excepcion validacion descartado log-exception log-error tarea tarea cron-ok cron-error; do
      SENTRY_DSN=http://<clave>@127.0.0.1:8299/1 uv run grabar.py $caso
    done
    ```
@@ -89,4 +93,12 @@ Lo que mandó sentry-cli 3.8.2 al subir el build de `navegador/` a intake-errors
    ```
 
    Crea los proyectos `api`, `web` y `front`, compila la página tres veces con el DSN de `front` y la sube con `sentry-cli` 3.8.2 sin `inject`, con `inject` y con 1.77.3; manda el error con Chromium a través de `navegador.mjs` y comprueba con la API que el último fotograma de cada evento sale como `src/carrito.ts:7`. Prueba también que un token malo da 401. Deja en `trabajo/subidas/<caso>/` lo que mandó `sentry-cli` y en `trabajo/envios-<caso>/` los envíos del navegador: el que lleva el evento es el `web-cli-<caso>-1`.
-5. `python3 tools/fixtures/ver.py <salida>` lista los items de cada envío. Renombrar los ficheros como en la tabla y copiarlos a `testdata/envelopes/`, y copiar `dist/*.js` y `dist/*.map` a `testdata/sourcemaps/`. `node posiciones.mjs <envío> dist` da las posiciones originales de cada fotograma. Si cambian las claves, los ids, los hashes de los chunks o las líneas, ajustar los tests que los esperan.
+5. Los `cli-monitors-run-*`, con el receptor escuchando y `sentry-cli` de `tools/sentry-cli/`:
+
+   ```sh
+   export SENTRY_DSN=http://<clave>@127.0.0.1:8299/1
+   sentry-cli monitors run -s "*/5 * * * *" --check-in-margin 2 --max-runtime 3 --timezone Europe/Madrid copia-seguridad -- sh -c 'echo copiando; sleep 1'
+   sentry-cli monitors run -e staging copia-seguridad -- sh -c 'exit 3'
+   ```
+
+6. `python3 tools/fixtures/ver.py <salida>` lista los items de cada envío. Renombrar los ficheros como en la tabla y copiarlos a `testdata/envelopes/`, y copiar `dist/*.js` y `dist/*.map` a `testdata/sourcemaps/`. `node posiciones.mjs <envío> dist` da las posiciones originales de cada fotograma. Si cambian las claves, los ids, los hashes de los chunks o las líneas, ajustar los tests que los esperan.

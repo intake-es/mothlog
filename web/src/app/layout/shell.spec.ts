@@ -161,12 +161,13 @@ describe('Shell', () => {
     });
   });
 
-  it('el raíl lleva a los errores, a las releases y a los ajustes', () => {
+  it('el raíl lleva a los errores, a las releases, a los monitores y a los ajustes', () => {
     const { el } = render();
     const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.rail__nav'));
     expect(links.map((a) => [a.getAttribute('href'), a.getAttribute('aria-label')])).toEqual([
       ['/', 'Errores'],
       ['/releases', 'Releases'],
+      ['/monitors', 'Monitores'],
       ['/settings', 'Ajustes del proyecto'],
     ]);
   });

@@ -25,6 +25,16 @@
   </a>
   <a
     class="rail__nav"
+    routerLink="/monitors"
+    [class.rail__nav--on]="section() === 'monitors'"
+    [attr.aria-current]="section() === 'monitors' ? 'page' : null"
+    [attr.aria-label]="t('nav.monitors')"
+    [attr.title]="t('nav.monitors')"
+  >
+    <svg appIcon="heartbeat"></svg>
+  </a>
+  <a
+    class="rail__nav"
     routerLink="/settings"
     [class.rail__nav--on]="section() === 'settings'"
     [attr.aria-current]="section() === 'settings' ? 'page' : null"

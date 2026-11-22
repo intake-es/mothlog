@@ -47,6 +47,9 @@ type linearRef struct {
 // send crea la issue de Linear o, si ya hay una, la reabre en una regresión y
 // la comenta en el resto de avisos. tx es nil en los avisos de prueba.
 func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
+	if p.cron != nil {
+		return l.createCron(ctx, p)
+	}
 	if p.linear != "" && p.kind == "new" {
 		return nil
 	}

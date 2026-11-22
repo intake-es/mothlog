@@ -20,6 +20,7 @@ const (
 	TypeSessions     = "sessions"
 	TypeClientReport = "client_report"
 	TypeAttachment   = "attachment"
+	TypeCheckIn      = "check_in"
 )
 
 type Header struct {
@@ -58,6 +59,17 @@ func (e *Envelope) Events() []Item {
 	var out []Item
 	for _, it := range e.Items {
 		if it.Header.Type == TypeEvent {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// CheckIns devuelve los items check_in de los crons.
+func (e *Envelope) CheckIns() []Item {
+	var out []Item
+	for _, it := range e.Items {
+		if it.Header.Type == TypeCheckIn {
 			out = append(out, it)
 		}
 	}

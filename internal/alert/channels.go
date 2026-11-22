@@ -95,7 +95,11 @@ func telegramText(p *pending) string {
 		b.WriteString(e(f[0]) + ": " + e(f[1]) + "\n")
 	}
 	if p.link != "" {
-		b.WriteString(`<a href="` + e(p.link) + `">Ver el error</a>`)
+		label := "Ver el error"
+		if p.cron != nil {
+			label = "Ver el monitor"
+		}
+		b.WriteString(`<a href="` + e(p.link) + `">` + label + `</a>`)
 	}
 	text := b.String()
 	if len([]rune(text)) > maxTelegramText {
@@ -123,6 +127,7 @@ type ntfy struct {
 var ntfyTags = map[string]string{
 	"new": "rotating_light", "regressed": "repeat", "frequency": "chart_with_upwards_trend",
 	"users": "busts_in_silhouette", kindTest: "test_tube",
+	"cron_failed": "x", "cron_missed": "alarm_clock", "cron_timeout": "hourglass", "cron_recovered": "white_check_mark",
 }
 
 func (n *ntfy) send(ctx context.Context, _ pgx.Tx, p *pending) error {
@@ -132,7 +137,7 @@ func (n *ntfy) send(ctx context.Context, _ pgx.Tx, p *pending) error {
 	// Las cabeceras van en ASCII: lo demás, codificado como en el correo.
 	h.Set("Title", mime.QEncoding.Encode("utf-8", s.What+" · "+p.project))
 	h.Set("Tags", ntfyTags[p.kind])
-	if p.kind == "new" || p.kind == "regressed" {
+	if p.kind == "new" || p.kind == "regressed" || (isCronKind(p.kind) && p.kind != "cron_recovered") {
 		h.Set("Priority", "high")
 	}
 	if p.link != "" {

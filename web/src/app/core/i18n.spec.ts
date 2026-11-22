@@ -54,6 +54,9 @@ const ALLOWED = new Set([
   ...['fatal', 'error', 'warning', 'info', 'debug', 'settings', 'page', 'id', 'days', 'ok'],
   ...['messages', 'environments', 'releases', 'localhost', 'perIssue', 'sample', 'rateLimit'],
   ...['url', 'labels', 'to', 'token', 'secret', 'sending', '\\n'],
+  // Estados, horarios y unidades de los monitores de cron.
+  ...['monitors', 'missed', 'timeout', 'crontab', 'interval', 'week', 'month', 'year'],
+  ...['millisecond', 'img', 'pending'],
   'fill: currentColor; stroke: none',
 ]);
 
