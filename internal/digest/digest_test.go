@@ -85,7 +85,7 @@ func TestBuildKnownData(t *testing.T) {
 	health := section(t, d, "health")
 	if health.Title != "Salud de la release web@1.4.1" || mustJSON(health.Stats) != mustJSON([]Stat{
 		{"Sesiones sin crash", "98,5 %", "3 con crash"}, {"Usuarios sin crash", "75 %", "1 con crash"}, {"Sesiones", "200", ""},
-	}) || len(health.Items) != 1 || health.Items[0].URL != base+"/releases/"+itoa(p.ID)+"/web@1.4.1" {
+	}) || len(health.Items) != 0 || health.URL != base+"/releases/"+itoa(p.ID)+"/web@1.4.1" {
 		t.Errorf("salud = %+v", health)
 	}
 	if s := d.Subject(); s != "Resumen diario de tienda: 1 nuevo, 1 ha vuelto, 2 crons con problemas" {
@@ -165,7 +165,7 @@ func TestRenderFormats(t *testing.T) {
 		"## Errores nuevos\n",
 		"- [TypeError: Cannot read properties of undefined (reading 'total')](" + base + "/issues/",
 		"- Eventos: **20** (+300 % respecto al periodo anterior)\n",
-		"## Salud de la release web@1.4.1\n",
+		"## [Salud de la release web@1.4.1](" + base + "/releases/" + itoa(p.ID) + "/web@1.4.1)\n",
 	} {
 		if !strings.Contains(md, w) {
 			t.Errorf("Markdown sin %q:\n%s", w, md)
@@ -178,7 +178,18 @@ func TestRenderFormats(t *testing.T) {
 	if strings.Contains(html, "border-left:3px") || strings.Contains(html, "<script") {
 		t.Error("el correo no lleva franjas laterales ni scripts")
 	}
+	releaseURL := base + "/releases/" + itoa(p.ID) + "/web@1.4.1"
+	if !strings.Contains(html, `<a href="`+releaseURL+`" style="color:#2557d6;text-decoration:none">Salud de la release web@1.4.1</a></h2>`) ||
+		strings.Count(html, releaseURL) != 1 {
+		t.Errorf("la salud enlaza la release en el título, una sola vez:\n%s", html)
+	}
+	if strings.Count(md, releaseURL) != 1 {
+		t.Errorf("Markdown con la release repetida:\n%s", md)
+	}
 	text := d.Text()
+	if !strings.Contains(text, "SALUD DE LA RELEASE WEB@1.4.1\n"+releaseURL+"\n") || strings.Count(text, releaseURL) != 1 {
+		t.Errorf("texto de la salud:\n%s", text)
+	}
 	if !strings.Contains(text, "ERRORES NUEVOS\n- TypeError") || !strings.Contains(text, base+"/projects/"+itoa(p.ID)+"/settings/digest") {
 		t.Errorf("texto:\n%s", text)
 	}
@@ -189,6 +200,9 @@ func TestRenderFormats(t *testing.T) {
 	}
 	if !strings.Contains(msg.Text, "tienda &lt;b&gt;") || !strings.Contains(mustJSON(msg), "|TypeError: Cannot read") {
 		t.Errorf("Slack: %s", mustJSON(msg))
+	}
+	if !strings.Contains(mustJSON(msg), `*\u003c`+releaseURL+`|Salud de la release web@1.4.1\u003e*`) {
+		t.Errorf("Slack sin la salud enlazada: %s", mustJSON(msg))
 	}
 	pl := d.Webhook("outbox-7", end)
 	if pl.Type != "digest" || pl.Delivery != "outbox-7" || pl.Markdown != md || len(pl.Sections) != 6 ||

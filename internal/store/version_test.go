@@ -21,6 +21,21 @@ func TestCompareVersions(t *testing.T) {
 		{"abc123", "1.0.0", 0, false},
 		{"7", "8", 0, false},
 		{"prueba-upload", "prueba-inject", 0, false},
+		{"web@1.1.0+build.2", "web@1.1.0", 0, true},
+		{"web@1.1.0+build.2", "web@1.1.0+build.7", 0, true},
+		{"web@1.1.0+build.2", "web@1.0.9", 1, true},
+		{"web@1.1.0-rc.1+build.2", "web@1.1.0", -1, true},
+		{"v1.2.0-5-gabc123", "v1.2.0", 1, true},
+		{"v1.2.0", "v1.2.0-5-gabc123", -1, true},
+		{"v1.2.0-5-gabc123", "v1.2.0-12-gdef4567", -1, true},
+		{"v1.2.0-12-gdef4567", "v1.2.0-5-gabc123", 1, true},
+		{"v1.2.0-5-gabc123", "v1.2.0-5-gabc123-dirty", 0, true},
+		{"v1.2.0-12-gdef4567", "v1.3.0", -1, true},
+		{"v1.2.0-12-gdef4567", "v1.2.1-rc.1", -1, true},
+		{"v1.2.0-rc.1-3-gabc123", "v1.2.0-rc.1", 1, true},
+		{"v1.2.0-rc.1-3-gabc123", "v1.2.0-rc.2", -1, true},
+		{"v1.2.0-rc.1-3-gabc123", "v1.2.0", -1, true},
+		{"api@v1.2.0-5-gabc123", "web@v1.2.0", 0, false},
 	} {
 		got, ok := compareVersions(tc.a, tc.b)
 		if got != tc.want || ok != tc.ok {

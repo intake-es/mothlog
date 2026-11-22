@@ -182,6 +182,27 @@ describe('ProjectSettingsPage', () => {
     expect(secretInput.value).toBe('…ffff');
   });
 
+  it('al marcar los usuarios explica de dónde salen, en los dos idiomas', async () => {
+    const { fixture, el } = await render('alerts');
+    el.querySelector<HTMLButtonElement>('.btn--primary')?.click();
+    fixture.detectChanges();
+    const users = el.querySelector<HTMLInputElement>('#cond-users')!;
+    users.checked = true;
+    users.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    const hint = () =>
+      users.closest('div')?.parentElement?.querySelector('.field__hint')?.textContent;
+    expect(hint()).toBe(
+      'Sin filtros, los usuarios afectados del error, también los de antes de crear la regla. Con filtros, los usuarios distintos de los eventos que los pasan, desde que existe la regla.',
+    );
+    expect(el.textContent).not.toContain('Provisional');
+    TestBed.inject(I18n).set('en');
+    fixture.detectChanges();
+    expect(hint()).toBe(
+      'Without filters, the error’s affected users, including those from before the rule existed. With filters, the distinct users of the events that pass them, since the rule exists.',
+    );
+  });
+
   it('crea una regla de crons para unos monitores y la resume en los dos idiomas', async () => {
     const { fixture, el } = await render('alerts');
     el.querySelector<HTMLButtonElement>('.btn--primary')?.click();

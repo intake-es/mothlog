@@ -88,7 +88,7 @@
     <section class="block">
       <h3 class="block__title">{{ t('uptime.responseTimes') }}</h3>
       @if (d.response_times.length) {
-        <app-response-chart class="chart" [buckets]="d.response_times" />
+        <app-response-chart class="chart" [buckets]="d.response_times" [checks]="d.checks" [since]="d.created_at" />
       } @else {
         <p class="muted">{{ t('uptime.noChecks') }}</p>
       }

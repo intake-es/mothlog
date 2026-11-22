@@ -75,7 +75,7 @@ func (a *Alerter) applyRule(ctx context.Context, tx pgx.Tx, r store.Rule, ev *ev
 		cands = append(cands, candidate{kind: "regressed"})
 	}
 	if u := c.Users; u != nil && !st.usersAlerted {
-		n, err := countUser(ctx, tx, r.ID, res.IssueID, ev, u.Users)
+		n, err := countUser(ctx, tx, r, res.IssueID, ev, u.Users)
 		if err != nil {
 			return err
 		}
@@ -167,14 +167,19 @@ func userKey(u *event.User) string {
 	return ""
 }
 
-// countUser apunta el usuario del evento entre los de la regla y el issue y
-// devuelve cuántos distintos lleva. Guarda como mucho limit+1: basta para
-// saber que se ha pasado. Provisional: cuenta desde que existe la regla; lo
-// sustituirá la cuenta de usuarios afectados de cada issue.
-func countUser(ctx context.Context, tx pgx.Tx, ruleID, issueID int64, ev *event.Event, limit int) (int, error) {
+// countUser devuelve cuántos usuarios distintos lleva el issue para la regla.
+// Sin filtros son los de user_count, también los de antes de crear la regla.
+// Con filtros, apunta el usuario del evento entre los de la regla y el issue,
+// así que cuenta desde que existe la regla; guarda como mucho limit+1: basta
+// para saber que se ha pasado.
+func countUser(ctx context.Context, tx pgx.Tx, r store.Rule, issueID int64, ev *event.Event, limit int) (int, error) {
 	var n int
+	if !r.Conditions.Filtered() {
+		err := tx.QueryRow(ctx, `SELECT user_count FROM issues WHERE id = $1`, issueID).Scan(&n)
+		return n, err
+	}
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM alert_rule_users WHERE rule_id = $1 AND issue_id = $2`,
-		ruleID, issueID).Scan(&n); err != nil {
+		r.ID, issueID).Scan(&n); err != nil {
 		return 0, err
 	}
 	key := userKey(ev.User)
@@ -183,7 +188,7 @@ func countUser(ctx context.Context, tx pgx.Tx, ruleID, issueID int64, ev *event.
 	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO alert_rule_users (rule_id, issue_id, user_key) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-		ruleID, issueID, key)
+		r.ID, issueID, key)
 	if err != nil {
 		return 0, err
 	}

@@ -66,6 +66,9 @@ const ALLOWED = new Set([
   // La configuración del resumen y sus opciones de Intl.
   ...['digest', 'weekly', 'language', 'frequency', 'timeZone', 'long'],
   'fill: currentColor; stroke: none',
+  // Las etiquetas, los atributos y los tipos de nodo del Markdown de los comentarios.
+  ...['code', 'strong', 'em', 'link', 'br', 'p', 'heading', 'list', 'a', 'href', 'rel'],
+  ...['target', 'li', 'ol', 'ul', 'pre', 'md', 'noopener noreferrer'],
 ]);
 
 /** Sin espacios y con pinta de código: rutas, clases, claves con punto, snake_case, MAYÚSCULAS, 6px. */

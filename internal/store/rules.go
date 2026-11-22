@@ -137,6 +137,11 @@ func (c RuleConditions) ForIssues() bool {
 	return c.New || c.Regressed || c.Frequency != nil || c.Users != nil
 }
 
+// Filtered dice si la regla filtra por entorno, nivel o etiqueta.
+func (c RuleConditions) Filtered() bool {
+	return len(c.Environments) > 0 || len(c.Levels) > 0 || len(c.Tags) > 0
+}
+
 // IssueRulesSQL es la condición de ForIssues sobre alert_rules.
 const IssueRulesSQL = `(COALESCE((conditions->>'new')::boolean, false) OR COALESCE((conditions->>'regressed')::boolean, false)
 	OR jsonb_typeof(conditions->'frequency') = 'object' OR jsonb_typeof(conditions->'users') = 'object')`

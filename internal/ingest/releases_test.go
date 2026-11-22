@@ -186,6 +186,30 @@ func TestResolvedNextWithDeploy(t *testing.T) {
 	}
 }
 
+// Un build de la release desplegada es esa release: reabre el issue resuelto
+// con ella, aunque la cree el propio evento.
+func TestResolvedWithDeployReopensOnBuild(t *testing.T) {
+	e := newTestEnv(t, 1000)
+	ctx := context.Background()
+	f := loadFixture(t, "web-typeerror-1")
+	e.sendOK(t, f, f.withReleaseEnv(t, "web@1.0.0", "production"))
+	id := e.issues(t)[0].id
+	if _, err := e.s.SetIssueStatus(ctx, id, "resolved_next"); err != nil {
+		t.Fatal(err)
+	}
+	if _, resolved, err := e.s.AddDeploy(ctx, 2, "web@1.1.0", "production", time.Now()); err != nil || !slices.Equal(resolved, []int64{id}) {
+		t.Fatalf("desplegar web@1.1.0 resolvió %v, %v", resolved, err)
+	}
+	e.sendOK(t, f, f.withReleaseEnv(t, "web@1.0.0+build.9", "production"))
+	if got := e.issues(t)[0]; got.status != "resolved" || got.regressed {
+		t.Fatalf("con un build de la release vieja: %s, regresión %v", got.status, got.regressed)
+	}
+	e.sendOK(t, f, f.withReleaseEnv(t, "web@1.1.0+build.2", "production"))
+	if got := e.issues(t)[0]; got.status != "open" || !got.regressed {
+		t.Fatalf("con web@1.1.0+build.2: %s, regresión %v", got.status, got.regressed)
+	}
+}
+
 // Desplegar una release posterior que aún no ha mandado eventos también
 // resuelve; y un evento de una release aún más nueva, creada a mano y sin
 // desplegar, es una regresión.

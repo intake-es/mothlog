@@ -145,11 +145,7 @@
 }
 
 .comment__body {
-  color: var(--text);
-  font-size: 0.8125rem;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .comment__delete {

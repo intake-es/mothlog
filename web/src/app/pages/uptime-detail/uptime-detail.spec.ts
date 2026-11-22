@@ -122,9 +122,16 @@ describe('UptimeDetailPage', () => {
     );
     expect(chart.querySelectorAll('rect.hit')).toHaveLength(96);
     expect(chart.querySelectorAll('rect.fail')).toHaveLength(2);
-    // Dos trozos con datos: los dos tramos seguidos de hace dos horas y el de ahora.
-    expect(chart.querySelectorAll('path.line')).toHaveLength(2);
+    // Dos trozos con datos: los dos tramos seguidos de hace dos horas, una línea,
+    // y el de ahora, un punto suelto.
+    expect(chart.querySelectorAll('path.line')).toHaveLength(1);
+    expect(chart.querySelectorAll('path.dot')).toHaveLength(1);
+    expect(el.querySelector('app-response-chart .ymax')?.textContent).toBe('250 ms');
     expect(el.querySelector('app-response-chart .axis')?.textContent).toContain('Hace 24 h');
+    expect(
+      el.querySelector('app-response-chart')?.closest('section')?.querySelector('.block__title')
+        ?.textContent,
+    ).toBe('Tiempo de respuesta');
 
     const strip = el.querySelector('app-uptime-strip');
     expect(strip?.getAttribute('aria-label')).toBe('2 últimas comprobaciones, 1 con fallo');
@@ -177,7 +184,12 @@ describe('UptimeDetailPage', () => {
     TestBed.inject(I18n).set('en');
     const { el } = await render();
     expect(el.querySelector('.head .sp-badge')?.textContent).toBe('Down');
-    expect(el.textContent).toContain('Response time, last 24 h');
+    // El título no dice el periodo: lo dice el eje, que puede ser más corto que 24 h.
+    expect(
+      el.querySelector('app-response-chart')?.closest('section')?.querySelector('.block__title')
+        ?.textContent,
+    ).toBe('Response time');
+    expect(el.querySelector('app-response-chart .axis')?.textContent).toContain('24 h ago');
     expect(el.textContent).toContain('Ongoing');
     // Los errores de las comprobaciones llegan del servidor tal cual.
     for (const n of Array.from(

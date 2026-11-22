@@ -70,7 +70,7 @@
             </p>
             @if (r.comment; as c) {
               <div class="comment">
-                <p class="comment__body">{{ c.body }}</p>
+                <app-markdown class="comment__body" [text]="c.body" />
                 @if (c.mine) {
                   <button
                     type="button"

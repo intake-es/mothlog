@@ -97,16 +97,51 @@ describe('History', () => {
     );
     expect(ls[2]).toMatch(/^intake-errors lo resolvió al desplegar web@1\.5\.0 hace 30 min/);
     expect(ls[3]).toMatch(/^intake-errors lo reabrió al llegar un evento de web@1\.6\.0/);
-    const bodies = Array.from(el.querySelectorAll('.comment__body')).map((b) => b.textContent);
+    const bodies = Array.from(el.querySelectorAll('.comment__body')).map((b) => b.innerHTML);
     expect(bodies).toEqual([
-      'Pasa con pedidos sin líneas.\nLo miro.',
-      'Arreglado en `src/carrito.ts`',
+      '<p>Pasa con pedidos sin líneas.<br>Lo miro.</p>',
+      '<p>Arreglado en <code>src/carrito.ts</code></p>',
     ]);
     expect(el.querySelector('.avatar')?.textContent?.trim()).toBe('A');
     // Solo se puede borrar lo propio.
     expect(el.querySelectorAll('.comment__delete').length).toBe(1);
     expect(el.querySelector('.comment__delete')?.getAttribute('aria-label')).toBe(
       'Borrar el comentario',
+    );
+  });
+
+  it('pinta los comentarios en Markdown, con el HTML como texto', async () => {
+    const md = (id: number, body: string): HistoryEntry => ({
+      type: 'comment',
+      id,
+      at: minutesAgo(10),
+      author: { name: 'ana', kind: 'user' },
+      body,
+      mine: false,
+    });
+    const fixture = await render([
+      md(
+        1,
+        '**Causa**: un *nulo* en `total`.\n\n- [PR](https://example.com/pr/1)\n- [mal](javascript:alert(1))',
+      ),
+      md(2, '<img src=x onerror="alert(1)"> <a href="javascript:alert(1)">x</a>'),
+    ]);
+    const el: HTMLElement = fixture.nativeElement;
+    const [first, second] = Array.from(el.querySelectorAll('.comment__body'));
+    expect(first.querySelector('strong')?.textContent).toBe('Causa');
+    expect(first.querySelector('em')?.textContent).toBe('nulo');
+    expect(first.querySelector('code')?.textContent).toBe('total');
+    const links = Array.from(first.querySelectorAll('a'));
+    expect(
+      links.map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('rel')]),
+    ).toEqual([['PR', 'https://example.com/pr/1', 'noopener noreferrer']]);
+    expect(first.querySelectorAll('li')[1].textContent).toBe('mal');
+    expect(second.querySelector('img, a')).toBeNull();
+    expect(second.textContent).toBe(
+      '<img src=x onerror="alert(1)"> <a href="javascript:alert(1)">x</a>',
+    );
+    expect(el.querySelector('.composer__hint')?.textContent).toBe(
+      'Admite Markdown · Ctrl o ⌘ + Intro para enviar',
     );
   });
 
@@ -279,7 +314,9 @@ describe('History', () => {
       );
       expect(ls[2]).toMatch(/^intake-errors resolved it when web@1\.5\.0 was deployed/);
       expect(ls[3]).toMatch(/^intake-errors reopened it when an event from web@1\.6\.0 came in/);
-      expect(el.querySelector('.composer__hint')?.textContent).toBe('Ctrl or ⌘ + Enter to send');
+      expect(el.querySelector('.composer__hint')?.textContent).toBe(
+        'Markdown supported · Ctrl or ⌘ + Enter to send',
+      );
       expect(el.querySelector('textarea')?.getAttribute('placeholder')).toBe(
         'Leave a comment: what you found, what changed…',
       );

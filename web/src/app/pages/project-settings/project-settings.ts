@@ -30,7 +30,15 @@ const SECTIONS: { value: Section; label: Key; icon: string }[] = [
 /** Los ajustes de un proyecto: /projects/:id/settings/:section; /settings va al primero. */
 @Component({
   selector: 'app-project-settings',
-  imports: [RouterLink, Icon, Pick, AlertRules, ProjectFilters, IntegrationsSection, DigestSettings],
+  imports: [
+    RouterLink,
+    Icon,
+    Pick,
+    AlertRules,
+    ProjectFilters,
+    IntegrationsSection,
+    DigestSettings,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './project-settings.html',
   styleUrl: './project-settings.css',

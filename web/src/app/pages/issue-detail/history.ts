@@ -23,6 +23,7 @@ import {
 import { ago, fullDate, STATUS_BADGE, STATUS_LABEL } from '../../core/format';
 import { I18n, type Key } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
+import { Markdown } from './markdown';
 
 const STATUS_ICON: Record<IssueStatus, string> = {
   open: 'arrow-counter-clockwise',
@@ -55,7 +56,7 @@ interface Row {
 /** El historial del error: comentarios y cambios de estado, con un cuadro para comentar. */
 @Component({
   selector: 'app-history',
-  imports: [Icon],
+  imports: [Icon, Markdown],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './history.html',
   styleUrl: './history.css',

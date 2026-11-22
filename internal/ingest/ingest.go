@@ -329,7 +329,9 @@ func lockIssue(ctx context.Context, tx pgx.Tx, projectID int64, fp string) (*loc
 func transition(status, resolvedIn, fixedIn, release string, newRelease bool,
 	cmp func(a, b string) (c int, ok, byVersion bool, err error),
 ) (string, bool, error) {
-	after := func(than string) (bool, error) {
+	// after dice si release va después de than o, con orEqual, si es la misma
+	// versión con otro nombre (1.1.0+build.2 y 1.1.0).
+	after := func(than string, orEqual bool) (bool, error) {
 		if release == "" {
 			return false, nil
 		}
@@ -337,7 +339,7 @@ func transition(status, resolvedIn, fixedIn, release string, newRelease bool,
 		if err != nil || (newRelease && !byVersion) {
 			return false, err
 		}
-		return !ok || c > 0, nil
+		return !ok || c > 0 || (orEqual && c == 0), nil
 	}
 	var reopen bool
 	var err error
@@ -347,9 +349,9 @@ func transition(status, resolvedIn, fixedIn, release string, newRelease bool,
 	case status == "resolved" && release == fixedIn:
 		reopen = true
 	case status == "resolved":
-		reopen, err = after(fixedIn)
+		reopen, err = after(fixedIn, true)
 	case status == "resolved_next" && release != resolvedIn:
-		reopen, err = after(resolvedIn)
+		reopen, err = after(resolvedIn, false)
 	}
 	if err != nil {
 		return status, false, err

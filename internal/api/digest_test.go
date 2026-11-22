@@ -145,7 +145,7 @@ func TestDigestMCP(t *testing.T) {
 		t.Fatal(out)
 	}
 	for _, w := range []string{"# Resumen diario de tienda", "## Errores nuevos", "## Han vuelto", "## Los que más crecen",
-		"## Crons con problemas", "## Salud de la release web@1.4.1", "(https://errors.example.com/issues/"} {
+		"## Crons con problemas", "## [Salud de la release web@1.4.1](", "(https://errors.example.com/issues/"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("get_digest sin %q:\n%s", w, out)
 		}

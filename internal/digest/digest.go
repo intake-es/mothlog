@@ -43,7 +43,9 @@ type Digest struct {
 type Section struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
-	Note  string `json:"note,omitempty"`
+	// URL enlaza el título: la sección habla de una sola cosa, como la release de la salud.
+	URL  string `json:"url,omitempty"`
+	Note string `json:"note,omitempty"`
 	// Total es cuántos hay, también los que no caben en Items.
 	Total int64  `json:"total,omitempty"`
 	Stats []Stat `json:"stats,omitempty"`
@@ -308,7 +310,7 @@ func healthSection(ctx context.Context, src *Source) (*Section, error) {
 	}
 	l := src.Lang
 	h := r.Health
-	s := &Section{ID: "health", Title: l.t("health", r.Version)}
+	s := &Section{ID: "health", Title: l.t("health", r.Version), URL: src.releaseURL(r.Version)}
 	if h.CrashFreeSessions != nil {
 		s.Stats = append(s.Stats, Stat{Label: l.t("health.sessions"), Value: l.pct(*h.CrashFreeSessions),
 			Detail: l.t("health.crashed", l.num(h.SessionsCrashed))})
@@ -318,8 +320,5 @@ func healthSection(ctx context.Context, src *Source) (*Section, error) {
 			Detail: l.t("health.crashed", l.num(h.UsersCrashed))})
 	}
 	s.Stats = append(s.Stats, Stat{Label: l.t("health.total"), Value: l.num(h.Sessions)})
-	if u := src.releaseURL(r.Version); u != "" {
-		s.Items = append(s.Items, Item{Title: r.Version, URL: u})
-	}
 	return s, nil
 }

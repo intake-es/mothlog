@@ -165,6 +165,8 @@ func TestTransition(t *testing.T) {
 	// Las rN no se leen como versiones; las web@ sí, y van por su número.
 	compare := func(a, b string) (int, bool, bool, error) {
 		if strings.HasPrefix(a, "web@") && strings.HasPrefix(b, "web@") {
+			a, _, _ = strings.Cut(a, "+")
+			b, _, _ = strings.Cut(b, "+")
 			return strings.Compare(a, b), true, true, nil
 		}
 		ia, ib := slices.Index(order, a), slices.Index(order, b)
@@ -203,6 +205,9 @@ func TestTransition(t *testing.T) {
 		{"resolved_next", "web@1.0.0", "", "web@1.1.0", true, "open", true},
 		{"resolved", "web@1.0.0", "web@1.1.0", "web@0.9.0", false, "resolved", false},
 		{"resolved", "web@1.0.0", "web@1.1.0", "web@1.2.0", true, "open", true},
+		// La misma versión con otro build es esa release: reabre si se resolvió con ella.
+		{"resolved", "web@1.0.0", "web@1.1.0", "web@1.1.0+build.2", true, "open", true},
+		{"resolved_next", "web@1.1.0", "", "web@1.1.0+build.2", true, "resolved_next", false},
 		{"silenced", "", "", "r2", false, "silenced", false},
 	} {
 		got, reg, err := transition(tc.status, tc.resolvedIn, tc.fixedIn, tc.release, tc.created, compare)

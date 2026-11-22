@@ -900,6 +900,58 @@ func TestRuleUsersCountsOnlyMatchingAndStops(t *testing.T) {
 	}
 }
 
+// Sin filtros, la regla parte de los usuarios que ya tenía el issue; con
+// filtros, solo cuenta los que llegan después de crearla.
+func TestRuleUsersFromIssueWithoutFilters(t *testing.T) {
+	e := newEnv(t, nil)
+	ingestUser := func(user string) {
+		ev := event.Event{Fingerprint: []string{"usuarios-de-antes"}}
+		if user != "" {
+			ev.User = &event.User{ID: user}
+		}
+		e.ingestEvent(t, ev)
+		e.send(t)
+	}
+	for _, u := range []string{"a1", "a2", "a3"} {
+		ingestUser(u)
+	}
+	plain, filtered := &recorder{}, &recorder{}
+	r := e.addRule(t, webhookRule(serve(t, plain), store.RuleConditions{Users: &store.UsersCondition{Users: 2}}))
+	e.addRule(t, webhookRule(serve(t, filtered), store.RuleConditions{
+		Users: &store.UsersCondition{Users: 2}, Levels: []string{"error"},
+	}))
+
+	ingestUser("")
+	if got := len(plain.all()); got != 1 {
+		t.Fatalf("sin filtros: avisos = %d; el issue ya tenía 3 usuarios", got)
+	}
+	var pl WebhookPayload
+	_ = json.Unmarshal(plain.all()[0].Body, &pl)
+	if pl.Type != "users" || pl.Trigger == nil || pl.Trigger.Users != 2 {
+		t.Errorf("payload = %+v", pl)
+	}
+	if got := len(filtered.all()); got != 0 {
+		t.Fatalf("con filtros: avisos = %d; los usuarios de antes no cuentan", got)
+	}
+	var n int
+	if err := e.db.Pool().QueryRow(context.Background(), `SELECT count(*) FROM alert_rule_users WHERE rule_id = $1`, r.ID).Scan(&n); err != nil || n != 0 {
+		t.Errorf("sin filtros apunta usuarios propios: %d, %v", n, err)
+	}
+
+	ingestUser("a1")
+	ingestUser("a2")
+	if got := len(filtered.all()); got != 0 {
+		t.Fatalf("con filtros, 2 usuarios desde la regla: avisos = %d", got)
+	}
+	ingestUser("b1")
+	if got := len(filtered.all()); got != 1 {
+		t.Fatalf("con filtros, 3 usuarios desde la regla: avisos = %d, quiero 1", got)
+	}
+	if got := len(plain.all()); got != 1 {
+		t.Fatalf("sin filtros avisa una vez por cruce: avisos = %d", got)
+	}
+}
+
 // Al cambiar las condiciones, la regla vuelve a contar desde cero y puede
 // volver a avisar; cambiar solo el nombre no toca las cuentas.
 func TestRuleEditResetsCounts(t *testing.T) {
@@ -907,6 +959,7 @@ func TestRuleEditResetsCounts(t *testing.T) {
 	hook := &recorder{}
 	r := e.addRule(t, webhookRule(serve(t, hook), store.RuleConditions{
 		Users: &store.UsersCondition{Users: 2}, Frequency: &store.FrequencyCondition{Events: 50, WindowMinutes: 60},
+		Levels: []string{"error"},
 	}))
 	ctx := context.Background()
 	users := func() int {

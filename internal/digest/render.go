@@ -46,7 +46,11 @@ func (d *Digest) Markdown() string {
 		fmt.Fprintf(&b, "\n%s\n", d.lang.t("empty"))
 	}
 	for _, s := range d.Sections {
-		fmt.Fprintf(&b, "\n## %s\n\n", mdEscaper.Replace(s.Title))
+		title := mdEscaper.Replace(s.Title)
+		if s.URL != "" {
+			title = "[" + title + "](" + s.URL + ")"
+		}
+		fmt.Fprintf(&b, "\n## %s\n\n", title)
 		if s.Note != "" {
 			b.WriteString(s.Note + "\n\n")
 		}
@@ -87,6 +91,9 @@ func (d *Digest) Text() string {
 	}
 	for _, s := range d.Sections {
 		b.WriteString("\n" + strings.ToUpper(s.Title) + "\n")
+		if s.URL != "" {
+			b.WriteString(s.URL + "\n")
+		}
 		if s.Note != "" {
 			b.WriteString(s.Note + "\n")
 		}
@@ -142,8 +149,12 @@ func (d *Digest) HTML() string {
 `, cPanel, cMuted, e(d.lang.t("empty")))
 	}
 	for _, s := range d.Sections {
+		title := e(s.Title)
+		if s.URL != "" {
+			title = fmt.Sprintf(`<a href="%s" style="color:%s;text-decoration:none">%s</a>`, e(s.URL), cLink, title)
+		}
 		fmt.Fprintf(&b, `<h2 style="margin:28px 0 8px;font-size:15px;font-weight:600;color:%s">%s</h2>
-`, cText, e(s.Title))
+`, cText, title)
 		if s.Note != "" {
 			fmt.Fprintf(&b, `<p style="margin:-4px 0 8px;color:%s;font-size:12px">%s</p>
 `, cSubtle, e(s.Note))
