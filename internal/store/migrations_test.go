@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
@@ -173,5 +174,64 @@ func TestMigrationSourceMapsSentryCLI(t *testing.T) {
 	}
 	if _, err := p.Up(ctx); err != nil {
 		t.Fatalf("volver a subir: %v", err)
+	}
+}
+
+func TestMigrationReleases(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 9); err != nil {
+		t.Fatal(err)
+	}
+	var project, issue int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('web', 'clave') RETURNING id`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		VALUES ($1, 'fp', 'TypeError', now(), now(), 3) RETURNING id`, project).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	for i, ev := range []struct{ release, env any }{{"v1", "production"}, {"v2", "production"}, {nil, "staging"}} {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO events (issue_id, project_id, event_id, occurred_at, received_at, release, environment, data)
+			VALUES ($1, $2, gen_random_uuid(), now() - make_interval(hours => 3 - $5), now() - make_interval(hours => 3 - $5), $3, $4, '{}')`,
+			issue, project, ev.release, ev.env, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := p.UpTo(ctx, 10); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := pool.Query(ctx, `SELECT version FROM releases ORDER BY first_seen, id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	versions, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || !slices.Equal(versions, []string{"v1", "v2"}) {
+		t.Errorf("releases = %v, %v", versions, err)
+	}
+	var stats int
+	var first *string
+	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM issue_stats), first_release FROM issues`).Scan(&stats, &first); err != nil {
+		t.Fatal(err)
+	}
+	if stats != 3 || first == nil || *first != "v1" {
+		t.Errorf("issue_stats = %d, first_release = %v", stats, first)
+	}
+	if _, err := p.DownTo(ctx, 9); err != nil {
+		t.Fatalf("bajar: %v", err)
 	}
 }

@@ -56,6 +56,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/issues/{id}/stacktrace.md", h.stacktrace)
 	route("POST /api/0/issues/{id}/status", h.setStatus)
 	route("GET /api/0/events/{id}/{$}", h.event)
+	h.registerReleases(route)
 	mux.Handle("/mcp", auth(mcpserver.Handler(st)))
 	return nil
 }
@@ -164,6 +165,8 @@ func (h *handlers) issues(w http.ResponseWriter, r *http.Request) {
 		Sort:    q.Get("sort"),
 		Cursor:  q.Get("cursor"),
 		Limit:   limit,
+
+		Environment: q.Get("environment"),
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -177,7 +180,7 @@ func (h *handlers) issues(w http.ResponseWriter, r *http.Request) {
 	for i, is := range page.Issues {
 		ids[i] = is.ID
 	}
-	daily, err := h.st.DailyCounts(r.Context(), ids, time.Now())
+	daily, err := h.st.DailyCountsIn(r.Context(), ids, q.Get("environment"), time.Now())
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -203,7 +206,7 @@ func (h *handlers) issue(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d, err := h.st.IssueDetail(r.Context(), id, time.Now())
+	d, err := h.st.IssueDetailIn(r.Context(), id, r.URL.Query().Get("environment"), time.Now())
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -220,7 +223,7 @@ func (h *handlers) issueEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	page, err := h.st.IssueEvents(r.Context(), id, r.URL.Query().Get("cursor"), limit)
+	page, err := h.st.IssueEventsIn(r.Context(), id, r.URL.Query().Get("environment"), r.URL.Query().Get("cursor"), limit)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -233,7 +236,7 @@ func (h *handlers) stacktrace(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	d, err := h.st.IssueDetail(r.Context(), id, time.Now())
+	d, err := h.st.IssueDetailIn(r.Context(), id, r.URL.Query().Get("environment"), time.Now())
 	if err != nil {
 		h.fail(w, r, err)
 		return

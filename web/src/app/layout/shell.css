@@ -31,7 +31,37 @@
 }
 
 .rail__brand {
+  margin-bottom: 0.5rem;
   color: var(--text);
+}
+
+.rail__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.rail__nav svg {
+  width: 18px;
+  height: 18px;
+}
+
+.rail__nav:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.rail__nav--on {
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border);
 }
 
 .rail__brand svg {
@@ -44,6 +74,70 @@
 .rail__btn[aria-expanded='true'] {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.rail__slot--env {
+  margin-top: 0.5rem;
+}
+
+.rail__env {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 42px;
+  min-height: 34px;
+  padding: 0.3rem 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.rail__env svg {
+  width: 18px;
+  height: 18px;
+}
+
+.rail__env:hover,
+.rail__env[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.rail__env--on {
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.rail__env-name {
+  max-width: 40px;
+  overflow: hidden;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail__env-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail__env-note {
+  max-width: 15rem;
+  padding: 0.35rem 0.6rem 0.4rem;
+  color: var(--text-subtle);
+  font-size: 0.7rem;
+  line-height: 1.35;
 }
 
 .rail__end {
@@ -81,6 +175,11 @@
 .rail__menu {
   bottom: 0;
   left: calc(100% + 8px);
+}
+
+.rail__menu--top {
+  top: 0;
+  bottom: auto;
 }
 
 .rail__who {
@@ -121,7 +220,97 @@
     padding: 0.4rem 0.6rem;
   }
 
-  .rail__end {
+  .rail__brand {
+    margin-bottom: 0;
+    margin-right: 0.25rem;
+  }
+
+  .rail__slot--env {
+    margin-top: 0;
+    margin-left: 0.25rem;
+  }
+
+  .rail__env {
+    flex-direction: row;
+    width: auto;
+    padding: 0 0.5rem;
+  }
+
+  .rail__env-name {
+    max-width: 8rem;
+    font-size: 0.75rem;
+  }
+
+  .rail__menu--top {
+    left: 0;
+    right: auto;
+  }
+
+  .rail__slot--env {
+  margin-top: 0.5rem;
+}
+
+.rail__env {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 42px;
+  min-height: 34px;
+  padding: 0.3rem 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.rail__env svg {
+  width: 18px;
+  height: 18px;
+}
+
+.rail__env:hover,
+.rail__env[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.rail__env--on {
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.rail__env-name {
+  max-width: 40px;
+  overflow: hidden;
+  font-size: 0.56rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail__env-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail__env-note {
+  max-width: 15rem;
+  padding: 0.35rem 0.6rem 0.4rem;
+  color: var(--text-subtle);
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+
+.rail__end {
     flex-direction: row;
     margin-top: 0;
     margin-left: auto;

@@ -20,6 +20,7 @@ import {
   type StoredEvent,
 } from '../../core/api';
 import { copyText } from '../../core/clipboard';
+import { environment } from '../../core/environment';
 import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
 import { I18n, type Key, plural } from '../../core/i18n';
 import { PageTitle } from '../../core/page-title';
@@ -40,6 +41,8 @@ interface Fact {
   value: string;
   title?: string;
   mono?: boolean;
+  /** Enlace a la release, en las de primera, última y resuelto con. */
+  link?: (string | number)[];
 }
 
 const TOP_LABELS: Record<string, Key> = {
@@ -176,8 +179,18 @@ export class IssueDetailPage {
         title: fullDate(d.last_regression),
       });
     }
+    const release = (key: Key, version: string | null | undefined): void => {
+      if (version) {
+        facts.push({ key, value: version, mono: true, link: ['/releases', d.project_id, version] });
+      }
+    };
+    release('fact.firstRelease', d.first_release);
+    release('fact.lastRelease', d.last_release);
     if (d.status === 'resolved_next' && d.resolved_in_release) {
       facts.push({ key: 'fact.resolvedIn', value: d.resolved_in_release, mono: true });
+    }
+    if (d.status === 'resolved') {
+      release('fact.fixedIn', d.fixed_in_release);
     }
     if (e?.server_name) {
       facts.push({ key: 'fact.server', value: e.server_name, mono: true });
@@ -222,7 +235,8 @@ export class IssueDetailPage {
   constructor() {
     effect(() => {
       const id = Number(this.id());
-      untracked(() => this.load(id));
+      const env = environment();
+      untracked(() => this.load(id, env));
     });
     effect(() => {
       const d = this.detail();
@@ -241,7 +255,7 @@ export class IssueDetailPage {
     });
   }
 
-  private load(id: number): void {
+  private load(id: number, env: string): void {
     for (const s of this.subs) {
       s.unsubscribe();
     }
@@ -255,7 +269,7 @@ export class IssueDetailPage {
       return;
     }
     this.subs = [
-      this.api.issue(id).subscribe({
+      this.api.issue(id, env).subscribe({
         next: (d) => {
           this.detail.set(d);
           this.event.set(d.latest_event);
@@ -270,7 +284,7 @@ export class IssueDetailPage {
           this.loading.set(false);
         },
       }),
-      this.api.events(id).subscribe({
+      this.api.events(id, 100, undefined, env).subscribe({
         next: (page) => {
           this.events.set(page.data);
           this.eventsMore.set(!!page.next_cursor);
@@ -281,7 +295,7 @@ export class IssueDetailPage {
   }
 
   protected retry(): void {
-    this.load(Number(this.id()));
+    this.load(Number(this.id()), environment());
   }
 
   /** Anterior es el evento más viejo; siguiente, el más nuevo. */

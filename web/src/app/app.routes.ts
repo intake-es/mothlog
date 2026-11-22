@@ -5,6 +5,8 @@ import { Shell } from './layout/shell';
 import { IssueDetailPage } from './pages/issue-detail/issue-detail';
 import { IssueListPage } from './pages/issue-list/issue-list';
 import { LoginPage } from './pages/login/login';
+import { ReleaseDetailPage } from './pages/release-detail/release-detail';
+import { ReleaseListPage } from './pages/release-list/release-list';
 
 // Los títulos son claves de las traducciones: los escribe PageTitle en el idioma elegido.
 export const routes: Routes = [
@@ -21,6 +23,12 @@ export const routes: Routes = [
     children: [
       { path: '', component: IssueListPage, title: 'title.list' satisfies Key },
       { path: 'issues/:id', component: IssueDetailPage, title: 'title.issue' satisfies Key },
+      { path: 'releases', component: ReleaseListPage, title: 'title.releases' satisfies Key },
+      {
+        path: 'releases/:project/:version',
+        component: ReleaseDetailPage,
+        title: 'title.release' satisfies Key,
+      },
     ],
   },
   { path: '**', redirectTo: '' },

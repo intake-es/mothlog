@@ -8,6 +8,10 @@
 #   inject:  sourcemaps inject y upload sin release, con un token de la API
 #   antiguo: sentry-cli 1.77.3, releases files upload-sourcemaps
 #
+# Después marca el error para la siguiente versión y crea, finaliza y
+# despliega otra release con releases new, releases finalize y deploys new:
+# el error tiene que quedar resuelto con ella.
+#
 # Lo que manda sentry-cli queda en trabajo/subidas/<caso>/ y los envíos del
 # navegador en trabajo/envios-<caso>/, para copiarlos a testdata/.
 #
@@ -114,5 +118,27 @@ build antiguo
 SENTRY_AUTH_TOKEN=$SOURCEMAP_UPLOAD_TOKEN grabar antiguo npm exec --yes --package=@sentry/cli@1.77.3 -- \
   sentry-cli releases files prueba-antiguo upload-sourcemaps "$trabajo/antiguo"
 comprobar antiguo
+
+echo "== releases y despliegues"
+issue=$(curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/issues/?project=front" |
+  python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert len(d)==1, d; print(d[0]["id"])')
+curl -sf -H "Authorization: Bearer $api_token" -H 'Content-Type: application/json' \
+  -d '{"status":"resolved_next"}' "$intake/api/0/issues/$issue/status" >/dev/null
+SENTRY_AUTH_TOKEN=$api_token grabar releases sh -c \
+  '"$0" releases new prueba-releases && "$0" releases finalize prueba-releases && "$0" deploys new -r prueba-releases -e production' "$cli"
+curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/projects/$id/releases/prueba-releases/" >"$trabajo/release.json"
+curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/issues/$issue/" >"$trabajo/issue-resuelto.json"
+python3 - "$trabajo/release.json" "$trabajo/issue-resuelto.json" <<'EOF'
+import json, sys
+rel, issue = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+deploys = [d["environment"] for d in rel["deploys"]]
+print(f"release {rel['version']}: finalizada={rel['finalized_at'] is not None} despliegues={deploys} "
+      f"dejaron de salir={[i['id'] for i in rel['stopped']]}")
+print(f"issue {issue['id']}: {issue['status']}, resuelto con {issue['fixed_in_release']}")
+ok = (rel["finalized_at"] and deploys == ["production"] and issue["status"] == "resolved"
+      and issue["fixed_in_release"] == "prueba-releases" and [i["id"] for i in rel["stopped"]] == [issue["id"]])
+print(f"releases: {'OK' if ok else 'MAL'}")
+sys.exit(0 if ok else 1)
+EOF
 
 echo "== todo OK"

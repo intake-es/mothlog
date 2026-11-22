@@ -37,7 +37,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 
 ## Interfaz
 
-El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, y el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos y «Copiar para Claude», que copia el `stacktrace.md`. Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
+El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos, su primera y última release y «Copiar para Claude», que copia el `stacktrace.md`, y las releases (`/releases`) con lo que trajo cada una. El selector de entorno del raíl filtra todas las pantallas ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)). Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
 
 La interfaz está en español y en inglés: empieza en español si el idioma del navegador empieza por `es` y en inglés en el resto, y se cambia desde el raíl, junto al tema, sin recargar; la elección se guarda en el navegador. Los textos están en `web/src/app/core/i18n/` (`es.ts` y `en.ts`, con las mismas claves); lo que viene del servidor, como los mensajes de error de la API o el Markdown de `stacktrace.md`, no se traduce.
 
@@ -101,16 +101,21 @@ Para conectarlo con Claude Code:
 claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
 
-Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events` y `set_issue_status`. Hacen las mismas consultas que la API:
+Herramientas del MCP: `list_issues`, `get_issue`, `get_stacktrace`, `list_events` y `set_issue_status`; las de leer aceptan `environment`, como la API. Hacen las mismas consultas que la API:
 
 | Ruta | Qué devuelve |
 |---|---|
 | `GET /api/0/projects/` | id, nombre, DSN y etiquetas de Linear propias (`linear_label_ids`) de cada proyecto |
-| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=&daily=` | issues; `status` es `open` (por defecto), `resolved`, `resolved_next`, `silenced` o `all`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `query` busca en título y culprit; `project`, id o nombre; con `daily=1`, cada issue lleva `daily`, sus eventos por día de los últimos 14 días como en el detalle |
-| `GET /api/0/issues/{id}/` | el issue con su último evento, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y `organization_id` |
-| `GET /api/0/issues/{id}/events/` | sus eventos, del más nuevo al más viejo |
+| `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=&daily=&environment=` | issues; `status` es `open` (por defecto), `resolved`, `resolved_next`, `silenced` o `all`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `query` busca en título y culprit; `project`, id o nombre; con `daily=1`, cada issue lleva `daily`, sus eventos por día de los últimos 14 días como en el detalle; con `environment`, solo los issues con eventos en ese entorno, y sus eventos, primera y última vez y `daily` son los de ese entorno |
+| `GET /api/0/issues/{id}/?environment=` | el issue con su último evento, los eventos por día de los últimos 14 días, los valores más frecuentes de entorno, release, usuario y `organization_id`, y su `first_release`, `last_release` y `fixed_in_release`; con `environment`, todo de ese entorno |
+| `GET /api/0/issues/{id}/events/?environment=` | sus eventos, del más nuevo al más viejo |
 | `GET /api/0/issues/{id}/stacktrace.md` | el último evento en Markdown, pensado para un modelo |
 | `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}`; `resolved_next` guarda el release del último evento (409 si no tiene) |
+| `GET /api/0/environments/?project=` y `GET /api/0/projects/{id}/environments/` | los entornos de los eventos, con cuántos issues y eventos tienen y cuándo se vio el último |
+| `GET /api/0/releases/?project=&environment=&cursor=&limit=` y `GET /api/0/projects/{id}/releases/` | las releases, de la más nueva a la más vieja, con sus despliegues y cuántos errores nuevos (`new_issues`), con eventos (`issues`), regresiones y eventos trajo cada una; con `environment`, las que tienen eventos o despliegues en él, contando solo lo suyo |
+| `POST /api/0/projects/{id}/releases/` | crea la release `{"version": "..."}` (201, o 200 si ya existía); con `"environment"` (y `"deployed_at"`, opcional) apunta además un despliegue y devuelve en `resolved_issues` los issues que resolvió |
+| `GET /api/0/projects/{id}/releases/{version}/?environment=` | la release con sus despliegues, la anterior y la siguiente, y sus issues: `new` (aparecieron con ella), `regressed`, `continued` (ya existían y siguieron saliendo) y `stopped` (salían en la anterior y en esta no, o se resolvieron al desplegarla) |
+| `GET` y `POST /api/0/projects/{id}/releases/{version}/deploys/` | sus despliegues; `POST` con `{"environment": "production"}` apunta uno (y crea la release si no existía) |
 | `GET /api/0/events/{id}/` | el evento normalizado entero, por id o por `event_id` |
 | `GET /api/0/projects/{id}/filters` | los filtros, el tope por issue, el muestreo y el límite por minuto del proyecto |
 | `PATCH /api/0/projects/{id}/filters` | cambia los campos que trae el cuerpo, con los mismos nombres; `null` en un número vuelve a su valor por defecto; 400 con un valor no válido |
@@ -123,7 +128,7 @@ Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página si
 
 Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Solo se guardan los items `event`; el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
 
-Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo trae; si no, el tipo de la excepción lanzada y el módulo o fichero y la función de sus fotogramas `in_app` (sin líneas); y en los logs sin excepción, el logger y el mensaje con UUIDs, hexadecimales y números cambiados por marcadores. Un evento en un issue `resolved`, o en uno `resolved_next` con otro release, lo reabre como regresión.
+Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo trae; si no, el tipo de la excepción lanzada y el módulo o fichero y la función de sus fotogramas `in_app` (sin líneas); y en los logs sin excepción, el logger y el mensaje con UUIDs, hexadecimales y números cambiados por marcadores. Un evento en un issue `resolved`, o en uno `resolved_next` con una release posterior, lo reabre como regresión ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)).
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
 
@@ -158,6 +163,43 @@ Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `interna
 ```sh
 INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...
 ```
+
+## Releases, despliegues y entornos
+
+Cada proyecto tiene sus releases: la versión, cuándo se vio por primera vez y sus despliegues (entorno y fecha). Una release se crea sola con el primer evento que trae una versión nueva, y también a mano:
+
+```sh
+intake-errors releases new web web@1.4.0                     # la crea
+intake-errors releases new web web@1.4.0 --env production    # y apunta un despliegue en production
+```
+
+o con la API (`POST /api/0/projects/{id}/releases/` y `.../releases/{version}/deploys/`, en [API y MCP](#api-y-mcp)) o con `sentry-cli` ([abajo](#releases-con-sentry-cli)). Una release es posterior a otra si se vio después.
+
+De cada release se sabe qué trajo: los errores que aparecieron con ella, los que ya existían y siguieron saliendo, las regresiones que llegaron con ella y los que dejaron de salir. Se cuentan por issue, release y entorno al recibir cada evento, también los que no se guardan por el tope o el muestreo, así que no dependen de la retención de los eventos. Un issue recuerda la release de su primer evento.
+
+**Resuelto en la siguiente versión.** Un issue en `resolved_next` guarda la release de su último evento. Cuando se despliega una release posterior (en cualquier entorno), pasa a `resolved` y queda apuntada como la release que lo resolvió (`fixed_in_release`). A partir de ahí, un evento de esa release o de una posterior es una regresión: se reabre y avisa; uno de una release anterior (un cliente que aún no ha actualizado) o sin release no lo reabre. Mientras sigue en `resolved_next`, solo lo reabre un evento de una release posterior a la que tenía.
+
+Qué release es posterior se decide por su número cuando las dos se leen como versiones del mismo paquete (`1.4.0`, `v2.0.0-rc.1`, `web@2026.11.21`, como en semver: con dos números o más, la pre-release antes que la versión y sin contar el `+build`). Así, una versión vieja que nunca había mandado nada no reabre ni resuelve nada, y una vuelta atrás tampoco. Si alguna no se lee como versión (un hash de git, `build-a1`…), se decide por cuándo se vio por primera vez, y entonces el evento que estrena una release no cuenta como posterior, porque puede ser de un cliente viejo; el siguiente de esa release ya sí, y una creada a mano o desplegada cuenta desde el primero. Con esos nombres, una vuelta atrás a uno que nunca se había visto cuenta como posterior al desplegarlo y resuelve los issues en `resolved_next`; se evita creando cada release al construirla, antes de desplegar las siguientes.
+
+**Entornos.** La lista de entornos de cada proyecto sale de los eventos. En la interfaz, el selector de entorno del raíl filtra la lista de errores, el detalle con su gráfica y sus recuentos, y las releases; por defecto, todos los entornos, y la elección se guarda en el navegador. En la API y el MCP es el parámetro `environment`.
+
+### Releases con sentry-cli
+
+Con las mismas variables que para los source maps ([Con sentry-cli](#con-sentry-cli)):
+
+```sh
+sentry-cli releases new "$SENTRY_RELEASE"         # la crea en SENTRY_PROJECT (o en los de -p)
+sentry-cli releases finalize "$SENTRY_RELEASE"    # la marca como terminada
+sentry-cli deploys new -r "$SENTRY_RELEASE" -e production
+```
+
+| Ruta | Qué hace |
+|---|---|
+| `POST /api/0/organizations/{org}/releases/` | crea la release en cada proyecto de `projects`; si ya existía, la deja como estaba |
+| `PUT /api/0/organizations/{org}/releases/{version}/` | la finaliza en `dateReleased` (o ahora) en los proyectos de `projects` o, sin ellos, en todos los que la tienen |
+| `POST /api/0/organizations/{org}/releases/{version}/deploys/` | apunta el despliegue en `environment` en todos los proyectos que tienen la release (404 si ninguno), en la fecha de `dateFinished` o ahora; resuelve los issues en `resolved_next` de una release anterior |
+
+`tools/sentry-cli/prueba.sh` los prueba con `sentry-cli` 3.8.2 de verdad contra el binario, y `testdata/sentry-cli/releases/` es lo que mandó.
 
 ## Source maps del front
 
@@ -211,7 +253,7 @@ Las versiones actuales (probado con 3.8.2) suben un artifact bundle por trozos:
 
 Del bundle se guardan solo los `.map`, con el release y el dist de la petición (o, si no los trae, los de su `manifest.json`), la URL de su `.js` (`~/assets/main-XXXX.js`) y su debug ID. Los trozos se guardan un día, aunque ya se hayan ensamblado, porque otra subida del mismo build puede estar usándolos; mientras están, volver a subir un bundle vuelve a guardar sus mapas (los repone si otra subida los sustituyó por nombre) y renueva su fecha para la retención.
 
-Las versiones antiguas (probado con 1.77.3, `sentry-cli releases files <release> upload-sourcemaps dist/`) usan `POST /api/0/projects/{org}/{project}/releases/`, que responde sin guardar nada porque aquí no hay releases, y suben cada fichero a `POST /api/0/projects/{org}/{project}/releases/{release}/files/`: se guardan los `.map` y el resto se acepta y se descarta.
+Las versiones antiguas (probado con 1.77.3, `sentry-cli releases files <release> upload-sourcemaps dist/`) usan `POST /api/0/projects/{org}/{project}/releases/`, que crea la release, y suben cada fichero a `POST /api/0/projects/{org}/{project}/releases/{release}/files/`: se guardan los `.map` y el resto se acepta y se descarta.
 
 La organización se acepta tal cual y el proyecto se busca por nombre (404 si no existe). Con un token que no vale, 401.
 

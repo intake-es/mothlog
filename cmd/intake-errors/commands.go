@@ -23,12 +23,13 @@ const usage = `uso:
   intake-errors projects filters <nombre>  enseña sus filtros, el tope por issue y el muestreo
   intake-errors projects filters <nombre> set <clave> [<valor>…]  cambia uno
   intake-errors projects dropped <nombre> [<días>]  cuenta lo descartado por motivo (30 días por defecto)
+  intake-errors releases new <proyecto> <versión> [--env <entorno>]  crea la release y, con --env, apunta un despliegue
   intake-errors tokens create <nombre>  crea un token de la API y lo imprime una sola vez
   intake-errors tokens list             lista los tokens
   intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre`
 
 func runCommand(args []string, out io.Writer) error {
-	if args[0] != "tokens" {
+	if args[0] != "tokens" && args[0] != "releases" {
 		return fmt.Errorf("orden desconocida %q\n%s", args[0], usage)
 	}
 	cfg, err := loadConfig()
@@ -42,6 +43,9 @@ func runCommand(args []string, out io.Writer) error {
 		return err
 	}
 	defer db.Close()
+	if args[0] == "releases" {
+		return releasesCommand(ctx, db, args[1:], out)
+	}
 	return tokensCommand(ctx, db, args[1:], out)
 }
 

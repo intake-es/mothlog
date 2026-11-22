@@ -121,6 +121,25 @@ func TestMCP(t *testing.T) {
 		t.Errorf("list_events = %s", out)
 	}
 
+	env := storetest.Fixture(t, "api-excepcion-1").Environment
+	for _, tc := range []struct {
+		env  string
+		want int
+	}{{env, 1}, {"otro", 0}} {
+		out, _ = call(t, cs, "list_issues", map[string]any{"environment": tc.env})
+		if err := json.Unmarshal([]byte(out), &page); err != nil || len(page.Issues) != tc.want {
+			t.Errorf("list_issues en %q = %s", tc.env, out)
+		}
+		out, _ = call(t, cs, "list_events", map[string]any{"issue_id": zero, "environment": tc.env})
+		if err := json.Unmarshal([]byte(out), &events); err != nil || len(events.Events) != tc.want {
+			t.Errorf("list_events en %q = %s", tc.env, out)
+		}
+		out, _ = call(t, cs, "get_issue", map[string]any{"issue_id": zero, "environment": tc.env})
+		if err := json.Unmarshal([]byte(out), &d); err != nil || d.Count != int64(tc.want) {
+			t.Errorf("get_issue en %q = %s", tc.env, out)
+		}
+	}
+
 	out, isErr = call(t, cs, "set_issue_status", map[string]any{"issue_id": zero, "status": "resolved_next"})
 	var is store.Issue
 	if err := json.Unmarshal([]byte(out), &is); err != nil || isErr || is.Status != "resolved_next" ||

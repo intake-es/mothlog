@@ -103,6 +103,7 @@ type Issue struct {
 	Count             int64
 	ResolvedInRelease *string
 	LastRegression    *time.Time
+	FirstRelease      *string
 }
 
 func (db *DB) AddIssue(t testing.TB, i Issue) int64 {
@@ -119,10 +120,10 @@ func (db *DB) AddIssue(t testing.TB, i Issue) int64 {
 	var id int64
 	err := db.Pool().QueryRow(context.Background(), `
 		INSERT INTO issues (project_id, fingerprint, title, culprit, type, status, resolved_in_release,
-			first_seen, last_seen, event_count, last_regressed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+			first_seen, last_seen, event_count, last_regressed_at, first_release)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
 		i.ProjectID, RandomHex(t, 16), i.Title, i.Culprit, i.Type, i.Status, i.ResolvedInRelease,
-		i.FirstSeen, i.LastSeen, i.Count, i.LastRegression).Scan(&id)
+		i.FirstSeen, i.LastSeen, i.Count, i.LastRegression, i.FirstRelease).Scan(&id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,8 @@ func (db *DB) AddIssue(t testing.TB, i Issue) int64 {
 }
 
 // AddEvent guarda ev como lo guardaría la ingesta: el evento normalizado en
-// data. Le pone un event_id nuevo y la fecha at.
+// data, su release y sus recuentos por release y entorno. Le pone un
+// event_id nuevo y la fecha at; el issue no cambia.
 func (db *DB) AddEvent(t testing.TB, projectID, issueID int64, ev event.Event, at time.Time) int64 {
 	t.Helper()
 	ev.ID = RandomHex(t, 16)
@@ -145,6 +147,15 @@ func (db *DB) AddEvent(t testing.TB, projectID, issueID int64, ev event.Event, a
 		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), $7) RETURNING id`,
 		issueID, projectID, ev.ID, at, ev.Release, ev.Environment, data).Scan(&id)
 	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if ev.Release != "" {
+		if _, _, err := store.EnsureRelease(ctx, db.Pool(), projectID, ev.Release, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.TrackEvent(ctx, db.Pool(), projectID, issueID, ev.Release, ev.Environment, at, false); err != nil {
 		t.Fatal(err)
 	}
 	return id

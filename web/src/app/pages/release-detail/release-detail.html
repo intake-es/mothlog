@@ -1,0 +1,146 @@
+<header class="titlebar">
+  <a class="icon-btn" routerLink="/releases" [attr.aria-label]="t('release.back')">
+    <svg appIcon="arrow-left"></svg>
+  </a>
+  <h1 class="titlebar__title crumbs">
+    <a routerLink="/releases" class="crumbs__root">{{ t('releases.title') }}</a>
+    <span class="crumbs__sep" aria-hidden="true">/</span>
+    <span class="crumbs__leaf">{{ version() }}</span>
+  </h1>
+
+  <div class="titlebar__actions">
+    @if (detail(); as d) {
+      <div class="pager">
+        <a
+          class="btn btn--ghost pager__btn"
+          [class.pager__btn--off]="!d.previous"
+          [routerLink]="d.previous ? ['/releases', d.project_id, d.previous] : null"
+          [attr.aria-disabled]="!d.previous"
+          [attr.title]="d.previous"
+        >
+          <svg appIcon="caret-left"></svg>
+          {{ t('detail.prev') }}
+        </a>
+        <a
+          class="btn btn--ghost pager__btn"
+          [class.pager__btn--off]="!d.next"
+          [routerLink]="d.next ? ['/releases', d.project_id, d.next] : null"
+          [attr.aria-disabled]="!d.next"
+          [attr.title]="d.next"
+        >
+          {{ t('detail.next') }}
+          <svg appIcon="caret-right"></svg>
+        </a>
+      </div>
+    }
+  </div>
+</header>
+
+<div class="content">
+  @if (loading()) {
+    <div class="pad" aria-busy="true" [attr.aria-label]="t('release.loading')">
+      <span class="sp-skeleton" style="width: 40%; height: 1.4rem"></span>
+      <span class="sp-skeleton" style="width: 25%; height: 0.8rem; margin-top: 0.6rem"></span>
+      <span class="sp-skeleton" style="width: 100%; height: 72px; margin-top: 2rem; border-radius: 12px"></span>
+    </div>
+  } @else if (notFound()) {
+    <div class="state">
+      <svg appIcon="magnifying-glass" weight="duotone"></svg>
+      <p class="state__title">{{ t('release.notFound.title') }}</p>
+      <p class="state__text">{{ t('release.notFound.text') }}</p>
+      <a class="btn" routerLink="/releases">{{ t('release.back') }}</a>
+    </div>
+  } @else if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('release.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (detail(); as d) {
+    <section class="head">
+      <h2 class="head__version">{{ d.version }}</h2>
+      <p class="head__meta">
+        <span class="head__fact"><svg appIcon="squares-four"></svg>{{ d.project }}</span>
+        <time class="head__fact" [attr.datetime]="d.first_seen" [attr.title]="d.first_seen">
+          <svg appIcon="clock"></svg>{{ firstSeen() }}
+        </time>
+        @if (d.finalized_at) {
+          <span class="sp-badge sp-badge--sm sp-badge--gray">{{ t('releases.finalized') }}</span>
+        }
+      </p>
+    </section>
+
+    <section class="block">
+      <h3 class="block__title">{{ t('release.deploys') }}</h3>
+      @if (deploys().length) {
+        <ul class="deploys">
+          @for (dep of deploys(); track dep.id) {
+            <li class="deploy" [attr.title]="dep.when">
+              <svg appIcon="rocket-launch"></svg>
+              <span class="deploy__env">{{ dep.environment }}</span>
+              <time class="deploy__when tnum" [attr.datetime]="dep.deployed_at">{{ dep.ago }}</time>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">{{ t('release.noDeploys') }}</p>
+      }
+    </section>
+
+    <section class="block stats">
+      @for (s of sections(); track s.key) {
+        <div class="stat">
+          <span class="stat__n tnum">{{ count(s.rows.length) }}</span>
+          <span class="stat__label">{{ t(s.title) }}</span>
+        </div>
+      }
+      <div class="stat">
+        <span class="stat__n tnum">{{ count(d.events) }}</span>
+        <span class="stat__label">{{ t('release.eventsTotal') }}</span>
+      </div>
+    </section>
+
+    @for (s of sections(); track s.key) {
+      <section class="block group" [attr.id]="s.key">
+        <div class="group__head">
+          <h3 class="block__title">
+            {{ t(s.title) }}
+            <span class="block__aside tnum">{{ count(s.rows.length) }}</span>
+          </h3>
+          <p class="group__hint">{{ s.hint }}</p>
+        </div>
+        @if (s.rows.length) {
+          <div class="issues" role="list">
+            @for (r of s.rows; track r.issue.id) {
+              <a class="issue" role="listitem" [routerLink]="['/issues', r.issue.id]">
+                <div class="issue__main">
+                  <div class="issue__title">
+                    @if (r.type) {
+                      <span class="issue__type">{{ r.type }}</span>
+                    }
+                    <span>{{ r.message }}</span>
+                  </div>
+                  <div class="issue__meta">
+                    @if (r.fixedHere) {
+                      <span class="sp-badge sp-badge--sm sp-badge--green">{{ t('release.fixedHere') }}</span>
+                    } @else if (r.issue.status !== 'open') {
+                      <span class="sp-badge sp-badge--sm" [class]="statusBadge[r.issue.status]">{{ t(statusLabel[r.issue.status]) }}</span>
+                    }
+                    @if (r.issue.culprit) {
+                      <span class="issue__culprit">{{ r.issue.culprit }}</span>
+                    }
+                  </div>
+                </div>
+                <div class="issue__count tnum">{{ r.events }}</div>
+                <time class="issue__seen tnum" [attr.datetime]="r.issue.release_last_seen" [attr.title]="r.seenTitle">{{ r.seen }}</time>
+              </a>
+            }
+          </div>
+        } @else {
+          <p class="muted">{{ t('release.none') }}</p>
+        }
+      </section>
+    }
+  }
+</div>

@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -212,5 +214,99 @@ func TestPostgresSentryCLI(t *testing.T) {
 	}
 	if topFrame(ev).Minified != nil {
 		t.Error("se tradujo con un mapa caducado")
+	}
+}
+
+// TestPostgresSentryCLIReleases repite lo que mandaron releases new, releases
+// finalize y deploys new de sentry-cli 3.8.2 (testdata/sentry-cli/releases):
+// las fechas de las respuestas cambian, así que solo se comparan sus campos.
+func TestPostgresSentryCLIReleases(t *testing.T) {
+	st, admin, schema := pgStore(t)
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "front", "7438a4393be53fabe513ce19bec380e9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Un error de la release anterior, marcado para la siguiente.
+	var issue int64
+	if err := admin.QueryRow(ctx, `INSERT INTO `+schema+`.issues (project_id, fingerprint, title, first_seen, last_seen, event_count, first_release)
+		VALUES ($1, 'fp', 'TypeError', now(), now(), 1, 'prueba-upload') RETURNING id`, p.ID).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := admin.Exec(ctx, `INSERT INTO `+schema+`.events (issue_id, project_id, event_id, occurred_at, release, environment, data)
+		VALUES ($1, $2, gen_random_uuid(), now(), 'prueba-upload', 'production', '{}')`, issue, p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := store.EnsureRelease(ctx, st.Pool(), p.ID, "prueba-upload", time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.SetIssueStatus(ctx, issue, "resolved_next"); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, quiet(), Options{UploadToken: token})
+
+	metas, err := filepath.Glob(filepath.Join(testdata, "sentry-cli", "releases", "*.meta.json"))
+	if err != nil || len(metas) != 3 {
+		t.Fatalf("grabaciones = %v, %v", metas, err)
+	}
+	for _, m := range metas {
+		var r recorded
+		b, err := os.ReadFile(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			t.Fatal(err)
+		}
+		body, err := os.ReadFile(strings.TrimSuffix(m, ".meta.json") + ".body")
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec := serve(t, s, r.Method, r.Path, "Bearer "+token, r.Headers["content-type"], body)
+		var got, want map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("%s: %s", filepath.Base(m), rec.Body)
+		}
+		if err := json.Unmarshal([]byte(r.Response), &want); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != r.Status || len(got) != len(want) {
+			t.Fatalf("%s %s %s = %d %s; grabado %d %s", filepath.Base(m), r.Method, r.Path, rec.Code, rec.Body, r.Status, r.Response)
+		}
+		for k, w := range want {
+			g, ok := got[k]
+			switch {
+			case !ok:
+				t.Errorf("%s: falta %s", filepath.Base(m), k)
+			case strings.HasPrefix(k, "date") || k == "id":
+				if (g == nil) != (w == nil) {
+					t.Errorf("%s: %s = %v; grabado %v", filepath.Base(m), k, g, w)
+				}
+			case !reflect.DeepEqual(g, w):
+				t.Errorf("%s: %s = %v; grabado %v", filepath.Base(m), k, g, w)
+			}
+		}
+	}
+
+	rel, err := st.Release(ctx, p.ID, "prueba-releases", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel.FinalizedAt == nil || len(rel.Deploys) != 1 || rel.Deploys[0].Environment != "production" {
+		t.Errorf("release = %+v", rel)
+	}
+	got, err := st.Issue(ctx, issue)
+	if err != nil || got.Status != "resolved" || got.FixedInRelease == nil || *got.FixedInRelease != "prueba-releases" {
+		t.Errorf("el error marcado para la siguiente = %+v, %v", got, err)
+	}
+
+	// Un despliegue de una release que no existe en ningún proyecto.
+	rec := serve(t, s, http.MethodPost, "/api/0/organizations/o/releases/nada/deploys/", "Bearer "+token, "application/json", []byte(`{"environment":"production"}`))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "detail") {
+		t.Errorf("release que no existe: %d %s", rec.Code, rec.Body)
+	}
+	rec = serve(t, s, http.MethodPost, "/api/0/organizations/o/releases/prueba-releases/deploys/", "Bearer no-vale", "application/json", []byte(`{"environment":"production"}`))
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("token malo: %d", rec.Code)
 	}
 }

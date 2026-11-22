@@ -1,0 +1,11 @@
+{
+  "method": "PUT",
+  "path": "/api/0/organizations/cualquiera/releases/prueba-releases/",
+  "headers": {
+    "accept": "*/*",
+    "user-agent": "sentry-cli/3.8.2",
+    "content-type": "application/json"
+  },
+  "status": 200,
+  "response": "{\"authors\":[],\"commitCount\":0,\"dateCreated\":\"2026-11-21T13:59:06.084696Z\",\"dateReleased\":\"2026-11-21T13:59:06.110146Z\",\"deployCount\":0,\"lastEvent\":null,\"newGroups\":0,\"projects\":[{\"name\":\"front\",\"slug\":\"front\"}],\"ref\":null,\"shortVersion\":\"prueba-releases\",\"url\":null,\"version\":\"prueba-releases\"}\n"
+}

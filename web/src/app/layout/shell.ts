@@ -1,5 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { RouterLink, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
+import { filter, map } from 'rxjs';
+import { EnvironmentChoice } from '../core/environment';
 import { I18n, type Key, LANGS, type Lang } from '../core/i18n';
 import { Session } from '../core/session';
 import { Theme, type ThemeChoice } from '../core/theme';
@@ -27,7 +30,45 @@ export class Shell {
   protected readonly t = this.i18n.t;
   protected readonly themes = THEMES;
   protected readonly langs = LANGS;
-  protected readonly menu = signal<'lang' | 'theme' | 'user' | null>(null);
+  protected readonly menu = signal<'env' | 'lang' | 'theme' | 'user' | null>(null);
+
+  private readonly router = inject(Router);
+  /** Qué sección del raíl se marca: las releases o, en el resto, los errores. */
+  protected readonly onReleases = toSignal(
+    this.router.events.pipe(
+      filter((e) => e instanceof NavigationEnd),
+      map(() => this.router.url.startsWith('/releases')),
+    ),
+    { initialValue: this.router.url.startsWith('/releases') },
+  );
+
+  protected readonly env = inject(EnvironmentChoice);
+  /** Los entornos de los eventos; el elegido sale aunque ya no tenga, para poder quitarlo. */
+  protected readonly envNames = computed(() => {
+    const names = this.env.list().map((e) => e.name);
+    const current = this.env.value();
+    return current && !names.includes(current) ? [...names, current] : names;
+  });
+  protected readonly envLabel = computed(() =>
+    this.t('shell.environment', { env: this.env.value() || this.t('env.all') }),
+  );
+
+  constructor() {
+    this.env.refresh();
+  }
+
+  protected toggleEnv(): void {
+    // Al abrirlo se vuelve a pedir la lista, por si han llegado entornos nuevos.
+    if (this.menu() !== 'env') {
+      this.env.refresh();
+    }
+    this.toggle('env');
+  }
+
+  protected setEnv(value: string): void {
+    this.env.set(value);
+    this.menu.set(null);
+  }
 
   protected readonly user = computed(() => this.session.info()?.user ?? null);
   protected readonly initials = computed(() => {
@@ -42,7 +83,7 @@ export class Shell {
     () => THEMES.find((t) => t.value === this.theme.choice())?.icon ?? 'desktop',
   );
 
-  protected toggle(menu: 'lang' | 'theme' | 'user'): void {
+  protected toggle(menu: 'env' | 'lang' | 'theme' | 'user'): void {
     this.menu.set(this.menu() === menu ? null : menu);
   }
 

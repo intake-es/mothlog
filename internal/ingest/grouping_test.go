@@ -1,6 +1,8 @@
 package ingest
 
 import (
+	"cmp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -158,20 +160,54 @@ func TestGroupMessage(t *testing.T) {
 }
 
 func TestTransition(t *testing.T) {
+	// Las releases se vieron en este orden; «r9» no está en la tabla.
+	order := []string{"r0", "r1", "r2", "r3", "r4"}
+	// Las rN no se leen como versiones; las web@ sí, y van por su número.
+	compare := func(a, b string) (int, bool, bool, error) {
+		if strings.HasPrefix(a, "web@") && strings.HasPrefix(b, "web@") {
+			return strings.Compare(a, b), true, true, nil
+		}
+		ia, ib := slices.Index(order, a), slices.Index(order, b)
+		if ia < 0 || ib < 0 {
+			return 0, false, false, nil
+		}
+		return cmp.Compare(ia, ib), true, false, nil
+	}
 	for _, tc := range []struct {
-		status, resolvedIn, release, want string
-		regressed                         bool
+		status, resolvedIn, fixedIn, release string
+		// created: la release la crea el propio evento.
+		created   bool
+		want      string
+		regressed bool
 	}{
-		{"open", "", "r1", "open", false},
-		{"resolved", "", "", "open", true},
-		{"resolved_next", "r1", "r1", "resolved_next", false},
-		{"resolved_next", "r1", "", "resolved_next", false},
-		{"resolved_next", "r1", "r2", "open", true},
-		{"silenced", "", "r2", "silenced", false},
+		{"open", "", "", "r1", false, "open", false},
+		{"resolved", "", "", "", false, "open", true},
+		{"resolved", "", "", "r4", true, "open", true},
+		{"resolved_next", "r1", "", "r1", false, "resolved_next", false},
+		{"resolved_next", "r1", "", "", false, "resolved_next", false},
+		{"resolved_next", "r1", "", "r2", false, "open", true},
+		{"resolved_next", "r1", "", "r0", false, "resolved_next", false},
+		{"resolved_next", "r1", "", "r9", false, "open", true},
+		{"resolved_next", "r9", "", "r1", false, "open", true},
+		// Una versión que trae por primera vez este evento puede ser vieja.
+		{"resolved_next", "r1", "", "r4", true, "resolved_next", false},
+		// Resuelto al desplegar r2: r1 es de antes; r2 y las posteriores, regresiones.
+		{"resolved", "r1", "r2", "r1", false, "resolved", false},
+		{"resolved", "r1", "r2", "r2", false, "open", true},
+		{"resolved", "r1", "r2", "r3", false, "open", true},
+		{"resolved", "r1", "r2", "r4", false, "open", true},
+		{"resolved", "r1", "r2", "", false, "resolved", false},
+		{"resolved", "r1", "r2", "r4", true, "resolved", false},
+		// Con números de versión, el orden es el suyo, la cree o no el evento.
+		{"resolved_next", "web@1.0.0", "", "web@0.9.0", false, "resolved_next", false},
+		{"resolved_next", "web@1.0.0", "", "web@1.1.0", true, "open", true},
+		{"resolved", "web@1.0.0", "web@1.1.0", "web@0.9.0", false, "resolved", false},
+		{"resolved", "web@1.0.0", "web@1.1.0", "web@1.2.0", true, "open", true},
+		{"silenced", "", "", "r2", false, "silenced", false},
 	} {
-		got, reg := transition(tc.status, tc.resolvedIn, tc.release)
-		if got != tc.want || reg != tc.regressed {
-			t.Errorf("transition(%q, %q, %q) = %q, %v", tc.status, tc.resolvedIn, tc.release, got, reg)
+		got, reg, err := transition(tc.status, tc.resolvedIn, tc.fixedIn, tc.release, tc.created, compare)
+		if err != nil || got != tc.want || reg != tc.regressed {
+			t.Errorf("transition(%q, %q, %q, %q, %v) = %q, %v, %v", tc.status, tc.resolvedIn, tc.fixedIn, tc.release, tc.created, got, reg, err)
 		}
 	}
 }

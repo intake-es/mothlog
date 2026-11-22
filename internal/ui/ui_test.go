@@ -97,6 +97,16 @@ func TestMissingAsset(t *testing.T) {
 	}
 }
 
+func TestAppRoutesWithDots(t *testing.T) {
+	h := newTestServer()
+	for _, p := range []string{"/releases/1/web@1.2.3", "/releases/2/2026.11.21-1", "/releases/1/v1.0"} {
+		res := get(t, h, http.MethodGet, p)
+		if res.StatusCode != http.StatusOK || !strings.Contains(res.Header.Get("Content-Type"), "text/html") {
+			t.Errorf("GET %s = %d %s; quiero la app", p, res.StatusCode, res.Header.Get("Content-Type"))
+		}
+	}
+}
+
 func TestETag(t *testing.T) {
 	h := newTestServer()
 	res := get(t, h, http.MethodGet, "/")

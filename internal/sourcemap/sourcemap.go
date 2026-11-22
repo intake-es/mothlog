@@ -33,6 +33,11 @@ type Store interface {
 	DeleteUploadChunksBefore(ctx context.Context, t time.Time) (int64, error)
 	BundleAssembled(ctx context.Context, checksum string, projectIDs []int64) (bool, error)
 	PutBundle(ctx context.Context, b store.Bundle) error
+
+	CreateRelease(ctx context.Context, projectID int64, version string) (store.Release, bool, error)
+	FinalizeRelease(ctx context.Context, projectID int64, version string, at time.Time) (store.Release, error)
+	AddDeploy(ctx context.Context, projectID int64, version, environment string, at time.Time) (store.Deploy, []int64, error)
+	ReleaseProjects(ctx context.Context, version string) ([]store.Project, error)
 }
 
 type Options struct {

@@ -32,6 +32,10 @@ export interface Issue {
   last_release: string | null;
   resolved_in_release: string | null;
   last_regression: string | null;
+  /** La release del primer evento. */
+  first_release?: string | null;
+  /** La release cuyo despliegue lo resolvió, si estaba en resolved_next. */
+  fixed_in_release?: string | null;
   daily?: DayCount[];
 }
 
@@ -115,10 +119,61 @@ export interface Project {
   dsn: string;
 }
 
+export interface Deploy {
+  id: number;
+  environment: string;
+  deployed_at: string;
+}
+
+export interface Release {
+  id: number;
+  project_id: number;
+  project: string;
+  version: string;
+  first_seen: string;
+  finalized_at: string | null;
+  deploys: Deploy[];
+  new_issues: number;
+  issues: number;
+  regressions: number;
+  events: number;
+  last_event: string | null;
+}
+
+/** Un issue en el detalle de una release, con sus eventos en ella (o en la anterior, si dejó de salir). */
+export interface ReleaseIssue extends Issue {
+  release_events: number;
+  release_last_seen: string;
+}
+
+export interface ReleaseDetail extends Release {
+  previous: string | null;
+  next: string | null;
+  new: ReleaseIssue[];
+  continued: ReleaseIssue[];
+  regressed: ReleaseIssue[];
+  stopped: ReleaseIssue[];
+}
+
+export interface Environment {
+  name: string;
+  issues: number;
+  events: number;
+  last_seen: string;
+}
+
+export interface ReleaseQuery {
+  project?: string;
+  environment?: string;
+  cursor?: string;
+  limit?: number;
+}
+
 export interface IssueQuery {
   project?: string;
   status?: StatusFilter;
   query?: string;
+  environment?: string;
   sort?: IssueSort;
   cursor?: string;
   limit?: number;
@@ -145,16 +200,43 @@ export class Api {
     return this.http.get<Page<Issue>>(`${BASE}/issues/`, { params });
   }
 
-  issue(id: number): Observable<IssueDetail> {
-    return this.http.get<IssueDetail>(`${BASE}/issues/${id}/`);
+  /** Sin entorno, todos; con él, los recuentos, la gráfica y el último evento son los suyos. */
+  issue(id: number, environment = ''): Observable<IssueDetail> {
+    return this.http.get<IssueDetail>(`${BASE}/issues/${id}/`, { params: envParams(environment) });
   }
 
-  events(issueId: number, limit = 100, cursor?: string): Observable<Page<EventSummary>> {
-    let params = new HttpParams().set('limit', limit);
+  events(
+    issueId: number,
+    limit = 100,
+    cursor?: string,
+    environment = '',
+  ): Observable<Page<EventSummary>> {
+    let params = envParams(environment).set('limit', limit);
     if (cursor) {
       params = params.set('cursor', cursor);
     }
     return this.http.get<Page<EventSummary>>(`${BASE}/issues/${issueId}/events/`, { params });
+  }
+
+  environments(): Observable<Page<Environment>> {
+    return this.http.get<Page<Environment>>(`${BASE}/environments/`);
+  }
+
+  releases(q: ReleaseQuery): Observable<Page<Release>> {
+    let params = new HttpParams();
+    for (const [key, value] of Object.entries(q)) {
+      if (value !== undefined && value !== '') {
+        params = params.set(key, String(value));
+      }
+    }
+    return this.http.get<Page<Release>>(`${BASE}/releases/`, { params });
+  }
+
+  release(projectId: number, version: string, environment = ''): Observable<ReleaseDetail> {
+    return this.http.get<ReleaseDetail>(
+      `${BASE}/projects/${projectId}/releases/${encodeURIComponent(version)}/`,
+      { params: envParams(environment) },
+    );
   }
 
   event(id: number): Observable<StoredEvent> {
@@ -168,6 +250,10 @@ export class Api {
   setStatus(issueId: number, status: IssueStatus): Observable<Issue> {
     return this.http.post<Issue>(`${BASE}/issues/${issueId}/status`, { status });
   }
+}
+
+function envParams(environment: string): HttpParams {
+  return environment ? new HttpParams({ fromObject: { environment } }) : new HttpParams();
 }
 
 /** El mensaje de un error de la API, que responde {"error": "..."} y se pinta tal cual. */

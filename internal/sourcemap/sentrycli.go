@@ -26,9 +26,10 @@ const (
 	chunkConcurrency = 4
 )
 
-// registerCLI añade la API que usa sentry-cli para subir source maps: la
+// registerCLI añade la API que usa sentry-cli para subir source maps (la
 // subida por trozos de artifact bundles de las versiones actuales y la de
-// ficheros de release de las antiguas. La organización se acepta tal cual y
+// ficheros de release de las antiguas) y para crear, finalizar y desplegar
+// releases. La organización se acepta tal cual y
 // los proyectos se buscan por nombre.
 func (s *Service) registerCLI(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/0/organizations/{org}/chunk-upload/{$}", s.cli(s.chunkOptions))
@@ -37,6 +38,9 @@ func (s *Service) registerCLI(mux *http.ServeMux) {
 
 	mux.HandleFunc("POST /api/0/organizations/{org}/releases/{$}", s.cli(s.newRelease))
 	mux.HandleFunc("POST /api/0/projects/{org}/{project}/releases/{$}", s.cli(s.newRelease))
+	mux.HandleFunc("PUT /api/0/organizations/{org}/releases/{version}/{$}", s.cli(s.finalizeRelease))
+	mux.HandleFunc("PUT /api/0/projects/{org}/{project}/releases/{version}/{$}", s.cli(s.finalizeRelease))
+	mux.HandleFunc("POST /api/0/organizations/{org}/releases/{version}/deploys/{$}", s.cli(s.newDeploy))
 	mux.HandleFunc("GET /api/0/projects/{org}/{project}/releases/{version}/files/{$}", s.cli(s.releaseFiles))
 	mux.HandleFunc("POST /api/0/projects/{org}/{project}/releases/{version}/files/{$}", s.cli(s.uploadReleaseFile))
 }
@@ -340,37 +344,6 @@ func (s *Service) projectIDs(r *http.Request, names []string) ([]int64, error) {
 		}
 	}
 	return ids, nil
-}
-
-// newRelease responde como si creara el release: aquí los releases no se
-// guardan, pero sentry-cli antiguo lo crea antes de subir los ficheros.
-func (s *Service) newRelease(w http.ResponseWriter, r *http.Request) error {
-	var req struct {
-		Version  string   `json:"version"`
-		Projects []string `json:"projects"`
-	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		return cliErr(http.StatusBadRequest, "JSON no válido: %v", err)
-	}
-	if req.Version == "" {
-		return cliErr(http.StatusBadRequest, "falta version")
-	}
-	if p := r.PathValue("project"); p != "" {
-		req.Projects = append(req.Projects, p)
-	}
-	if _, err := s.projectIDs(r, req.Projects); err != nil {
-		return err
-	}
-	projects := make([]map[string]string, len(req.Projects))
-	for i, p := range req.Projects {
-		projects[i] = map[string]string{"slug": p, "name": p}
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"version": req.Version, "shortVersion": req.Version, "dateCreated": time.Now().UTC(),
-		"dateReleased": nil, "url": nil, "ref": nil, "lastEvent": nil, "newGroups": 0,
-		"projects": projects, "commitCount": 0, "authors": []string{}, "deployCount": 0,
-	})
-	return nil
 }
 
 // releaseFiles lista los ficheros ya subidos al release; siempre vacía, así

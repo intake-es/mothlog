@@ -161,6 +161,15 @@ func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.E
 func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *event.Event, g Grouping, data []byte, now time.Time, lim Limits) (Result, error) {
 	res := Result{}
 	hour := now.Truncate(time.Hour)
+	// newRelease: la release la crea este evento, así que no se sabe si es
+	// nueva de verdad o la de un cliente viejo que no había mandado nada.
+	newRelease := false
+	if ev.Release != "" {
+		var err error
+		if _, newRelease, err = store.EnsureRelease(ctx, tx, projectID, ev.Release, now); err != nil {
+			return res, err
+		}
+	}
 	found, err := lockIssue(ctx, tx, projectID, g.Fingerprint)
 	if err != nil {
 		return res, err
@@ -170,11 +179,11 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		// espera a que acabe y no inserta; entonces se trata como uno que ya existía.
 		err := tx.QueryRow(ctx, `
 			INSERT INTO issues (project_id, fingerprint, title, culprit, type, level, first_seen, last_seen, event_count,
-				stored_hour, stored_in_hour, last_stored_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 1, $8, 1, $9)
+				stored_hour, stored_in_hour, last_stored_at, first_release)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $7, 1, $8, 1, $9, $10)
 			ON CONFLICT (project_id, fingerprint) DO NOTHING
 			RETURNING id`,
-			projectID, g.Fingerprint, g.Title, g.Culprit, g.Type, ev.Level, ev.Timestamp, hour, now).Scan(&res.IssueID)
+			projectID, g.Fingerprint, g.Title, g.Culprit, g.Type, ev.Level, ev.Timestamp, hour, now, nullable(ev.Release)).Scan(&res.IssueID)
 		switch {
 		case err == nil:
 			res.Outcome = New
@@ -192,7 +201,11 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 
 	if found != nil {
 		res.IssueID = found.id
-		status, regressed := transition(found.status, found.resolvedIn, ev.Release)
+		status, regressed, err := transition(found.status, found.resolvedIn, found.fixedIn, ev.Release, newRelease,
+			func(a, b string) (int, bool, bool, error) { return store.CompareReleases(ctx, tx, projectID, a, b) })
+		if err != nil {
+			return res, err
+		}
 		if regressed {
 			res.Outcome = Regressed
 			res.ResolvedAt = found.resolvedAt
@@ -225,13 +238,14 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 				return res, errDuplicate
 			}
 		}
-		_, err := tx.Exec(ctx, `
+		_, err = tx.Exec(ctx, `
 			UPDATE issues SET
 				event_count = event_count + 1,
 				first_seen = LEAST(first_seen, $2),
 				last_seen = GREATEST(last_seen, $2),
 				status = $3,
 				resolved_in_release = CASE WHEN $4 THEN NULL ELSE resolved_in_release END,
+				fixed_in_release = CASE WHEN $4 THEN NULL ELSE fixed_in_release END,
 				resolved_at = CASE WHEN $4 THEN NULL ELSE resolved_at END,
 				last_regressed_at = CASE WHEN $4 THEN $5 ELSE last_regressed_at END,
 				stored_hour = $6,
@@ -242,9 +256,12 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		if err != nil {
 			return res, fmt.Errorf("actualizar issue: %w", err)
 		}
-		if res.Dropped != "" {
-			return res, nil
-		}
+	}
+	if err := store.TrackEvent(ctx, tx, projectID, res.IssueID, ev.Release, ev.Environment, ev.Timestamp, res.Outcome == Regressed); err != nil {
+		return res, err
+	}
+	if res.Dropped != "" {
+		return res, nil
 	}
 
 	var eventRow int64
@@ -267,6 +284,7 @@ type lockedIssue struct {
 	id           int64
 	status       string
 	resolvedIn   string
+	fixedIn      string
 	resolvedAt   *time.Time
 	storedHour   *time.Time
 	storedInHour int
@@ -276,9 +294,11 @@ type lockedIssue struct {
 func lockIssue(ctx context.Context, tx pgx.Tx, projectID int64, fp string) (*lockedIssue, error) {
 	var li lockedIssue
 	err := tx.QueryRow(ctx, `
-		SELECT id, status, COALESCE(resolved_in_release, ''), resolved_at, stored_hour, stored_in_hour, last_stored_at FROM issues
+		SELECT id, status, COALESCE(resolved_in_release, ''), COALESCE(fixed_in_release, ''), resolved_at,
+			stored_hour, stored_in_hour, last_stored_at FROM issues
 		WHERE project_id = $1 AND fingerprint = $2
-		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.resolvedAt, &li.storedHour, &li.storedInHour, &li.lastStoredAt)
+		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.fixedIn, &li.resolvedAt,
+		&li.storedHour, &li.storedInHour, &li.lastStoredAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -288,17 +308,47 @@ func lockIssue(ctx context.Context, tx pgx.Tx, projectID int64, fp string) (*loc
 	return &li, nil
 }
 
-// transition da el estado del issue tras llegarle un evento y si es una regresión.
-func transition(status, resolvedIn, release string) (string, bool) {
-	switch status {
-	case "resolved":
-		return "open", true
-	case "resolved_next":
-		if release != "" && release != resolvedIn {
-			return "open", true
+// transition da el estado del issue tras llegarle un evento y si es una
+// regresión. Resuelto a mano, cualquier evento lo reabre. En resolved_next,
+// uno de una release posterior a la que tenía al resolverse; resuelto con el
+// despliegue de fixedIn, uno de esa release o de una posterior. Sin release
+// no se sabe y no lo reabre. cmp compara dos releases como
+// store.CompareReleases: por su número si se leen como versiones; si no, por
+// cuándo se vieron, y entonces la release que crea el propio evento
+// (newRelease) no cuenta como posterior, porque puede ser la de un cliente que
+// no ha actualizado; una que no está en la tabla, sí.
+func transition(status, resolvedIn, fixedIn, release string, newRelease bool,
+	cmp func(a, b string) (c int, ok, byVersion bool, err error),
+) (string, bool, error) {
+	after := func(than string) (bool, error) {
+		if release == "" {
+			return false, nil
 		}
+		c, ok, byVersion, err := cmp(release, than)
+		if err != nil || (newRelease && !byVersion) {
+			return false, err
+		}
+		return !ok || c > 0, nil
 	}
-	return status, false
+	var reopen bool
+	var err error
+	switch {
+	case status == "resolved" && fixedIn == "":
+		reopen = true
+	case status == "resolved" && release == fixedIn:
+		reopen = true
+	case status == "resolved":
+		reopen, err = after(fixedIn)
+	case status == "resolved_next" && release != resolvedIn:
+		reopen, err = after(resolvedIn)
+	}
+	if err != nil {
+		return status, false, err
+	}
+	if reopen {
+		return "open", true, nil
+	}
+	return status, false, nil
 }
 
 func validID(id string) bool {

@@ -109,7 +109,7 @@ func run(args []string) error {
 		switch args[0] {
 		case "projects":
 			return projects(cfg, args[1:], os.Stdout)
-		case "tokens":
+		case "tokens", "releases":
 			return runCommand(args, os.Stdout)
 		}
 		return fmt.Errorf("comando desconocido %q\n%s", args[0], usage)

@@ -3,6 +3,9 @@ export const es = {
   'title.list': 'Errores · intake-errors',
   'title.issue': 'Error · intake-errors',
   'title.issueNamed': '{title} · Errores',
+  'title.releases': 'Releases · intake-errors',
+  'title.release': 'Release · intake-errors',
+  'title.releaseNamed': '{version} · Releases',
 
   'api.offline': 'No hay conexión con el servidor.',
   'api.failed': 'Algo ha fallado en el servidor.',
@@ -18,6 +21,14 @@ export const es = {
   'theme.system': 'Como el sistema',
   'theme.light': 'Claro',
   'theme.dark': 'Oscuro',
+
+  'nav.issues': 'Errores',
+  'nav.releases': 'Releases',
+  'env.label': 'Entorno',
+  'env.all': 'Todos los entornos',
+  'shell.environment': 'Entorno: {env}',
+  'env.note':
+    'Filtra los errores, sus gráficas y recuentos, y las releases. Se recuerda en este navegador.',
 
   'login.lede.github': 'Entra con tu cuenta de GitHub de {org}.',
   'login.lede.dev': 'Este servidor está en modo de desarrollo.',
@@ -106,7 +117,8 @@ export const es = {
   'action.resolveNext': 'Resolver en la siguiente versión',
   'action.silence': 'Silenciar',
   'action.hint.noRelease': 'El último evento no trae release.',
-  'action.hint.next': 'Vuelve a abrirse si llega con otro release que no sea {release}.',
+  'action.hint.next':
+    'Se resuelve al desplegar una release posterior a {release}; si vuelve a salir en ella o en otra posterior, se reabre.',
   'action.hint.silence': 'Sigue contando, pero no avisa.',
 
   'fact.project': 'Proyecto',
@@ -122,6 +134,9 @@ export const es = {
   'fact.resolvedIn': 'Resuelto en',
   'fact.server': 'Servidor',
   'fact.sdk': 'SDK',
+  'fact.firstRelease': 'Primera release',
+  'fact.lastRelease': 'Última release',
+  'fact.fixedIn': 'Resuelto con',
 
   'top.release': 'Releases',
   'top.environment': 'Entornos',
@@ -153,6 +168,57 @@ export const es = {
   'events.other': '{n} eventos',
   'chart.last14.one': '{n} evento en los últimos 14 días',
   'chart.last14.other': '{n} eventos en los últimos 14 días',
+
+  'releases.title': 'Releases',
+  'releases.loading': 'Cargando las releases',
+  'releases.error': 'No se han podido cargar las releases',
+  'releases.empty.title': 'Todavía no hay releases',
+  'releases.empty.text':
+    'Se crean solas con el primer error que trae una versión nueva, o a mano con la API, con intake-errors releases new o con sentry-cli releases new.',
+  'releases.noMatch.title': 'Ninguna release con estos filtros',
+  'releases.noMatch.text': 'Prueba con otro proyecto u otro entorno.',
+  'releases.col.release': 'Release',
+  'releases.col.new': 'Nuevos',
+  'releases.col.regressions': 'Regresiones',
+  'releases.col.events': 'Eventos',
+  'releases.col.seen': 'Vista',
+  'releases.notDeployed': 'Sin desplegar',
+  'releases.deployedAt': 'Desplegada en {env}: {date}',
+  'releases.firstSeenAt': 'Vista por primera vez: {date}',
+  'releases.finalized': 'Finalizada',
+  'releases.new.one': '{n} error nuevo',
+  'releases.new.other': '{n} errores nuevos',
+  'releases.regressions.one': '{n} regresión',
+  'releases.regressions.other': '{n} regresiones',
+  'releases.noNew': 'Ningún error nuevo',
+
+  'release.back': 'Volver a las releases',
+  'release.loading': 'Cargando la release',
+  'release.notFound.title': 'Esta release no existe',
+  'release.notFound.text':
+    'Puede que sea de otro proyecto o que la versión se escriba de otra forma.',
+  'release.error': 'No se ha podido cargar la release',
+  'release.firstSeen': 'Vista por primera vez {ago}',
+  'release.deploys': 'Despliegues',
+  'release.noDeploys':
+    'Todavía no se ha desplegado. Un despliegue se apunta con intake-errors releases new --env, con la API o con sentry-cli deploys new.',
+  'release.new': 'Errores nuevos',
+  'release.new.hint': 'Aparecieron con esta release.',
+  'release.regressed': 'Regresiones',
+  'release.regressed.hint': 'Estaban resueltos y volvieron a salir con esta release.',
+  'release.continued': 'Siguen saliendo',
+  'release.continued.hint': 'Ya existían y siguieron saliendo con esta release.',
+  'release.stopped': 'Dejaron de salir',
+  'release.stopped.hint': 'Salían en {previous} y en esta ya no, o se resolvieron al desplegarla.',
+  'release.stopped.hintFirst': 'Los que se resolvieron al desplegarla.',
+  'release.none': 'Ninguno.',
+  'release.inRelease.one': '{n} evento en esta release',
+  'release.inRelease.other': '{n} eventos en esta release',
+  'release.inPrevious.one': '{n} evento en {release}',
+  'release.inPrevious.other': '{n} eventos en {release}',
+  'release.fixedHere': 'Resuelto con esta release',
+  'release.eventsTotal': 'Eventos',
+  'release.issuesTotal': 'Errores con eventos',
 };
 
 export type Key = keyof typeof es;

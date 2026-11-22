@@ -30,6 +30,12 @@ func Handler(next http.Handler) http.Handler {
 	return New(app, next)
 }
 
+var assetExt = map[string]bool{
+	".js": true, ".mjs": true, ".css": true, ".map": true, ".json": true, ".txt": true, ".html": true, ".xml": true,
+	".ico": true, ".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".svg": true, ".webp": true, ".avif": true,
+	".woff": true, ".woff2": true, ".ttf": true, ".otf": true, ".webmanifest": true,
+}
+
 // hashed son los ficheros con el hash de Angular en el nombre (main-ABCD1234.js).
 var hashed = regexp.MustCompile(`-[A-Z0-9]{8}\.[a-z0-9]+$`)
 
@@ -94,8 +100,9 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Un fichero que no existe es un 404: un main-*.js de un build anterior no
-	// debe recibir el HTML.
-	if path.Ext(name) != "" && name != "index.html" {
+	// debe recibir el HTML. Una ruta con un punto que no es de fichero, como
+	// /releases/1/web@1.2.3, es de la app.
+	if assetExt[strings.ToLower(path.Ext(name))] && name != "index.html" {
 		http.NotFound(w, r)
 		return
 	}

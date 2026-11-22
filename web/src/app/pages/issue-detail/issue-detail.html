@@ -206,7 +206,11 @@
             @for (f of facts(); track f.key) {
               <div class="fact">
                 <dt>{{ t(f.key) }}</dt>
-                <dd [class.mono]="f.mono" [attr.title]="f.title || f.value">{{ f.value }}</dd>
+                @if (f.link) {
+                  <dd class="mono" [attr.title]="f.value"><a class="fact__link" [routerLink]="f.link">{{ f.value }}</a></dd>
+                } @else {
+                  <dd [class.mono]="f.mono" [attr.title]="f.title || f.value">{{ f.value }}</dd>
+                }
               </div>
             }
           </dl>

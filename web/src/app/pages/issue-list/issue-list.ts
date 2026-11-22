@@ -21,6 +21,7 @@ import {
   type Project,
   type StatusFilter,
 } from '../../core/api';
+import { environment } from '../../core/environment';
 import { ago, count, fullDate, STATUS_BADGE, STATUS_LABEL, splitTitle } from '../../core/format';
 import { I18n, type Key, plural } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
@@ -159,6 +160,7 @@ export class IssueListPage {
         status: this.statusValue(),
         sort: this.sortValue(),
         query: this.query() ?? '',
+        environment: environment(),
       };
       untracked(() => {
         this.searchText.set(params.query);
@@ -175,12 +177,19 @@ export class IssueListPage {
     });
   }
 
-  private params(): { project: string; status: StatusFilter; sort: IssueSort; query: string } {
+  private params(): {
+    project: string;
+    status: StatusFilter;
+    sort: IssueSort;
+    query: string;
+    environment: string;
+  } {
     return {
       project: this.project() ?? '',
       status: this.statusValue(),
       sort: this.sortValue(),
       query: this.query() ?? '',
+      environment: environment(),
     };
   }
 

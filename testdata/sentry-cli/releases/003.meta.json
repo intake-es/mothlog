@@ -1,0 +1,11 @@
+{
+  "method": "POST",
+  "path": "/api/0/organizations/cualquiera/releases/prueba-releases/deploys/",
+  "headers": {
+    "accept": "*/*",
+    "user-agent": "sentry-cli/3.8.2",
+    "content-type": "application/json"
+  },
+  "status": 201,
+  "response": "{\"dateFinished\":\"2026-11-21T13:59:06.137847Z\",\"dateStarted\":null,\"environment\":\"production\",\"id\":\"1\",\"name\":null,\"url\":null}\n"
+}

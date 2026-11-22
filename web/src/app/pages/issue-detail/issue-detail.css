@@ -334,6 +334,16 @@
   overflow-wrap: anywhere;
 }
 
+.fact__link {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.fact__link:hover {
+  text-decoration-color: currentColor;
+}
+
 .fact dd.mono {
   font-family: var(--font-mono);
   font-size: 0.76rem;

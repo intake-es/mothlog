@@ -3,6 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { IssueDetail, StoredEvent } from '../../core/api';
+import { environment } from '../../core/environment';
 import { I18n, lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
 import { IssueDetailPage } from './issue-detail';
@@ -296,6 +297,36 @@ describe('IssueDetailPage', () => {
     );
   });
 
+  it('con un entorno elegido pide el error y sus eventos de ese entorno, y enlaza sus releases', async () => {
+    environment.set('staging');
+    try {
+      const fixture = TestBed.createComponent(IssueDetailPage);
+      fixture.componentRef.setInput('id', '5');
+      fixture.detectChanges();
+      const issueReq = http.expectOne((r) => r.url === '/api/0/issues/5/');
+      const eventsReq = http.expectOne((r) => r.url === '/api/0/issues/5/events/');
+      expect(issueReq.request.params.get('environment')).toBe('staging');
+      expect(eventsReq.request.params.get('environment')).toBe('staging');
+      issueReq.flush(
+        detail({ first_release: 'web@1.0.0', status: 'resolved', fixed_in_release: 'web@1.1.0' }),
+      );
+      eventsReq.flush({ data: [] });
+      await fixture.whenStable();
+      const el: HTMLElement = fixture.nativeElement;
+      const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('.fact__link')).map((a) => [
+        a.closest('.fact')?.querySelector('dt')?.textContent,
+        a.getAttribute('href'),
+      ]);
+      expect(links).toEqual([
+        ['Primera release', '/releases/4/web@1.0.0'],
+        ['Última release', '/releases/4/fixture-release-1'],
+        ['Resuelto con', '/releases/4/web@1.1.0'],
+      ]);
+    } finally {
+      environment.set('');
+    }
+  });
+
   describe('en inglés', () => {
     const factsOf = (el: HTMLElement) =>
       Object.fromEntries(
@@ -344,9 +375,14 @@ describe('IssueDetailPage', () => {
         'Workspace',
         'User',
         'Request',
+        'Last release',
         'SDK',
       ]);
       expect(facts['First seen']).toBe('yesterday');
+      expect(
+        el.querySelector('.fact__link')?.getAttribute('href'),
+        'la última release enlaza a su detalle',
+      ).toBe('/releases/4/fixture-release-1');
       expect(facts['Environment']).toBe('production');
 
       el.querySelector<HTMLButtonElement>('[aria-label="More actions"]')?.click();
@@ -354,7 +390,7 @@ describe('IssueDetailPage', () => {
       const items = Array.from(el.querySelectorAll<HTMLButtonElement>('.more__item'));
       expect(items[0].textContent).toContain('Resolve in the next release');
       expect(items[0].textContent).toContain(
-        'Reopens if it comes back with any release other than fixture-release-1.',
+        'Resolved once a release later than fixture-release-1 is deployed; reopens if it happens again in that release or a later one.',
       );
       expect(items[1].textContent).toContain('Silence');
       expect(items[1].textContent).toContain('Keeps counting, but doesn’t alert.');

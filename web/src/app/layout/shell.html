@@ -3,6 +3,81 @@
     <svg appIcon="bug" weight="fill"></svg>
   </a>
 
+  <a
+    class="rail__nav"
+    routerLink="/"
+    [class.rail__nav--on]="!onReleases()"
+    [attr.aria-current]="onReleases() ? null : 'page'"
+    [attr.aria-label]="t('nav.issues')"
+    [attr.title]="t('nav.issues')"
+  >
+    <svg appIcon="warning-circle"></svg>
+  </a>
+  <a
+    class="rail__nav"
+    routerLink="/releases"
+    [class.rail__nav--on]="onReleases()"
+    [attr.aria-current]="onReleases() ? 'page' : null"
+    [attr.aria-label]="t('nav.releases')"
+    [attr.title]="t('nav.releases')"
+  >
+    <svg appIcon="package"></svg>
+  </a>
+
+  <div class="rail__slot rail__slot--env">
+    <button
+      type="button"
+      class="rail__env"
+      [class.rail__env--on]="!!env.value()"
+      [attr.aria-label]="envLabel()"
+      [attr.title]="envLabel()"
+      aria-haspopup="menu"
+      [attr.aria-expanded]="menu() === 'env'"
+      (click)="toggleEnv()"
+    >
+      <svg appIcon="globe-simple"></svg>
+      @if (env.value()) {
+        <span class="rail__env-name">{{ env.value() }}</span>
+      }
+    </button>
+    @if (menu() === 'env') {
+      <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="menu.set(null)"></button>
+      <div class="menu rail__menu rail__menu--top" role="menu" [attr.aria-label]="t('env.label')">
+        <div class="menu__label">{{ t('env.label') }}</div>
+        <button
+          type="button"
+          class="menu__item"
+          role="menuitemradio"
+          [attr.aria-checked]="!env.value()"
+          (click)="setEnv('')"
+        >
+          {{ t('env.all') }}
+          @if (!env.value()) {
+            <svg appIcon="check" class="menu__check"></svg>
+          }
+        </button>
+        @if (envNames().length) {
+          <div class="menu__rule"></div>
+        }
+        @for (name of envNames(); track name) {
+          <button
+            type="button"
+            class="menu__item"
+            role="menuitemradio"
+            [attr.aria-checked]="env.value() === name"
+            (click)="setEnv(name)"
+          >
+            <span class="rail__env-item">{{ name }}</span>
+            @if (env.value() === name) {
+              <svg appIcon="check" class="menu__check"></svg>
+            }
+          </button>
+        }
+        <p class="rail__env-note">{{ t('env.note') }}</p>
+      </div>
+    }
+  </div>
+
   <div class="rail__end">
     <div class="rail__slot">
       <button

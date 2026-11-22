@@ -53,6 +53,10 @@ type Issue struct {
 	LastRelease       *string    `json:"last_release"`
 	ResolvedInRelease *string    `json:"resolved_in_release"`
 	LastRegression    *time.Time `json:"last_regression"`
+	// FirstRelease es la release del primer evento.
+	FirstRelease *string `json:"first_release"`
+	// FixedInRelease es la release cuyo despliegue resolvió el issue que estaba en resolved_next.
+	FixedInRelease *string `json:"fixed_in_release"`
 }
 
 const issueColumns = `
@@ -61,12 +65,37 @@ const issueColumns = `
 	(SELECT e.release FROM events e
 	  WHERE e.issue_id = i.id AND e.release IS NOT NULL AND e.release <> ''
 	  ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1),
-	i.resolved_in_release, i.last_regressed_at`
+	i.resolved_in_release, i.last_regressed_at, i.first_release, i.fixed_in_release`
+
+const issueFrom = `issues i JOIN projects p ON p.id = i.project_id`
+
+// issueSQL da las columnas y el FROM de un issue. Con entorno (envArg es su
+// parámetro), los eventos, la primera y la última vez y la última release son
+// los de ese entorno.
+func issueSQL(envArg string) (cols, from string) {
+	if envArg == "" {
+		return issueColumns, issueFrom
+	}
+	cols = `
+	i.id, i.project_id, p.name, i.title, i.culprit, i.type, i.level, i.status, es.n,
+	es.first_seen, es.last_seen,
+	(SELECT e.release FROM events e
+	  WHERE e.issue_id = i.id AND e.environment = ` + envArg + ` AND e.release IS NOT NULL AND e.release <> ''
+	  ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1),
+	i.resolved_in_release, i.last_regressed_at, i.first_release, i.fixed_in_release`
+	from = issueFrom + ` CROSS JOIN LATERAL (
+		SELECT COALESCE(sum(s.event_count), 0)::bigint AS n,
+			COALESCE(min(s.first_seen), i.first_seen) AS first_seen,
+			COALESCE(max(s.last_seen), i.last_seen) AS last_seen
+		FROM issue_stats s WHERE s.issue_id = i.id AND s.environment = ` + envArg + `) es`
+	return cols, from
+}
 
 func scanIssue(r pgx.Row) (Issue, error) {
 	var i Issue
 	err := r.Scan(&i.ID, &i.ProjectID, &i.Project, &i.Title, &i.Culprit, &i.Type, &i.Level, &i.Status,
-		&i.Count, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression)
+		&i.Count, &i.FirstSeen, &i.LastSeen, &i.LastRelease, &i.ResolvedInRelease, &i.LastRegression,
+		&i.FirstRelease, &i.FixedInRelease)
 	return i, err
 }
 
@@ -78,6 +107,8 @@ type IssueFilter struct {
 	Status string
 	// Query busca en el título y el culprit, sin distinguir mayúsculas.
 	Query string
+	// Environment deja los issues con eventos en ese entorno y cuenta solo los suyos; vacío, todos.
+	Environment string
 	// Sort: last_seen (por defecto), first_seen o count, siempre descendente.
 	Sort   string
 	Cursor string
@@ -93,6 +124,13 @@ var sortColumns = map[string]string{
 	"last_seen":  "i.last_seen",
 	"first_seen": "i.first_seen",
 	"count":      "i.event_count",
+}
+
+// envSortColumns ordena por los recuentos del entorno elegido.
+var envSortColumns = map[string]string{
+	"last_seen":  "es.last_seen",
+	"first_seen": "es.first_seen",
+	"count":      "es.n",
 }
 
 type cursor struct {
@@ -161,6 +199,12 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 	if f.Project != "" {
 		where = append(where, fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(f.Project)))
 	}
+	envArg := ""
+	if f.Environment != "" {
+		envArg = arg(f.Environment)
+		col = envSortColumns[f.Sort]
+		where = append(where, "es.n > 0")
+	}
 	if f.Status != "all" {
 		where = append(where, "i.status = "+arg(f.Status))
 	}
@@ -183,9 +227,10 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		}
 		where = append(where, fmt.Sprintf("(%s, i.id) < (%s, %s)", col, arg(v), arg(c.ID)))
 	}
-	q := fmt.Sprintf(`SELECT %s FROM issues i JOIN projects p ON p.id = i.project_id
+	cols, from := issueSQL(envArg)
+	q := fmt.Sprintf(`SELECT %s FROM %s
 		WHERE %s ORDER BY %s DESC, i.id DESC LIMIT %d`,
-		issueColumns, strings.Join(where, " AND "), col, limit+1)
+		cols, from, strings.Join(where, " AND "), col, limit+1)
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
 		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
@@ -216,8 +261,17 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 }
 
 func (s *Store) Issue(ctx context.Context, id int64) (Issue, error) {
-	i, err := scanIssue(s.pool.QueryRow(ctx,
-		`SELECT `+issueColumns+` FROM issues i JOIN projects p ON p.id = i.project_id WHERE i.id = $1`, id))
+	return s.IssueIn(ctx, id, "")
+}
+
+// IssueIn es Issue con los recuentos de un entorno; vacío, todos.
+func (s *Store) IssueIn(ctx context.Context, id int64, env string) (Issue, error) {
+	envArg, args := "", []any{id}
+	if env != "" {
+		envArg, args = "$2", append(args, env)
+	}
+	cols, from := issueSQL(envArg)
+	i, err := scanIssue(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM `+from+` WHERE i.id = $1`, args...))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Issue{}, ErrNotFound
 	}
@@ -286,8 +340,13 @@ func isUUID(s string) bool {
 }
 
 func (s *Store) LatestEvent(ctx context.Context, issueID int64) (*StoredEvent, error) {
+	return s.latestEventIn(ctx, issueID, "")
+}
+
+func (s *Store) latestEventIn(ctx context.Context, issueID int64, env string) (*StoredEvent, error) {
 	e, err := scanStoredEvent(s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+`
-		FROM events WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, issueID))
+		FROM events WHERE issue_id = $1 AND ($2 = '' OR environment = $2)
+		ORDER BY occurred_at DESC, id DESC LIMIT 1`, issueID, env))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -317,16 +376,21 @@ type IssueDetail struct {
 }
 
 func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (IssueDetail, error) {
-	issue, err := s.Issue(ctx, id)
+	return s.IssueDetailIn(ctx, id, "", now)
+}
+
+// IssueDetailIn es IssueDetail con solo los eventos de un entorno; vacío, todos.
+func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now time.Time) (IssueDetail, error) {
+	issue, err := s.IssueIn(ctx, id, env)
 	if err != nil {
 		return IssueDetail{}, err
 	}
 	d := IssueDetail{Issue: issue}
-	if d.LatestEvent, err = s.LatestEvent(ctx, id); err != nil {
+	if d.LatestEvent, err = s.latestEventIn(ctx, id, env); err != nil {
 		return IssueDetail{}, err
 	}
 
-	daily, err := s.DailyCounts(ctx, []int64{id}, now)
+	daily, err := s.DailyCountsIn(ctx, []int64{id}, env, now)
 	if err != nil {
 		return IssueDetail{}, err
 	}
@@ -341,9 +405,9 @@ func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (Issue
 			                  NULLIF(e.data->'user'->>'username', ''), NULLIF(e.data->'user'->>'ip_address', ''))),
 			('organization_id', e.data->'tags'->>'organization_id')
 		) AS v(key, value)
-		WHERE e.issue_id = $1 AND v.value <> ''
+		WHERE e.issue_id = $1 AND v.value <> '' AND ($2 = '' OR e.environment = $2)
 		GROUP BY v.key, v.value
-		ORDER BY v.key, n DESC, v.value`, id)
+		ORDER BY v.key, n DESC, v.value`, id, env)
 	if err != nil {
 		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
 	}
@@ -365,6 +429,11 @@ func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (Issue
 // DailyCounts son los eventos por día (UTC) de cada issue en los últimos
 // DailyDays días, del más viejo a hoy. Un id que no existe sale con ceros.
 func (s *Store) DailyCounts(ctx context.Context, ids []int64, now time.Time) (map[int64][]DayCount, error) {
+	return s.DailyCountsIn(ctx, ids, "", now)
+}
+
+// DailyCountsIn es DailyCounts con solo los eventos de un entorno; vacío, todos.
+func (s *Store) DailyCountsIn(ctx context.Context, ids []int64, env string, now time.Time) (map[int64][]DayCount, error) {
 	out := make(map[int64][]DayCount, len(ids))
 	if len(ids) == 0 {
 		return out, nil
@@ -377,7 +446,8 @@ func (s *Store) DailyCounts(ctx context.Context, ids []int64, now time.Time) (ma
 		LEFT JOIN events e ON e.issue_id = i.id
 			AND e.occurred_at >= d AT TIME ZONE 'UTC'
 			AND e.occurred_at < (d + interval '1 day') AT TIME ZONE 'UTC'
-		GROUP BY i.id, d ORDER BY i.id, d`, ids, now, DailyDays)
+			AND ($4 = '' OR e.environment = $4)
+		GROUP BY i.id, d ORDER BY i.id, d`, ids, now, DailyDays, env)
 	if err != nil {
 		return nil, fmt.Errorf("eventos por día: %w", err)
 	}
@@ -412,6 +482,11 @@ type EventPage struct {
 
 // IssueEvents lista los eventos del issue, del más nuevo al más viejo.
 func (s *Store) IssueEvents(ctx context.Context, issueID int64, cur string, limit int) (EventPage, error) {
+	return s.IssueEventsIn(ctx, issueID, "", cur, limit)
+}
+
+// IssueEventsIn es IssueEvents con solo los eventos de un entorno; vacío, todos.
+func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur string, limit int) (EventPage, error) {
 	limit, err := normalizeLimit(limit)
 	if err != nil {
 		return EventPage{}, err
@@ -440,8 +515,8 @@ func (s *Store) IssueEvents(ctx context.Context, issueID int64, cur string, limi
 				THEN concat_ws(': ', NULLIF(data->'exceptions'->-1->>'type', ''), NULLIF(data->'exceptions'->-1->>'value', ''))
 				ELSE COALESCE(data->>'message', '') END
 		FROM events
-		WHERE issue_id = $1 AND (occurred_at, id) < ($2, $3)
-		ORDER BY occurred_at DESC, id DESC LIMIT $4`, issueID, after, afterID, limit+1)
+		WHERE issue_id = $1 AND (occurred_at, id) < ($2, $3) AND ($5 = '' OR environment = $5)
+		ORDER BY occurred_at DESC, id DESC LIMIT $4`, issueID, after, afterID, limit+1, env)
 	if err != nil {
 		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
 	}
@@ -487,7 +562,7 @@ func (s *Store) SetIssueStatus(ctx context.Context, id int64, status string) (Is
 		}
 	}
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE issues SET status = $2, resolved_in_release = $3,
+		UPDATE issues SET status = $2, resolved_in_release = $3, fixed_in_release = NULL,
 			resolved_at = CASE
 				WHEN $2 NOT IN ('resolved', 'resolved_next') THEN NULL
 				WHEN status IN ('resolved', 'resolved_next') THEN COALESCE(resolved_at, now())

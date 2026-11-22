@@ -41,6 +41,7 @@ const ALLOWED = new Set([
   ...['textarea', 'readonly', 'fixed', 'copy', 'system', 'light', 'dark', 'lang', 'theme'],
   ...['user', 'es', 'en', 'login', 'regular', 'duotone', 'start', 'end', 'true', 'false'],
   ...['element', 'UTC'],
+  ...['releases', 'env', 'page', 'new', 'regressed', 'continued', 'stopped'],
   'fill: currentColor; stroke: none',
 ]);
 

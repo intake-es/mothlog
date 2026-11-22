@@ -218,3 +218,39 @@ func TestDroppedCommand(t *testing.T) {
 		t.Error("días no numéricos sin error")
 	}
 }
+
+func TestReleasesCommand(t *testing.T) {
+	db := storetest.NewDB(t)
+	ctx := context.Background()
+	p := db.AddProject(t, "web")
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := releasesCommand(ctx, db.Store, args, &out)
+		return out.String(), err
+	}
+
+	out, err := run("new", "web", "web@1.0.0")
+	if err != nil || !strings.Contains(out, "creada") {
+		t.Fatalf("new = %q, %v", out, err)
+	}
+	out, err = run("new", "web", "web@1.0.0", "--env", "production")
+	if err != nil || !strings.Contains(out, "ya existía") || !strings.Contains(out, "desplegada en production") {
+		t.Fatalf("new --env = %q, %v", out, err)
+	}
+	if _, err := run("new", "web", "web@1.1.0", "--env=staging"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := db.Release(ctx, p.ID, "web@1.0.0", "")
+	if err != nil || len(r.Deploys) != 1 || r.Deploys[0].Environment != "production" {
+		t.Errorf("web@1.0.0 = %+v, %v", r, err)
+	}
+	r, err = db.Release(ctx, p.ID, "web@1.1.0", "")
+	if err != nil || len(r.Deploys) != 1 || r.Deploys[0].Environment != "staging" {
+		t.Errorf("web@1.1.0 = %+v, %v", r, err)
+	}
+	for _, bad := range [][]string{{"new", "web"}, {"new", "otro", "v1"}, {"list"}, {"new", "web", "v1", "--env"}, {"new", "web", " "}} {
+		if _, err := run(bad...); err == nil {
+			t.Errorf("%v sin error", bad)
+		}
+	}
+}

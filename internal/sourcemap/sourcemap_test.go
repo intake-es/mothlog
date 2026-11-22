@@ -50,12 +50,57 @@ type memStore struct {
 	bundles map[string]bool
 	// vanish son trozos que UploadChunk ya no encuentra, aunque MissingUploadChunks sí.
 	vanish map[string]bool
+	// releases son las versiones creadas, con su despliegue más reciente.
+	releases map[string]*store.Release
 }
 
 const apiToken = "ie_token-de-la-api"
 
 func newMemStore() *memStore {
-	return &memStore{maps: map[key]stored{}, chunks: map[string][]byte{}, bundles: map[string]bool{}}
+	return &memStore{maps: map[key]stored{}, chunks: map[string][]byte{}, bundles: map[string]bool{},
+		releases: map[string]*store.Release{}}
+}
+
+func (m *memStore) CreateRelease(_ context.Context, projectID int64, version string) (store.Release, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if r, ok := m.releases[version]; ok {
+		return *r, false, nil
+	}
+	r := &store.Release{ProjectID: projectID, Version: version, FirstSeen: time.Now(), Deploys: []store.Deploy{}}
+	m.releases[version] = r
+	return *r, true, nil
+}
+
+func (m *memStore) FinalizeRelease(ctx context.Context, projectID int64, version string, at time.Time) (store.Release, error) {
+	if _, _, err := m.CreateRelease(ctx, projectID, version); err != nil {
+		return store.Release{}, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.releases[version].FinalizedAt = &at
+	return *m.releases[version], nil
+}
+
+func (m *memStore) AddDeploy(ctx context.Context, projectID int64, version, env string, at time.Time) (store.Deploy, []int64, error) {
+	if _, _, err := m.CreateRelease(ctx, projectID, version); err != nil {
+		return store.Deploy{}, nil, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r := m.releases[version]
+	d := store.Deploy{ID: int64(len(r.Deploys) + 1), Environment: env, DeployedAt: at}
+	r.Deploys = append(r.Deploys, d)
+	return d, nil, nil
+}
+
+func (m *memStore) ReleaseProjects(_ context.Context, version string) ([]store.Project, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.releases[version]; !ok {
+		return nil, nil
+	}
+	return []store.Project{{ID: webID, Name: "web"}}, nil
 }
 
 func (m *memStore) PutSourceMaps(_ context.Context, projectID int64, release string, files []store.SourceMapFile) error {
