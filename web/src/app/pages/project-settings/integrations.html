@@ -1,0 +1,73 @@
+<section class="section">
+  <div class="section__head">
+    <div>
+      <h2 class="section__title">{{ t('integrations.title') }}</h2>
+      <p class="section__lede">{{ t('integrations.lede') }}</p>
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('integrations.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (!data()) {
+    <div aria-busy="true" [attr.aria-label]="t('integrations.loading')">
+      <span class="sp-skeleton" style="width: 100%; height: 9rem; border-radius: 10px"></span>
+    </div>
+  } @else {
+    @for (c of cards(); track c.p.id) {
+      <div class="card">
+        <div class="group integ__head">
+          <svg class="integ__icon" [appIcon]="c.p.icon"></svg>
+          <h3 class="group__title">{{ c.p.name }}</h3>
+          <span class="sp-badge sp-badge--sm" [class]="c.badge">{{ t(c.status) }}</span>
+        </div>
+        <div class="group">
+          <div class="field">
+            <span class="field__label" [attr.id]="'integ-url-' + c.p.id">{{ t('integrations.webhookUrl') }}</span>
+            <div class="integ__url">
+              <code class="input integ__code" [attr.aria-labelledby]="'integ-url-' + c.p.id">{{ c.s.webhook_url }}</code>
+              <button type="button" class="btn" (click)="copy(c)">
+                <svg [appIcon]="copied() === c.p.id ? 'check' : 'copy'"></svg>
+                {{ copied() === c.p.id ? t('integrations.copied') : t('integrations.copy') }}
+              </button>
+            </div>
+            <span class="field__hint">{{ t(c.p.steps) }}</span>
+          </div>
+          <dl class="integ__facts">
+            <div class="integ__fact">
+              <dt>{{ t('integrations.signature') }}</dt>
+              <dd>
+                <svg [appIcon]="c.s.secret_set ? 'check-circle' : 'warning-circle'" [class.integ__ok]="c.s.secret_set" [class.integ__warn]="!c.s.secret_set"></svg>
+                {{ t(c.s.secret_set ? 'integrations.signatureOk' : 'integrations.signatureMissing', { env: c.p.secretEnv }) }}
+              </dd>
+            </div>
+            <div class="integ__fact">
+              <dt>{{ t('integrations.write') }}</dt>
+              <dd>
+                <svg [appIcon]="c.s.token_set ? 'check-circle' : 'warning-circle'" [class.integ__ok]="c.s.token_set" [class.integ__warn]="!c.s.token_set"></svg>
+                {{ t(c.s.token_set ? 'integrations.writeOk' : 'integrations.writeMissing', { env: c.p.tokenEnv }) }}
+              </dd>
+            </div>
+            <div class="integ__fact">
+              <dt>{{ t('integrations.lastDelivery') }}</dt>
+              <dd>
+                @if (c.last) {
+                  <time [attr.datetime]="c.s.last_delivery" [attr.title]="c.lastTitle">{{ c.last }}</time>
+                } @else {
+                  <span class="integ__muted">{{ t('integrations.never') }}</span>
+                }
+              </dd>
+            </div>
+          </dl>
+          @if (c.p.id === 'github') {
+            <p class="field__hint integ__pr">{{ t('integrations.prHint') }}</p>
+          }
+        </div>
+      </div>
+    }
+  }
+</section>

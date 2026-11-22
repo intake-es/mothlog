@@ -141,7 +141,7 @@ func New(st *store.Store, opts Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_issue",
 		Annotations: readOnly,
-		Description: "Devuelve un issue con quién lo lleva (assignee), su último evento entero en JSON, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y organization_id. " +
+		Description: "Devuelve un issue con quién lo lleva (assignee), su último evento entero en JSON, los eventos por día de los últimos 14 días y los valores más frecuentes de entorno, release, usuario y organization_id, y sus enlaces (links): las issues de Linear y las issues y PRs de GitHub, con su estado allí. " +
 			"Úsala para saber a cuántos usuarios u organizaciones afecta, desde qué release o si va a más. Para leer la traza, mejor get_stacktrace.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in issueIn) (*mcp.CallToolResult, any, error) {
 		d, err := st.IssueDetailIn(ctx, in.IssueID, in.Environment, time.Now())
@@ -218,7 +218,7 @@ func New(st *store.Store, opts Options) *mcp.Server {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_comments",
 		Annotations: readOnly,
-		Description: "Devuelve el historial de un issue, del más viejo al más nuevo: los comentarios (Markdown, autor y si es una persona o un token) y los cambios de estado (quién, desde dónde: interfaz, API, MCP, la ingesta al volver como regresión o un despliegue; de qué estado a cuál, la release y el comentario que se dejó con el cambio). " +
+		Description: "Devuelve el historial de un issue, del más viejo al más nuevo: los comentarios (Markdown, autor y si es una persona o un token) y los cambios de estado (quién, desde dónde: interfaz, API, MCP, la ingesta al volver como regresión, un despliegue, o Linear o GitHub al cerrarse o reabrirse allí su issue o mergearse un PR; de qué estado a cuál, la release y el comentario que se dejó con el cambio). " +
 			"Úsala para saber qué se ha intentado ya con un error antes de ponerte, o para comprobar que tu comentario o tu cambio de estado han quedado.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in issueOnlyIn) (*mcp.CallToolResult, any, error) {
 		h, err := st.History(ctx, in.IssueID, actor(ctx))

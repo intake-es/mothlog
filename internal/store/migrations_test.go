@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"slices"
@@ -434,5 +435,109 @@ func TestMigrationAssign(t *testing.T) {
 	}
 	if _, err := p.Up(ctx); err != nil {
 		t.Fatalf("volver a subir: %v", err)
+	}
+}
+
+func TestMigrationIssueLinks(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 16); err != nil {
+		t.Fatal(err)
+	}
+	var project int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('backend', 'clave') RETURNING id`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	type old struct {
+		fp             string
+		id, ident, url *string
+		wantLink       bool
+		issueID        int64
+	}
+	s := func(v string) *string { return &v }
+	issues := []*old{
+		{fp: "completo", id: s("lin-1"), ident: s("ERR-1"), url: s("https://linear.app/x/issue/ERR-1"), wantLink: true},
+		{fp: "solo-id", id: s("lin-2"), wantLink: true},
+		{fp: "sin", wantLink: false},
+		{fp: "vacio", id: s(""), wantLink: false},
+		{fp: "resuelto", id: s("lin-3"), ident: s("ERR-3"), url: s("https://linear.app/x/issue/ERR-3"), wantLink: true},
+	}
+	for _, is := range issues {
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count,
+				linear_issue_id, linear_issue_identifier, linear_issue_url, status)
+			VALUES ($1, $2, $2, now(), now(), 1, $3, $4, $5, CASE WHEN $2 = 'resuelto' THEN 'resolved' ELSE 'open' END)
+			RETURNING id`, project, is.fp, is.id, is.ident, is.url).Scan(&is.issueID); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := p.UpTo(ctx, 18); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM issue_links`).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("enlaces = %d, %v; quiero 3", n, err)
+	}
+	for _, is := range issues {
+		var ext, provider, kind string
+		var ident, url *string
+		err := pool.QueryRow(ctx, `SELECT external_id, identifier, url, provider, kind FROM issue_links WHERE issue_id = $1`, is.issueID).
+			Scan(&ext, &ident, &url, &provider, &kind)
+		if !is.wantLink {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				t.Errorf("%s: no debería tener enlace: %v", is.fp, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", is.fp, err)
+		}
+		if ext != *is.id || provider != "linear" || kind != "issue" || !equalPtr(ident, is.ident) || !equalPtr(url, is.url) {
+			t.Errorf("%s: %s %v %v %s/%s", is.fp, ext, ident, url, provider, kind)
+		}
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = 'issues' AND column_name LIKE 'linear_issue%'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("columnas linear_issue_* en issues: %d, %v", n, err)
+	}
+
+	// Al bajar, vuelve la issue de Linear a su columna y se pierden los de GitHub.
+	if _, err := pool.Exec(ctx, `INSERT INTO issue_links (issue_id, provider, kind, external_id) VALUES ($1, 'github', 'issue', 'o/r#1')`,
+		issues[2].issueID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.DownTo(ctx, 16); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	for _, is := range issues {
+		var id, ident, url *string
+		if err := pool.QueryRow(ctx, `SELECT linear_issue_id, linear_issue_identifier, linear_issue_url FROM issues WHERE id = $1`,
+			is.issueID).Scan(&id, &ident, &url); err != nil {
+			t.Fatal(err)
+		}
+		if is.wantLink && (!equalPtr(id, is.id) || !equalPtr(ident, is.ident) || !equalPtr(url, is.url)) {
+			t.Errorf("%s tras bajar: %v %v %v", is.fp, id, ident, url)
+		}
+		if !is.wantLink && id != nil {
+			t.Errorf("%s tras bajar: %v", is.fp, *id)
+		}
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM issue_links`).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("enlaces tras bajar y subir = %d, %v", n, err)
 	}
 }

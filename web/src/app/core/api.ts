@@ -106,10 +106,46 @@ export interface StoredEvent {
   event: SentryEvent;
 }
 
+export type LinkProvider = 'linear' | 'github';
+export type LinkKind = 'issue' | 'pull_request';
+export type LinkState = 'open' | 'closed' | 'canceled' | 'merged';
+
+/** Una issue de Linear o una issue o un PR de GitHub enlazados al error. */
+export interface IssueLink {
+  id: number;
+  issue_id: number;
+  provider: LinkProvider;
+  kind: LinkKind;
+  external_id: string;
+  identifier: string;
+  url: string;
+  /** Vacío mientras no se sabe su estado allí. */
+  state: LinkState | '';
+  /** El nombre del estado allí: «Done», «In Progress». */
+  state_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface IssueDetail extends Issue {
   latest_event: StoredEvent | null;
   daily: DayCount[];
   top_values: Record<string, ValueCount[]>;
+  links?: IssueLink[];
+}
+
+export interface IntegrationStatus {
+  webhook_url: string;
+  /** El servidor tiene el secreto con el que comprueba las firmas. */
+  secret_set: boolean;
+  /** El servidor puede escribir allí: LINEAR_API_KEY o GITHUB_TOKEN. */
+  token_set: boolean;
+  last_delivery: string | null;
+}
+
+export interface Integrations {
+  linear: IntegrationStatus;
+  github: IntegrationStatus;
 }
 
 export interface EventSummary {
@@ -139,7 +175,7 @@ export interface IssueComment {
   mine: boolean;
 }
 
-export type ChangeSource = 'ui' | 'api' | 'mcp' | 'ingest' | 'deploy';
+export type ChangeSource = 'ui' | 'api' | 'mcp' | 'ingest' | 'deploy' | 'linear' | 'github';
 
 /** Un comentario, un cambio de estado o una asignación del historial de un error. */
 export interface HistoryEntry {
@@ -294,7 +330,15 @@ export interface ReleaseQuery {
   limit?: number;
 }
 
-export type ActionType = 'slack' | 'linear' | 'email' | 'discord' | 'telegram' | 'ntfy' | 'webhook';
+export type ActionType =
+  | 'slack'
+  | 'linear'
+  | 'email'
+  | 'discord'
+  | 'telegram'
+  | 'ntfy'
+  | 'webhook'
+  | 'github';
 
 export interface RuleAction {
   id: string;
@@ -307,6 +351,9 @@ export interface RuleAction {
   chat_id?: string;
   token?: string;
   secret?: string;
+  /** dueño/repo de la acción de GitHub, con sus etiquetas. */
+  repo?: string;
+  labels?: string[];
 }
 
 export interface CronCondition {
@@ -627,6 +674,10 @@ export class Api {
 
   setStatus(issueId: number, status: IssueStatus): Observable<Issue> {
     return this.http.post<Issue>(`${BASE}/issues/${issueId}/status`, { status });
+  }
+
+  integrations(): Observable<Integrations> {
+    return this.http.get<Integrations>(`${BASE}/integrations/`);
   }
 
   rules(projectId: number): Observable<Page<Rule>> {

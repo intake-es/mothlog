@@ -1,0 +1,32 @@
+@if (rows().length) {
+  <ul class="links">
+    @for (r of rows(); track r.link.id) {
+      <li class="link">
+        <svg class="link__icon" [appIcon]="r.icon"></svg>
+        <div class="link__body">
+          <p class="link__line">
+            @if (r.link.url) {
+              <a class="link__name mono" [href]="r.link.url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="openLabel(r)">
+                {{ r.name }}<svg appIcon="arrow-square-out"></svg>
+              </a>
+            } @else {
+              <span class="link__name mono">{{ r.name }}</span>
+            }
+            <span class="sp-badge sp-badge--sm" [class]="r.badge">{{ r.state }}</span>
+          </p>
+          <p class="link__meta">
+            <span>{{ t(r.kind) }}</span>
+            @if (r.stateName) {
+              <span aria-hidden="true">·</span>
+              <span>{{ r.stateName }}</span>
+            }
+            <span aria-hidden="true">·</span>
+            <time [attr.datetime]="r.link.updated_at" [attr.title]="r.updatedTitle">{{ r.updated }}</time>
+          </p>
+        </div>
+      </li>
+    }
+  </ul>
+} @else {
+  <p class="empty">{{ t('links.empty') }}</p>
+}

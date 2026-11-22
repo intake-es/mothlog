@@ -83,3 +83,26 @@ func TestContextHistory(t *testing.T) {
 		}
 	}
 }
+
+func TestContextLinks(t *testing.T) {
+	c := contextWith(nil, nil)
+	if strings.Contains(Context(c, "", 0), "## Enlaces") {
+		t.Fatal("sin enlaces no debería haber sección")
+	}
+	c.Links = []store.IssueLink{
+		{Provider: store.ProviderLinear, Kind: store.LinkIssue, ExternalID: "uuid", Identifier: "ERR-7",
+			URL: "https://linear.app/x/issue/ERR-7", State: store.LinkClosed, StateName: "Done"},
+		{Provider: store.ProviderGitHub, Kind: store.LinkPullRequest, ExternalID: "o/r#9", Identifier: "o/r#9",
+			URL: "https://github.com/o/r/pull/9", State: store.LinkMerged, StateName: "merged"},
+	}
+	out := Context(c, "", 0)
+	for _, want := range []string{
+		"## Enlaces",
+		"- Issue de Linear ERR-7: cerrada (Done), https://linear.app/x/issue/ERR-7",
+		"- PR de GitHub o/r#9: mergeado, https://github.com/o/r/pull/9",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("falta %q en:\n%s", want, out)
+		}
+	}
+}

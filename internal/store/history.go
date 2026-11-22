@@ -31,6 +31,8 @@ const (
 	SourceMCP    = "mcp"
 	SourceIngest = "ingest"
 	SourceDeploy = "deploy"
+	SourceLinear = ProviderLinear
+	SourceGitHub = ProviderGitHub
 )
 
 // Actor es quien comenta o cambia el estado.
@@ -225,6 +227,9 @@ func RecordRegression(ctx context.Context, q Querier, issueID int64, from, relea
 	if release != "" {
 		rel = &release
 	}
+	if err := enqueueSync(ctx, q, issueID, "open", SourceIngest); err != nil {
+		return err
+	}
 	return recordStatusChange(ctx, q, issueID, nil, SourceIngest, from, "open", rel, nil)
 }
 
@@ -254,53 +259,71 @@ func (s *Store) ChangeIssueStatus(ctx context.Context, id int64, status string, 
 		}
 	}
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		var from string
-		var prevRelease *string
-		err := tx.QueryRow(ctx, `SELECT status, resolved_in_release FROM issues WHERE id = $1 FOR UPDATE`, id).Scan(&from, &prevRelease)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return fmt.Errorf("leer issue: %w", err)
-		}
-		var release *string
-		if status == "resolved_next" {
-			err := tx.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
-				WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&release)
-			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("release del último evento: %w", err)
-			}
-			if release == nil {
-				return ErrNoRelease
-			}
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE issues SET status = $2, resolved_in_release = $3, fixed_in_release = NULL,
-				resolved_at = CASE
-					WHEN $2 NOT IN ('resolved', 'resolved_next') THEN NULL
-					WHEN status IN ('resolved', 'resolved_next') THEN COALESCE(resolved_at, now())
-					ELSE now() END
-			WHERE id = $1`, id, status, release); err != nil {
-			return fmt.Errorf("cambiar estado: %w", err)
-		}
-		changed := from != status || !equalPtr(prevRelease, release)
-		var commentID *int64
-		if comment != "" {
-			c, err := insertComment(ctx, tx, id, *by.Actor, comment)
-			if err != nil {
-				return err
-			}
-			commentID = &c.ID
-		}
-		if !changed {
-			return nil
-		}
-		return recordStatusChange(ctx, tx, id, by.Actor, by.Source, from, status, release, commentID)
+		_, err := changeStatusTx(ctx, tx, id, status, by, comment, false, by.Source)
+		return err
 	})
 	if err != nil {
 		return Issue{}, err
 	}
 	return s.Issue(ctx, id)
+}
+
+// changeStatusTx es ChangeIssueStatus dentro de tx. Con fallbackResolved,
+// resolved_next sin release en el último evento se queda en resolved. Si el
+// estado cambia de categoría, lo deja para enviar a los enlaces del issue,
+// salvo a los del sitio skip.
+func changeStatusTx(ctx context.Context, tx pgx.Tx, id int64, status string, by StatusChange, comment string,
+	fallbackResolved bool, skip string) (bool, error) {
+	var from string
+	var prevRelease *string
+	err := tx.QueryRow(ctx, `SELECT status, resolved_in_release FROM issues WHERE id = $1 FOR UPDATE`, id).Scan(&from, &prevRelease)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("leer issue: %w", err)
+	}
+	var release *string
+	if status == "resolved_next" {
+		err := tx.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
+			WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&release)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return false, fmt.Errorf("release del último evento: %w", err)
+		}
+		if release == nil {
+			if !fallbackResolved {
+				return false, ErrNoRelease
+			}
+			status = "resolved"
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE issues SET status = $2, resolved_in_release = $3, fixed_in_release = NULL,
+			resolved_at = CASE
+				WHEN $2 NOT IN ('resolved', 'resolved_next') THEN NULL
+				WHEN status IN ('resolved', 'resolved_next') THEN COALESCE(resolved_at, now())
+				ELSE now() END
+		WHERE id = $1`, id, status, release); err != nil {
+		return false, fmt.Errorf("cambiar estado: %w", err)
+	}
+	changed := from != status || !equalPtr(prevRelease, release)
+	var commentID *int64
+	if comment != "" {
+		c, err := insertComment(ctx, tx, id, *by.Actor, comment)
+		if err != nil {
+			return false, err
+		}
+		commentID = &c.ID
+	}
+	if !changed {
+		return false, nil
+	}
+	if StatusCategory(from) != StatusCategory(status) {
+		if err := enqueueSync(ctx, tx, id, status, skip); err != nil {
+			return false, err
+		}
+	}
+	return true, recordStatusChange(ctx, tx, id, by.Actor, by.Source, from, status, release, commentID)
 }
 
 // SetIssueStatus es ChangeIssueStatus sin autor, como desde la API.

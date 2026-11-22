@@ -1,0 +1,85 @@
+.integ__head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.integ__icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.integ__head .sp-badge {
+  margin-left: auto;
+}
+
+.integ__url {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.integ__code {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.integ__url .btn {
+  flex: 0 0 auto;
+}
+
+.integ__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.9rem 0 0;
+}
+
+.integ__fact {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.25rem 0;
+  font-size: 0.8125rem;
+}
+
+.integ__fact dt {
+  color: var(--text-muted);
+}
+
+.integ__fact dd {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--text);
+}
+
+.integ__fact dd svg {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.integ__ok {
+  color: var(--success);
+}
+
+.integ__warn {
+  color: var(--warning);
+}
+
+.integ__muted {
+  color: var(--text-muted);
+}
+
+.integ__pr {
+  margin-top: 0.75rem;
+}

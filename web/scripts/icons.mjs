@@ -13,6 +13,7 @@ const ICONS = {
   regular: [
     'arrow-counter-clockwise',
     'arrow-left',
+    'arrow-square-out',
     'bell',
     'bell-slash',
     'calendar-blank',
@@ -30,6 +31,7 @@ const ICONS = {
     'envelope-simple',
     'funnel',
     'gear',
+    'git-pull-request',
     'github-logo',
     'globe-simple',
     'kanban',
@@ -37,6 +39,7 @@ const ICONS = {
     'moon',
     'package',
     'paper-plane-tilt',
+    'plug',
     'plus',
     'robot',
     'rocket-launch',

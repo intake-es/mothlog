@@ -55,9 +55,11 @@ func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
 	}
 	var is linearRef
 	var err error
+	state := ""
 	if p.linear != "" {
 		if p.kind == "regressed" {
 			is, err = l.reopen(ctx, p)
+			state = store.LinkOpen
 		} else {
 			is, err = l.commentOnly(ctx, p)
 		}
@@ -69,14 +71,13 @@ func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
 		if is, err = l.create(ctx, p); err != nil {
 			return err
 		}
+		state = store.LinkOpen
 	}
 	if tx == nil {
 		return nil
 	}
-	_, err = tx.Exec(ctx, `
-		UPDATE issues SET linear_issue_id = $2,
-			linear_issue_identifier = NULLIF($3, ''), linear_issue_url = NULLIF($4, '')
-		WHERE id = $1`, p.issueID, is.ID, is.Identifier, is.URL)
+	_, err = store.SaveLink(ctx, tx, store.IssueLink{IssueID: p.issueID, Provider: store.ProviderLinear, Kind: store.LinkIssue,
+		ExternalID: is.ID, Identifier: is.Identifier, URL: is.URL, State: state}, true)
 	return err
 }
 
@@ -339,4 +340,65 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n-1]) + "…"
+}
+
+// linearTargetType es el tipo de estado al que se mueve la issue para cada
+// categoría; al reabrir, el primer unstarted del equipo, como en una regresión.
+var linearTargetType = map[string]string{
+	store.LinkClosed:   "completed",
+	store.LinkCanceled: "canceled",
+	store.LinkOpen:     "unstarted",
+}
+
+type linearState struct {
+	ID       string
+	Name     string
+	Type     string
+	Position float64
+}
+
+// moveTo pone la issue en el primer estado del equipo de la categoría, salvo
+// que ya esté en uno de ella. Devuelve el estado en que queda y si la ha movido.
+func (l *linear) moveTo(ctx context.Context, id, category string) (linearState, bool, error) {
+	var out struct {
+		Issue *struct {
+			State linearState
+			Team  struct {
+				States struct{ Nodes []linearState }
+			}
+		}
+	}
+	err := l.do(ctx, `query($id: String!) { issue(id: $id) { state { id name type } team { states { nodes { id name type position } } } } }`,
+		map[string]any{"id": id}, &out)
+	var gqlErr *gqlErrors
+	if (errors.As(err, &gqlErr) && gqlErr.notFound()) || (err == nil && out.Issue == nil) {
+		return linearState{}, false, errLinearNotFound
+	}
+	if err != nil {
+		return linearState{}, false, err
+	}
+	cur := out.Issue.State
+	if store.LinearStateCategory(cur.Type) == category {
+		return cur, false, nil
+	}
+	want := linearTargetType[category]
+	var best *linearState
+	for i, s := range out.Issue.Team.States.Nodes {
+		if s.Type == want && (best == nil || s.Position < best.Position) {
+			best = &out.Issue.Team.States.Nodes[i]
+		}
+	}
+	if best == nil {
+		return cur, false, fmt.Errorf("linear: el equipo no tiene ningún estado %s", want)
+	}
+	var upd struct{ IssueUpdate struct{ Success bool } }
+	err = l.do(ctx, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,
+		map[string]any{"id": id, "input": map[string]any{"stateId": best.ID}}, &upd)
+	if err == nil && !upd.IssueUpdate.Success {
+		err = errors.New("linear: issueUpdate sin éxito")
+	}
+	if err != nil {
+		return cur, false, err
+	}
+	return *best, true, nil
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/intake-es/intake-errors/internal/ui"
 	"github.com/intake-es/intake-errors/internal/uptime"
 	"github.com/intake-es/intake-errors/internal/webauth"
+	"github.com/intake-es/intake-errors/internal/webhooks"
 )
 
 type config struct {
@@ -35,7 +36,9 @@ type config struct {
 	SourceMapUploadToken string
 	Alerts               alert.Options
 	// UptimeAllowPrivate deja a los monitores de disponibilidad pedir a redes privadas.
-	UptimeAllowPrivate bool
+	UptimeAllowPrivate  bool
+	LinearWebhookSecret string
+	GitHubWebhookSecret string
 }
 
 func loadConfig() (config, error) {
@@ -53,7 +56,11 @@ func loadConfig() (config, error) {
 			LinearLabelIDs:  splitList(os.Getenv("LINEAR_LABEL_IDS")),
 			SMTPURL:         os.Getenv("SMTP_URL"),
 			SMTPFrom:        os.Getenv("SMTP_FROM"),
+			GitHubToken:     os.Getenv("GITHUB_TOKEN"),
+			GitHubAPIURL:    os.Getenv("GITHUB_API_URL"),
 		},
+		LinearWebhookSecret: os.Getenv("LINEAR_WEBHOOK_SECRET"),
+		GitHubWebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
 	}
 	c.Alerts.PublicURL = c.PublicURL
 	c.UptimeAllowPrivate = os.Getenv("UPTIME_ALLOW_PRIVATE") == "1"
@@ -163,9 +170,13 @@ func run(args []string) error {
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), drops, log).
 		WithCheckIns(monitors)
 
-	mux := routes(db, envelopes, maps.Register, auth.Register)
+	hooks := webhooks.New(db, webhooks.Options{
+		LinearSecret: cfg.LinearWebhookSecret, GitHubSecret: cfg.GitHubWebhookSecret, PublicURL: cfg.PublicURL,
+		LinearAPIKey: cfg.Alerts.LinearAPIKey != "", GitHubToken: cfg.Alerts.GitHubToken != "", Log: log,
+	})
+	mux := routes(db, envelopes, maps.Register, auth.Register, hooks.Register)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts}); err != nil {
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks}); err != nil {
 		return err
 	}
 	srv := &http.Server{

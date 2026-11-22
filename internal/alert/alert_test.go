@@ -422,7 +422,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 		t.Errorf("etiquetas = %v", li.Labels)
 	}
 	var stored string
-	if err := e.db.Pool().QueryRow(ctx, `SELECT linear_issue_id FROM issues WHERE id = $1`, first.IssueID).Scan(&stored); err != nil || stored != order[0] {
+	if err := e.db.Pool().QueryRow(ctx, `SELECT external_id FROM issue_links WHERE issue_id = $1 AND provider = 'linear'`, first.IssueID).Scan(&stored); err != nil || stored != order[0] {
 		t.Fatalf("linear_issue_id = %q, %v", stored, err)
 	}
 
@@ -490,7 +490,7 @@ func TestRegressionWithoutLinearIssueCreatesAnother(t *testing.T) {
 		t.Fatalf("issues = %v, creadas %v", issues, order)
 	}
 	var stored string
-	if err := e.db.Pool().QueryRow(ctx, `SELECT linear_issue_id FROM issues WHERE id = $1`, first.IssueID).Scan(&stored); err != nil || stored != order[1] {
+	if err := e.db.Pool().QueryRow(ctx, `SELECT external_id FROM issue_links WHERE issue_id = $1 AND provider = 'linear'`, first.IssueID).Scan(&stored); err != nil || stored != order[1] {
 		t.Fatalf("linear_issue_id = %q, %v", stored, err)
 	}
 }
@@ -538,7 +538,7 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 	// cayera Postgres o se parara la réplica entre la petición y el commit.
 	if _, err := e.db.Pool().Exec(ctx, `
 		CREATE FUNCTION rompe() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'caída'; END $$;
-		CREATE TRIGGER rompe BEFORE UPDATE OF linear_issue_id ON issues FOR EACH ROW EXECUTE FUNCTION rompe();`); err != nil {
+		CREATE TRIGGER rompe BEFORE INSERT ON issue_links FOR EACH ROW EXECUTE FUNCTION rompe();`); err != nil {
 		t.Fatal(err)
 	}
 	first := e.ingest(t, "api-tarea-a-1")
@@ -548,7 +548,7 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 	if e.linear.created() != 1 {
 		t.Fatalf("creadas = %d", e.linear.created())
 	}
-	if _, err := e.db.Pool().Exec(ctx, `DROP TRIGGER rompe ON issues`); err != nil {
+	if _, err := e.db.Pool().Exec(ctx, `DROP TRIGGER rompe ON issue_links`); err != nil {
 		t.Fatal(err)
 	}
 	if n := e.send(t); n != 1 {
@@ -559,7 +559,7 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 		t.Fatalf("el reintento ha creado otra issue: %v", order)
 	}
 	var stored string
-	if err := e.db.Pool().QueryRow(ctx, `SELECT linear_issue_id FROM issues WHERE id = $1`, first.IssueID).Scan(&stored); err != nil || stored != order[0] {
+	if err := e.db.Pool().QueryRow(ctx, `SELECT external_id FROM issue_links WHERE issue_id = $1 AND provider = 'linear'`, first.IssueID).Scan(&stored); err != nil || stored != order[0] {
 		t.Fatalf("linear_issue_id = %q, %v", stored, err)
 	}
 	if len(stored) != 36 || strings.Count(stored, "-") != 4 {

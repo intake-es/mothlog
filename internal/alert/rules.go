@@ -255,7 +255,11 @@ func (a *Alerter) ruleSender(ctx context.Context, tx pgx.Tx, p *pending) (sender
 	if i < 0 {
 		return nil, errGone
 	}
-	return a.actionSender(actions[i])
+	snd, err := a.actionSender(actions[i])
+	if g, ok := snd.(*github); ok {
+		g.ruleID = p.ruleID
+	}
+	return snd, err
 }
 
 func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
@@ -291,6 +295,16 @@ func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
 		return &ntfy{url: act.URL, token: act.Token, client: a.client}, nil
 	case store.ActionWebhook:
 		return &webhook{st: a.st, url: act.URL, secret: act.Secret, client: a.client, now: a.now}, nil
+	case store.ActionGitHub:
+		token := act.Token
+		if token == "" {
+			token = a.githubToken
+		}
+		if token == "" {
+			return nil, errors.New("github: la acción no trae token y falta GITHUB_TOKEN")
+		}
+		return &github{st: a.st, api: &githubAPI{endpoint: a.githubEndpoint, token: token, client: a.client},
+			repo: act.Repo, labels: act.Labels, actionID: act.ID}, nil
 	}
 	return nil, fmt.Errorf("%w: %q", errGone, act.Type)
 }
@@ -324,6 +338,10 @@ func (a *Alerter) CheckRule(r store.Rule) error {
 		case store.ActionEmail:
 			if a.smtp == nil {
 				return fmt.Errorf("%w: para avisar por correo hace falta SMTP_URL en el servidor", store.ErrInvalid)
+			}
+		case store.ActionGitHub:
+			if act.Token == "" && a.githubToken == "" {
+				return fmt.Errorf("%w: la acción de GitHub necesita token: no hay GITHUB_TOKEN en el servidor", store.ErrInvalid)
 			}
 		}
 	}

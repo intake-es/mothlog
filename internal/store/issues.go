@@ -437,6 +437,8 @@ type IssueDetail struct {
 	Daily []DayCount `json:"daily"`
 	// TopValues tiene environment, release, user y organization_id, cada uno con sus valores más frecuentes.
 	TopValues map[string][]ValueCount `json:"top_values"`
+	// Links son sus issues de Linear y sus issues y PRs de GitHub, con su estado allí.
+	Links []IssueLink `json:"links"`
 }
 
 func (s *Store) IssueDetail(ctx context.Context, id int64, now time.Time) (IssueDetail, error) {
@@ -451,6 +453,9 @@ func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now tim
 	}
 	d := IssueDetail{Issue: issue}
 	if d.LatestEvent, err = s.latestEventIn(ctx, id, env); err != nil {
+		return IssueDetail{}, err
+	}
+	if d.Links, err = s.IssueLinks(ctx, id); err != nil {
 		return IssueDetail{}, err
 	}
 

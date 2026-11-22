@@ -35,6 +35,8 @@ const SOURCE: Partial<Record<ChangeSource, Key>> = {
   ui: 'history.source.ui',
   api: 'history.source.api',
   mcp: 'history.source.mcp',
+  linear: 'history.source.linear',
+  github: 'history.source.github',
 };
 
 interface Row {

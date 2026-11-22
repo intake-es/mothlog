@@ -61,6 +61,8 @@ const ALLOWED = new Set([
   ...['millisecond', 'img', 'pending'],
   // Estados y rutas de los monitores de disponibilidad.
   ...['up', 'down', 'paused', 'uptime', 'edit', 'empty', 'fail'],
+  // Enlaces a Linear y GitHub: las marcas, sus tipos y estados, y la sección de integraciones.
+  ...['Linear', 'GitHub', 'issue', 'closed', 'canceled', 'merged', 'integrations', 'repo'],
   'fill: currentColor; stroke: none',
 ]);
 

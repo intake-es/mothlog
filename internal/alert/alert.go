@@ -55,8 +55,12 @@ type Options struct {
 	SMTPFrom string
 	// TelegramAPIURL vacío es la API de Telegram.
 	TelegramAPIURL string
-	Interval       time.Duration
-	HTTPClient     *http.Client
+	// GitHubToken es el de las acciones de GitHub que no traen uno propio.
+	GitHubToken string
+	// GitHubAPIURL vacío es la API de GitHub.
+	GitHubAPIURL string
+	Interval     time.Duration
+	HTTPClient   *http.Client
 }
 
 type Alerter struct {
@@ -76,6 +80,8 @@ type Alerter struct {
 	linearLabels   []string
 	smtp           *smtpConfig
 	telegramAPI    string
+	githubToken    string
+	githubEndpoint string
 
 	mu      sync.Mutex
 	linears map[string]*linear
@@ -147,6 +153,11 @@ func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 	a.linearEndpoint = o.LinearAPIURL
 	if a.linearEndpoint == "" {
 		a.linearEndpoint = LinearEndpoint
+	}
+	a.githubToken = o.GitHubToken
+	a.githubEndpoint = strings.TrimRight(o.GitHubAPIURL, "/")
+	if a.githubEndpoint == "" {
+		a.githubEndpoint = GitHubEndpoint
 	}
 	a.telegramAPI = strings.TrimRight(o.TelegramAPIURL, "/")
 	if a.telegramAPI == "" {
@@ -283,13 +294,17 @@ func (a *Alerter) enqueueDefault(ctx context.Context, tx pgx.Tx, ev *event.Event
 	return nil
 }
 
-// Run envía lo pendiente cada Interval hasta que se cancela ctx.
+// Run envía lo pendiente cada Interval hasta que se cancela ctx: los avisos y
+// los cambios de estado para Linear y GitHub.
 func (a *Alerter) Run(ctx context.Context) {
 	t := time.NewTicker(a.interval)
 	defer t.Stop()
 	for {
 		if _, err := a.SendPending(ctx); err != nil && ctx.Err() == nil {
 			a.log.ErrorContext(ctx, "enviar avisos", "err", err)
+		}
+		if _, err := a.SyncLinks(ctx); err != nil && ctx.Err() == nil {
+			a.log.ErrorContext(ctx, "llevar estados a los enlaces", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -398,9 +413,11 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 
 func (a *Alerter) loadIssue(ctx context.Context, tx pgx.Tx, p *pending) error {
 	err := tx.QueryRow(ctx, `
-		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(i.linear_issue_id, ''),
-			COALESCE(i.linear_issue_identifier, ''), COALESCE(i.linear_issue_url, '')
+		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(l.external_id, ''),
+			COALESCE(l.identifier, ''), COALESCE(l.url, '')
 		FROM issues i JOIN projects p ON p.id = i.project_id
+			LEFT JOIN LATERAL (SELECT external_id, identifier, url FROM issue_links
+				WHERE issue_id = i.id AND provider = 'linear' AND kind = 'issue' ORDER BY id DESC LIMIT 1) l ON true
 		WHERE i.id = $1`, p.issueID).
 		Scan(&p.project, &p.labels, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
 	if err != nil {

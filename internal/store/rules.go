@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -26,9 +27,10 @@ const (
 	ActionTelegram = "telegram"
 	ActionNtfy     = "ntfy"
 	ActionWebhook  = "webhook"
+	ActionGitHub   = "github"
 )
 
-var ActionTypes = []string{ActionSlack, ActionLinear, ActionEmail, ActionDiscord, ActionTelegram, ActionNtfy, ActionWebhook}
+var ActionTypes = []string{ActionSlack, ActionLinear, ActionEmail, ActionDiscord, ActionTelegram, ActionNtfy, ActionWebhook, ActionGitHub}
 
 var Levels = []string{"fatal", "error", "warning", "info", "debug"}
 
@@ -157,8 +159,12 @@ type RuleAction struct {
 	To       []string `json:"to,omitempty"`
 	BotToken string   `json:"bot_token,omitempty"`
 	ChatID   string   `json:"chat_id,omitempty"`
-	// Token es el de acceso a ntfy, si el tema lo pide.
+	// Token es el de acceso a ntfy, si el tema lo pide, o el de GitHub; vacío
+	// en GitHub, GITHUB_TOKEN.
 	Token string `json:"token,omitempty"`
+	// Repo es dueño/repo, donde la acción de GitHub crea la issue, con Labels.
+	Repo   string   `json:"repo,omitempty"`
+	Labels []string `json:"labels,omitempty"`
 	// Secret firma el webhook genérico; vacío al crear, se genera uno.
 	Secret string `json:"secret,omitempty"`
 }
@@ -175,6 +181,8 @@ func (a *RuleAction) secrets() []*string {
 		return []*string{&a.URL, &a.Token}
 	case ActionWebhook:
 		return []*string{&a.Secret}
+	case ActionGitHub:
+		return []*string{&a.Token}
 	}
 	return nil
 }
@@ -375,7 +383,7 @@ func (r *Rule) Normalize() ([]string, error) {
 }
 
 func (a *RuleAction) normalize() (bool, error) {
-	for _, s := range []*string{&a.URL, &a.TeamID, &a.BotToken, &a.ChatID, &a.Token, &a.Secret} {
+	for _, s := range []*string{&a.URL, &a.TeamID, &a.BotToken, &a.ChatID, &a.Token, &a.Secret, &a.Repo} {
 		*s = strings.TrimSpace(*s)
 		if len(*s) > maxRuleValue {
 			return false, fmt.Errorf("%w: los campos de una acción admiten hasta %d caracteres", ErrInvalid, maxRuleValue)
@@ -423,6 +431,15 @@ func (a *RuleAction) normalize() (bool, error) {
 		if err == nil && len(keep.To) == 0 {
 			err = fmt.Errorf("%w: falta to, a quién mandar el correo", ErrInvalid)
 		}
+	case ActionGitHub:
+		need(a.Repo, "repo")
+		if err == nil && !githubRepo.MatchString(a.Repo) {
+			err = fmt.Errorf("%w: repo debe ser dueño/repositorio", ErrInvalid)
+		}
+		keep.Repo, keep.Token = a.Repo, a.Token
+		if err == nil {
+			keep.Labels, err = cleanList("labels", a.Labels, nil)
+		}
 	case ActionTelegram:
 		need(a.BotToken, "bot_token")
 		need(a.ChatID, "chat_id")
@@ -436,6 +453,8 @@ func (a *RuleAction) normalize() (bool, error) {
 	*a = keep
 	return generated, err
 }
+
+var githubRepo = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
 
 const ruleColumns = `id, project_id, name, enabled, conditions, actions, throttle_minutes, created_at, updated_at`
 

@@ -31,6 +31,7 @@ import { Icon } from '../../ui/icon';
 import { AssigneePicker } from './assignee-picker';
 import { Breadcrumbs } from './breadcrumbs';
 import { History } from './history';
+import { IssueLinks } from './issue-links';
 import { Stacktrace } from './stacktrace';
 import { TagsPanel } from './tags-panel';
 
@@ -69,6 +70,7 @@ const STATUS_TOAST: Record<IssueStatus, Key> = {
     TagsPanel,
     History,
     AssigneePicker,
+    IssueLinks,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown.escape)': 'menuOpen.set(false)' },

@@ -9,6 +9,7 @@ export const ACTION_TYPES: ActionType[] = [
   'telegram',
   'ntfy',
   'webhook',
+  'github',
 ];
 
 export const ACTION_ICON: Record<ActionType, string> = {
@@ -19,6 +20,7 @@ export const ACTION_ICON: Record<ActionType, string> = {
   telegram: 'telegram-logo',
   ntfy: 'bell-ringing',
   webhook: 'webhooks-logo',
+  github: 'github-logo',
 };
 
 export const LEVELS = ['fatal', 'error', 'warning', 'info', 'debug'];
@@ -26,6 +28,7 @@ export const LEVELS = ['fatal', 'error', 'warning', 'info', 'debug'];
 /** Los campos de texto de cada tipo de acción, en el orden en que se piden. */
 export type ActionField =
   | 'url'
+  | 'repo'
   | 'team_id'
   | 'labels'
   | 'to'
@@ -57,12 +60,18 @@ export const ACTION_FIELDS: Record<
     { field: 'url', label: 'field.webhookUrl' },
     { field: 'secret', label: 'field.webhookSecret', secret: true },
   ],
+  github: [
+    { field: 'repo', label: 'field.githubRepo' },
+    { field: 'labels', label: 'field.githubLabels' },
+    { field: 'token', label: 'field.githubToken', secret: true },
+  ],
 };
 
 export const ACTION_HINT: Partial<Record<ActionType, Key>> = {
   webhook: 'field.webhookHint',
   email: 'field.emailHint',
   linear: 'field.linearHint',
+  github: 'field.githubHint',
 };
 
 export type ActionDraft = { id: string; type: ActionType } & Record<ActionField, string>;
@@ -103,6 +112,7 @@ export function emptyAction(type: ActionType): ActionDraft {
     id: newID(),
     type,
     url: '',
+    repo: '',
     team_id: '',
     labels: '',
     to: '',
@@ -168,7 +178,8 @@ export function draftOf(r: Rule): Draft {
       id: a.id,
       url: a.url ?? '',
       team_id: a.team_id ?? '',
-      labels: (a.label_ids ?? []).join(', '),
+      repo: a.repo ?? '',
+      labels: ((a.type === 'github' ? a.labels : a.label_ids) ?? []).join(', '),
       to: (a.to ?? []).join(', '),
       bot_token: a.bot_token ?? '',
       chat_id: a.chat_id ?? '',
@@ -216,7 +227,9 @@ export function inputOf(d: Draft): RuleInput {
     actions: d.actions.map((a) => {
       const out: RuleAction = { id: a.id, type: a.type };
       for (const { field } of ACTION_FIELDS[a.type]) {
-        if (field === 'labels') {
+        if (field === 'labels' && a.type === 'github') {
+          out.labels = list(a.labels);
+        } else if (field === 'labels') {
           out.label_ids = list(a.labels);
         } else if (field === 'to') {
           out.to = list(a.to);

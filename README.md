@@ -28,6 +28,10 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `LINEAR_TEAM_ID` | equipo de Linear donde se crean las issues | obligatoria con `LINEAR_API_KEY` |
 | `LINEAR_LABEL_IDS` | ids de etiquetas de Linear para todas las issues, separados por comas | vacío |
 | `LINEAR_API_URL` | endpoint GraphQL de Linear; solo para probar contra uno falso | `https://api.linear.app/graphql` |
+| `LINEAR_WEBHOOK_SECRET` | secreto del webhook de Linear ([Linear y GitHub en los dos sentidos](#linear-y-github-en-los-dos-sentidos)); sin él, `/webhooks/linear` rechaza todo | vacío |
+| `GITHUB_TOKEN` | token de GitHub de las acciones de GitHub que no traen uno propio, y para cerrar y reabrir sus issues | vacío |
+| `GITHUB_WEBHOOK_SECRET` | secreto del webhook de GitHub; sin él, `/webhooks/github` rechaza todo | vacío |
+| `GITHUB_API_URL` | API de GitHub; solo para probar contra una falsa | `https://api.github.com` |
 | `SMTP_URL` | servidor de correo de las reglas que avisan por correo: `smtp://usuario:clave@host:587` (STARTTLS si el servidor lo ofrece) o `smtps://…:465` | vacío: sin correo |
 | `SMTP_FROM` | remitente de esos correos, como `intake-errors <avisos@ejemplo.com>` | obligatoria con `SMTP_URL` |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |
@@ -97,7 +101,7 @@ Con reglas, el proyecto deja de avisar como arriba y avisa de lo que digan sus r
 - **Crons** (`cron`): un cron que falla (`failed`), que no llega a su hora (`missed`), que se pasa de su tiempo máximo (`timeout`) o que vuelve a ir bien tras fallar (`recovered`), de los monitores de `monitors` (sus slugs) o, vacío, de todos los del proyecto. Avisan al cambiar de estado, no con cada ejecución que sigue fallando, y un monitor silenciado no avisa; de los filtros, solo cuenta el entorno, y el límite de la regla no se aplica.
 - **Disponibilidad** (`uptime`): un monitor de disponibilidad que cae (`down`) o que vuelve (`up`, con la duración del incidente), de los monitores de `monitors` (sus slugs) o, vacío, de todos los del proyecto. Avisan una vez por incidente, al abrirlo y al cerrarlo; los filtros y el límite de la regla no se aplican.
 - **Filtros**: entornos, niveles (`fatal`, `error`, `warning`, `info`, `debug`) y etiquetas, con valor o solo con que estén.
-- **Acciones**: Slack (su webhook), Linear (equipo y etiquetas; sin ellos, `LINEAR_TEAM_ID` y `LINEAR_LABEL_IDS`; con `LINEAR_API_KEY`), correo (`SMTP_URL`), Discord (su webhook), Telegram (token del bot y chat), ntfy (URL del tema y, si lo pide, token) y el webhook genérico. Los avisos de Slack y Linear son como los de arriba; en Linear, la frecuencia y los usuarios comentan en la issue sin cambiar su estado.
+- **Acciones**: Slack (su webhook), Linear (equipo y etiquetas; sin ellos, `LINEAR_TEAM_ID` y `LINEAR_LABEL_IDS`; con `LINEAR_API_KEY`), correo (`SMTP_URL`), Discord (su webhook), Telegram (token del bot y chat), ntfy (URL del tema y, si lo pide, token), el webhook genérico y GitHub (`repo` como `dueño/repo`, `labels` y, si no vale `GITHUB_TOKEN`, su `token`): una issue por error en el repositorio con el `context.md` del error y las etiquetas, que en una regresión se reabre y en el resto de avisos se comenta. Los avisos de Slack y Linear son como los de arriba; en Linear, la frecuencia y los usuarios comentan en la issue sin cambiar su estado.
 - **Límite**: `throttle_minutes`, lo menos que pasa entre dos avisos de la misma regla por el mismo issue.
 
 Todo sale por `alert_outbox`, con los mismos reintentos. Cada réplica recuerda 30 segundos si un proyecto tiene reglas, para no consultarlo con cada evento: lo que se guarda por la API de esa réplica vale al momento, y lo de otra réplica o de la CLI, en 30 segundos como mucho. «Probar» manda en el momento, sin pasar por la tabla, un aviso de prueba por una acción de la regla guardada. Las URL de los webhooks y de los temas de ntfy y los tokens no se devuelven enteros: al editar, dejarlos como llegan (o vacíos) los conserva. El secreto del webhook genérico, si no se pone, se genera y se devuelve entero solo al guardar.
@@ -159,6 +163,22 @@ def firma_valida(secreto: str, cabecera: str, cuerpo: bytes, margen: int = 300) 
 
 Un 2xx da el aviso por entregado; otra respuesta o ninguna en 15 segundos, por fallido, y se reintenta.
 
+### Linear y GitHub en los dos sentidos
+
+Cada error guarda sus enlaces (`issue_links`): la issue de Linear de los avisos, las issues de GitHub de las reglas y los PRs que lo arreglan, con su identificador, su URL y su estado allí. Salen en el detalle de la interfaz, en `GET /api/0/issues/<id>/` y `get_issue` (`links`) y en el `context.md`.
+
+- **De allí a aquí**: una issue enlazada que pasa en Linear a un estado de tipo `completed` resuelve el error; a uno `canceled`, lo silencia; y una que sale de uno de esos a un estado abierto lo reabre (pasar de «Todo» a «In Progress» no cambia nada). En GitHub, cerrar la issue lo resuelve (cerrarla como «no planeada», lo silencia) y reabrirla lo reabre. El cambio queda en el historial con el origen `linear` o `github` y quién lo hizo allí.
+- **Un PR mergeado** que lleva en el título o la descripción la URL del error en el panel (`<PUBLIC_URL>/issues/<id>`, sola o tras `Fixes`) lo deja en «resuelto en la siguiente versión» (o resuelto, si su último evento no trae release) y queda enlazado; su issue de Linear y sus issues de GitHub se cierran como al resolverlo aquí.
+- **De aquí a allí**: resolver o silenciar un error mueve su issue de Linear al primer estado `completed` o `canceled` de su equipo, y reabrirlo (a mano o por una regresión) la devuelve al primer `unstarted`; en GitHub, resolverlo cierra la issue, silenciarlo la cierra como «no planeada» y reabrirlo la reabre. Van por `issue_link_sync`, con los mismos reintentos que los avisos, y usan `LINEAR_API_KEY` y el token de la acción que creó la issue o `GITHUB_TOKEN`.
+- **Sin bucles**: un cambio que llega de Linear no se manda a Linear, ni uno de GitHub a GitHub (salvo el de un PR mergeado, que no es ninguna de sus issues), y un cambio a un estado en el que ya está (resuelto y resuelto en la siguiente cuentan como cerrados) no se apunta ni se manda. El webhook con el que Linear o GitHub cuentan un cambio nuestro (durante 10 minutos) tampoco se aplica, aunque llegue desordenado o aquí ya haya un cambio más nuevo. Los avisos de error nuevo y regresión siguen igual.
+
+Para conectarlos (las URL salen también en Ajustes del proyecto → Integraciones, con lo que falta en el servidor y la última entrega):
+
+1. **Linear**: Settings → API → Webhooks → New webhook, con la URL `<PUBLIC_URL>/webhooks/linear` y los eventos de Issues. Linear da un secreto de firma: va en `LINEAR_WEBHOOK_SECRET`. Cada entrega se comprueba con `Linear-Signature` (el HMAC-SHA256 en hexadecimal del cuerpo con ese secreto) y su `webhookTimestamp`: una de hace más de un minuto se rechaza, y una repetida (`Linear-Delivery`) no se aplica dos veces.
+2. **GitHub**: en el repositorio (o la organización), Settings → Webhooks → Add webhook, con la URL `<PUBLIC_URL>/webhooks/github`, Content type `application/json`, un secreto que elijas (en `GITHUB_WEBHOOK_SECRET`) y los eventos Issues y Pull requests. Cada entrega se comprueba con `X-Hub-Signature-256`, y una repetida (`X-GitHub-Delivery`) no se aplica dos veces. Para que las acciones creen, cierren y reabran issues, `GITHUB_TOKEN` (o el token de la acción) necesita permiso de escritura en las issues del repositorio.
+
+Las dos rutas no piden token: las protege la firma. Sin su secreto, responden 503.
+
 ## API y MCP
 
 La API REST (`/api/0/`) y el servidor MCP (`/mcp`) piden un token en `Authorization: Bearer <token>`. Los tokens se gestionan con el mismo binario y la misma `DATABASE_URL`:
@@ -181,7 +201,7 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issu
 |---|---|
 | `GET /api/0/projects/` | id, nombre, DSN y etiquetas de Linear propias (`linear_label_ids`) de cada proyecto |
 | `GET /api/0/issues/?project=&status=&query=&sort=&cursor=&limit=&daily=&environment=` | issues, con `user_count`, los usuarios distintos afectados; `query` va en el [lenguaje de búsqueda](#búsqueda); `status` es `open`, `resolved`, `resolved_next`, `silenced` o `all`, y vacío es `open` salvo que `query` traiga `is:`; `sort`, `last_seen` (por defecto), `first_seen` o `count`; `project`, id o nombre; con `daily=1`, cada issue lleva `daily`, sus eventos por día de los últimos 14 días como en el detalle; con `environment`, solo los issues con eventos en ese entorno, y sus eventos, primera y última vez y `daily` son los de ese entorno (`user_count` sigue siendo el de todos) |
-| `GET /api/0/issues/{id}/?environment=` | el issue con su último evento, los eventos por día de los últimos 14 días, los valores más frecuentes de entorno, release, usuario y `organization_id`, y su `first_release`, `last_release` y `fixed_in_release`; con `environment`, todo de ese entorno |
+| `GET /api/0/issues/{id}/?environment=` | el issue con su último evento, los eventos por día de los últimos 14 días, los valores más frecuentes de entorno, release, usuario y `organization_id`, su `first_release`, `last_release` y `fixed_in_release`, y sus `links` a Linear y GitHub con su estado allí; con `environment`, todo de ese entorno |
 | `GET /api/0/issues/{id}/events/?environment=` | sus eventos, del más nuevo al más viejo |
 | `GET /api/0/issues/{id}/tags/` | `user_count` y, de cada etiqueta, el total de eventos que la traían, cuántos valores distintos tiene y los 10 más frecuentes con su recuento, su porcentaje y su última vez |
 | `GET /api/0/tags/?project=` | las claves de etiqueta que hay, con en cuántos issues sale cada una; para autocompletar |
@@ -190,6 +210,7 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issu
 | `GET /api/0/issues/{id}/context.md?environment=&event=` | todo el contexto del error en un Markdown para un agente: el resumen con el enlace a la interfaz, las releases, los entornos, las etiquetas más frecuentes, la traza con el código, los breadcrumbs, la petición y el usuario del último evento (o del de `event`, por id o `event_id`), el historial y qué puede hacer; si pasa de 64 KB, quita breadcrumbs, fotogramas de librerías e historial viejo, y lo dice |
 | `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}` y, si se quiere, `"comment"`, que queda unido al cambio en el historial; `resolved_next` guarda el release del último evento (409 si no tiene) |
 | `GET /api/0/issues/{id}/history/` | el historial, del más viejo al más nuevo: comentarios (`type: comment`), cambios de estado (`type: status`, con `source`, `from`, `to`, `release` y el `comment` del cambio) y asignaciones (`type: assignment`, con `source`, `assignee`, vacío al desasignar, y `previous`); `mine` marca lo de quien pregunta |
+| `GET /api/0/integrations/` | las URL de los webhooks de Linear y GitHub y, de cada uno, si el servidor tiene su secreto (`secret_set`) y su clave o token (`token_set`) y cuándo llegó la última entrega con buena firma |
 | `POST /api/0/issues/{id}/assignee` | asigna con `{"assignee": "me"}` (quien llama: la persona de la sesión o el token), el login de una persona o el nombre de un token activo; `"kind": "user\|token"` solo hace falta si el nombre es de los dos; `null` o vacío desasigna. Devuelve el issue con su `assignee` |
 | `DELETE /api/0/issues/{id}/assignee` | lo desasigna |
 | `GET /api/0/assignees/` | a quién se puede asignar: las personas que han entrado en la interfaz (`kind: user`, con `display_name` y `avatar_url`) y los tokens activos (`kind: token`) |

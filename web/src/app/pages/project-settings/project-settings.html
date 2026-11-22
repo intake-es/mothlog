@@ -50,6 +50,8 @@
       </nav>
       @if (current() === 'alerts') {
         <app-alert-rules [projectId]="p.id" />
+      } @else if (current() === 'integrations') {
+        <app-integrations />
       } @else {
         <app-project-filters [projectId]="p.id" />
       }

@@ -24,17 +24,20 @@ type Options struct {
 	Auth func(http.Handler) http.Handler
 	// Alerts comprueba y prueba las reglas de aviso; sin él, no se prueban.
 	Alerts Alerts
+	// Integrations da el estado de Linear y GitHub; sin él, no hay ruta.
+	Integrations Integrations
 }
 
 type handlers struct {
 	st        *store.Store
 	publicURL *url.URL
 	alerts    Alerts
+	integ     Integrations
 }
 
 // Register añade las rutas de la API y del MCP a mux.
 func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
-	h := &handlers{st: st, alerts: opts.Alerts}
+	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations}
 	if opts.PublicURL != "" {
 		u, err := url.Parse(opts.PublicURL)
 		if err != nil || u.Host == "" {
@@ -70,6 +73,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	h.registerReleases(route)
 	h.registerMonitors(route)
 	h.registerUptime(route)
+	route("GET /api/0/integrations/{$}", h.integrations)
 	mcpHandler := mcpserver.Handler(st, mcpserver.Options{
 		Actor: actorFrom,
 		IssueURL: func(ctx context.Context, id int64) string {

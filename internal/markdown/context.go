@@ -121,11 +121,44 @@ func writeContext(c store.IssueContext, url string, l level, max int) string {
 		w("- %s: %d %s\n", e.Value, e.Count, plural(e.Count, "evento", "eventos"))
 	}
 
+	writeLinks(&b, c.Links)
 	writeContextTags(&b, c.Tags)
 	writeContextEvent(&b, c, l)
 	writeHistory(&b, c.History, l.history)
 	writeActions(&b, c)
 	return b.String()
+}
+
+var linkNames = map[string]string{
+	store.ProviderLinear + "/" + store.LinkIssue:       "Issue de Linear",
+	store.ProviderGitHub + "/" + store.LinkIssue:       "Issue de GitHub",
+	store.ProviderGitHub + "/" + store.LinkPullRequest: "PR de GitHub",
+}
+
+var linkStates = map[string]string{
+	store.LinkOpen: "abierta", store.LinkClosed: "cerrada", store.LinkCanceled: "cancelada", store.LinkMerged: "mergeado",
+}
+
+func writeLinks(b *strings.Builder, links []store.IssueLink) {
+	if len(links) == 0 {
+		return
+	}
+	b.WriteString("\n## Enlaces\n\n")
+	for _, l := range links {
+		name := orNone(l.Identifier)
+		if l.Identifier == "" {
+			name = l.ExternalID
+		}
+		state := linkStates[l.State]
+		if l.StateName != "" && !strings.EqualFold(l.StateName, l.State) {
+			state = strings.TrimSpace(state + " (" + l.StateName + ")")
+		}
+		fmt.Fprintf(b, "- %s %s: %s", linkNames[l.Provider+"/"+l.Kind], name, orNone(state))
+		if l.URL != "" {
+			fmt.Fprintf(b, ", %s", l.URL)
+		}
+		b.WriteString("\n")
+	}
 }
 
 func writeContextTags(b *strings.Builder, t store.IssueTags) {
@@ -267,6 +300,8 @@ var sourceNames = map[string]string{
 	store.SourceMCP:    "desde el MCP",
 	store.SourceIngest: "al llegar un evento",
 	store.SourceDeploy: "al desplegar",
+	store.SourceLinear: "desde Linear",
+	store.SourceGitHub: "desde GitHub",
 }
 
 func actor(a *store.Actor) string {
