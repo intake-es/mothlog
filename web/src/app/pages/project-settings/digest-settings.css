@@ -1,0 +1,90 @@
+:host {
+  display: block;
+}
+
+fieldset.group {
+  margin: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  min-width: 0;
+}
+
+legend.group__title {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+legend.group__title + * {
+  clear: both;
+}
+
+.check__strong {
+  font-weight: 600;
+}
+
+.status {
+  margin-top: 0.25rem;
+}
+
+.when {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.9rem;
+}
+
+.when app-pick {
+  align-self: flex-start;
+}
+
+.zone {
+  grid-column: span 2;
+}
+
+.empty {
+  margin-top: 0.75rem;
+  color: var(--text-muted);
+}
+
+.foot__end .send {
+  margin-left: 0;
+}
+
+.mail {
+  overflow: hidden;
+}
+
+.mail__head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.mail__label {
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.mail__subject {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.mail__frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: white;
+}
+
+.mail__state {
+  padding: 2rem 1rem;
+}
+
+.foot {
+  flex-wrap: wrap;
+}

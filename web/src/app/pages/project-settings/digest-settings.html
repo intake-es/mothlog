@@ -1,0 +1,188 @@
+@if (error()) {
+  <div class="state state--error" role="alert">
+    <svg appIcon="warning-circle" weight="duotone"></svg>
+    <p class="state__title">{{ t('settings.error') }}</p>
+    <p class="state__text">{{ error() }}</p>
+    <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+  </div>
+} @else if (draft(); as d) {
+  <form class="section" (submit)="$event.preventDefault(); save()">
+      <div class="section__head">
+        <div>
+          <h2 class="section__title">{{ t('digest.title') }}</h2>
+          <p class="section__lede">{{ t('digest.lede') }}</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="group">
+          <label class="check">
+            <input type="checkbox" class="switch" role="switch" name="enabled" [checked]="d.enabled" (change)="patch({ enabled: $any($event.target).checked })" />
+            <span class="check__strong">{{ t('digest.enabled') }}</span>
+          </label>
+          <p class="group__hint status">{{ status() }}</p>
+        </div>
+
+        <fieldset class="group">
+          <legend class="group__title">{{ t('digest.when') }}</legend>
+          <div class="group__body when">
+            <div class="field">
+              <span class="field__label">{{ t('digest.frequency') }}</span>
+              <app-pick icon="calendar-blank" [label]="t('digest.frequency')" [options]="frequencyOptions()" [value]="d.frequency" (changed)="patch({ frequency: $any($event) })" />
+            </div>
+            @if (d.frequency === 'weekly') {
+              <div class="field">
+                <span class="field__label">{{ t('digest.weekday') }}</span>
+                <app-pick icon="calendar-blank" [label]="t('digest.weekday')" [options]="weekdayOptions()" [value]="'' + d.weekday" (changed)="patch({ weekday: +$event })" />
+              </div>
+            }
+            <div class="field">
+              <span class="field__label">{{ t('digest.hour') }}</span>
+              <app-pick icon="clock" [label]="t('digest.hour')" [options]="hourOptions" [value]="'' + d.hour" (changed)="patch({ hour: +$event })" />
+            </div>
+            <label class="field zone">
+              <span class="field__label">{{ t('digest.timezone') }}</span>
+              <input class="input" name="timezone" list="digest-zones" autocomplete="off" spellcheck="false" [value]="d.timezone" (input)="patch({ timezone: $any($event.target).value })" />
+              <datalist id="digest-zones">
+                @for (z of zones; track z) {
+                  <option [value]="z"></option>
+                }
+              </datalist>
+            </label>
+            <div class="field">
+              <span class="field__label">{{ t('digest.language') }}</span>
+              <app-pick icon="translate" [label]="t('digest.language')" [options]="languageOptions" [value]="d.language" (changed)="patch({ language: $any($event) })" />
+            </div>
+          </div>
+          <label class="check empty">
+            <input type="checkbox" name="send_empty" [checked]="d.sendEmpty" (change)="patch({ sendEmpty: $any($event.target).checked })" />
+            {{ t('digest.sendEmpty') }}
+          </label>
+        </fieldset>
+
+        <fieldset class="group">
+          <legend class="group__title">{{ t('digest.destinations') }}</legend>
+          <div class="group__body">
+            @for (a of d.destinations; track a.id; let i = $index) {
+              <div class="dest">
+                <div class="dest__head">
+                  <span class="dest__type">
+                    <svg [appIcon]="icons[a.type]"></svg>
+                    {{ label(a.type) }}
+                  </span>
+                  <div class="row-end">
+                    @if (result(a.id); as r) {
+                      @if (r.ok) {
+                        <span class="ok" role="status">{{ t('digest.sentOk') }}</span>
+                      } @else {
+                        <span class="err" role="alert" [attr.title]="r.error">{{ r.error }}</span>
+                      }
+                    }
+                    <button type="button" class="icon-btn" [attr.aria-label]="t('editor.removeAction')" (click)="removeDestination(i)">
+                      <svg appIcon="trash"></svg>
+                    </button>
+                  </div>
+                </div>
+                <div class="dest__fields">
+                  @for (f of fields[a.type]; track f.field) {
+                    <label class="field">
+                      <span class="field__label">{{ t(f.label) }}</span>
+                      <input class="input" [class.mono]="f.secret" type="text" autocomplete="off" spellcheck="false" [value]="a[f.field]" (input)="setDestination(i, f.field, $any($event.target).value)" />
+                      @if (f.secret && isMasked(a, f.field)) {
+                        <span class="field__hint">{{ t('editor.keepSecret') }}</span>
+                      }
+                    </label>
+                  }
+                  @if (hint(a.type); as h) {
+                    <p class="field__hint">{{ t(h) }}</p>
+                  }
+                </div>
+              </div>
+            } @empty {
+              <p class="field__hint">{{ t('digest.noDestinations') }}</p>
+            }
+            <div class="add">
+              <button type="button" class="btn btn--ghost btn--small" aria-haspopup="menu" [attr.aria-expanded]="addOpen()" (click)="addOpen.set(!addOpen())">
+                <svg appIcon="plus"></svg>
+                {{ t('digest.addDestination') }}
+              </button>
+              @if (addOpen()) {
+                <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="addOpen.set(false)"></button>
+                <div class="menu add__menu" role="menu" [attr.aria-label]="t('digest.addDestination')">
+                  @for (type of types; track type) {
+                    <button type="button" class="menu__item" role="menuitem" (click)="addDestination(type)">
+                      <svg [appIcon]="icons[type]"></svg>
+                      {{ label(type) }}
+                    </button>
+                  }
+                </div>
+              }
+            </div>
+            @if (secrets().length) {
+              <div class="secret">
+                <span class="field__hint">{{ t('digest.secret') }}</span>
+                @for (s of secrets(); track s) {
+                  <code class="secret__value">{{ s }}</code>
+                }
+              </div>
+            }
+          </div>
+        </fieldset>
+
+        <div class="group foot">
+          @if (saveError()) {
+            <span class="err foot__err" role="alert">{{ saveError() }}</span>
+          } @else if (sendError()) {
+            <span class="err foot__err" role="alert">{{ sendError() }}</span>
+          } @else if (dirty()) {
+            <span class="field__hint">{{ t('settings.unsaved') }}</span>
+          }
+          <div class="row-end foot__end">
+            <button type="button" class="btn send" [disabled]="!canSend() || sending()" [attr.title]="canSend() ? t('digest.sendHint') : t('digest.sendSaveFirst')" (click)="sendNow()">
+              <svg appIcon="paper-plane-tilt"></svg>
+              {{ sending() ? t('digest.sending') : t('digest.sendNow') }}
+            </button>
+            <button type="submit" class="btn btn--primary" [disabled]="busy() || !dirty()">
+              {{ busy() ? t('editor.saving') : t('digest.save') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <section class="section preview" [attr.aria-label]="t('digest.preview')">
+      <div class="section__head">
+        <div>
+          <h2 class="section__title">{{ t('digest.preview') }}</h2>
+          <p class="section__lede">{{ t('digest.previewLede') }}</p>
+        </div>
+      </div>
+      <div class="card mail">
+        @if (preview(); as p) {
+          <div class="mail__head">
+            <span class="mail__label">{{ t('digest.previewSubject') }}</span>
+            <span class="mail__subject">{{ p.subject }}</span>
+          </div>
+          <iframe class="mail__frame" height="576" sandbox="allow-same-origin" [attr.title]="t('digest.previewFrame')" [srcdoc]="previewHtml()" (load)="fit($event)"></iframe>
+        } @else if (previewFailed()) {
+          <div class="state state--error mail__state" role="alert">
+            <p class="state__title">{{ t('digest.previewError') }}</p>
+            <button type="button" class="btn" (click)="reloadPreview()">{{ t('common.retry') }}</button>
+          </div>
+        } @else {
+          <div class="group" aria-busy="true" [attr.aria-label]="t('digest.previewLoading')">
+            <span class="sp-skeleton" style="width: 60%; height: 0.8rem"></span>
+            <span class="sp-skeleton" style="width: 100%; height: 14rem; margin-top: 0.75rem"></span>
+          </div>
+        }
+      </div>
+    </section>
+} @else {
+  <div class="card group" aria-busy="true" [attr.aria-label]="t('settings.loading')">
+    <span class="sp-skeleton" style="width: 40%; height: 0.8rem"></span>
+  </div>
+}
+
+@if (toast()) {
+  <div class="toast" role="status">{{ toast() }}</div>
+}

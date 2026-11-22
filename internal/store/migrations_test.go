@@ -541,3 +541,81 @@ func TestMigrationIssueLinks(t *testing.T) {
 		t.Fatalf("enlaces tras bajar y subir = %d, %v", n, err)
 	}
 }
+
+func TestMigrationDigest(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 18); err != nil {
+		t.Fatal(err)
+	}
+	defs := func() string {
+		var s string
+		if err := pool.QueryRow(ctx, `SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), E'\n' ORDER BY conname)
+			FROM pg_constraint WHERE conrelid = 'alert_outbox'::regclass AND contype = 'c'`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	before := defs()
+	var project, issue int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('web', 'clave-web') RETURNING id`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		VALUES ($1, 'fp', 'TypeError', now(), now(), 1) RETURNING id`, project).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO alert_outbox (issue_id, channel, kind, event_at) VALUES ($1, 'slack', 'new', now())`, issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 19); err != nil {
+		t.Fatal(err)
+	}
+	insert := `INSERT INTO alert_outbox (digest_project_id, channel, kind, event_at, action_id) VALUES ($1, 'email', 'digest', '2026-11-22T08:00:00Z', 'correo')`
+	if _, err := pool.Exec(ctx, insert, project); err != nil {
+		t.Fatalf("un resumen no cabe: %v", err)
+	}
+	if _, err := pool.Exec(ctx, insert, project); err == nil {
+		t.Error("cabe dos veces el mismo periodo por el mismo destino")
+	}
+	for _, bad := range []string{
+		`INSERT INTO alert_outbox (issue_id, channel, kind, event_at) VALUES ($2, 'slack', 'otra', now())`,
+		`INSERT INTO alert_outbox (channel, kind, event_at) VALUES ('slack', 'new', now())`,
+		`INSERT INTO alert_outbox (channel, kind, event_at) VALUES ('slack', 'digest', now())`,
+		`INSERT INTO alert_outbox (digest_project_id, issue_id, channel, kind, event_at) VALUES ($1, $2, 'slack', 'digest', now())`,
+		`INSERT INTO alert_outbox (digest_project_id, channel, kind, event_at) VALUES ($1, 'slack', 'new', now())`,
+		`INSERT INTO alert_outbox (digest_project_id, channel, kind, event_at) VALUES ($1, 'fax', 'digest', now())`,
+		`INSERT INTO project_digests (project_id, frequency) VALUES ($1, 'monthly')`,
+		`INSERT INTO project_digests (project_id, hour) VALUES ($1, 24)`,
+		`INSERT INTO project_digests (project_id, language) VALUES ($1, 'fr')`,
+	} {
+		if _, err := pool.Exec(ctx, bad, project, issue); err == nil {
+			t.Errorf("no debería caber: %s", bad)
+		}
+	}
+
+	if _, err := p.DownTo(ctx, 18); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	if after := defs(); after != before {
+		t.Errorf("las condiciones no vuelven a ser las de antes:\n%s\n---\n%s", after, before)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM alert_outbox`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("tras bajar quedan %d avisos: %v", n, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+}

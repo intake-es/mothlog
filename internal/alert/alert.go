@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/intake-es/intake-errors/internal/digest"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -127,6 +128,9 @@ type pending struct {
 	// disponibilidad; en el resto, nil.
 	cron   *cronInfo
 	uptime *uptimeInfo
+	// digest es el resumen de las filas de resúmenes, del proyecto digestProject.
+	digest        *digest.Digest
+	digestProject int64
 
 	project          string
 	labels           []string
@@ -339,22 +343,24 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	var p pending
 	var channel string
 	var attempts int
-	var ruleID, issueID, monitorID, checkinID, uptimeID, incidentID *int64
+	var ruleID, issueID, monitorID, checkinID, uptimeID, incidentID, digestID *int64
 	var detail []byte
 	// El primer NOT EXISTS mantiene el orden por issue y canal (y regla y
 	// acción): una regresión no se manda antes de que se mande (o se abandone)
 	// el aviso de error nuevo. El segundo hace que Slack espere a Linear, como
-	// mucho SlackWaitsForLinear. Los avisos sin regla solo salen por los canales
-	// configurados.
+	// mucho SlackWaitsForLinear. Los avisos sin regla ni resumen solo salen por
+	// los canales configurados.
 	err = tx.QueryRow(ctx, `
 		SELECT o.id, o.issue_id, o.monitor_id, o.checkin_id, o.uptime_monitor_id, o.incident_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
-			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail
+			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail,
+			o.digest_project_id
 		FROM alert_outbox o
 		WHERE o.sent_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= $1
-			AND (o.rule_id IS NOT NULL OR o.channel = ANY($2))
+			AND (o.rule_id IS NOT NULL OR o.digest_project_id IS NOT NULL OR o.channel = ANY($2))
 			AND NOT EXISTS (SELECT 1 FROM alert_outbox b
 				WHERE b.issue_id IS NOT DISTINCT FROM o.issue_id AND b.monitor_id IS NOT DISTINCT FROM o.monitor_id
 					AND b.uptime_monitor_id IS NOT DISTINCT FROM o.uptime_monitor_id
+					AND b.digest_project_id IS NOT DISTINCT FROM o.digest_project_id
 					AND b.channel = o.channel AND b.id < o.id
 					AND b.rule_id IS NOT DISTINCT FROM o.rule_id AND b.action_id IS NOT DISTINCT FROM o.action_id
 					AND b.sent_at IS NULL AND b.failed_at IS NULL)
@@ -364,20 +370,32 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		LIMIT 1
 		FOR UPDATE SKIP LOCKED`, now, a.order, now.Add(-SlackWaitsForLinear)).
 		Scan(&p.id, &issueID, &monitorID, &checkinID, &uptimeID, &incidentID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
-			&attempts, &ruleID, &p.actionID, &detail)
+			&attempts, &ruleID, &p.actionID, &detail, &digestID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, fmt.Errorf("coger aviso: %w", err)
 	}
-	if len(detail) > 0 {
+	if len(detail) > 0 && digestID == nil {
 		if err := json.Unmarshal(detail, &p.detail); err != nil {
 			return false, fmt.Errorf("aviso %d: %w", p.id, err)
 		}
 	}
 	var snd sender
 	var sendErr error
+	if digestID != nil {
+		snd, sendErr = a.loadDigest(ctx, &p, *digestID, detail)
+		if sendErr == nil {
+			sendErr = snd.send(ctx, tx, &p)
+		}
+		if sendErr == nil {
+			if err := a.st.DigestSent(ctx, tx, *digestID, a.now().UTC()); err != nil {
+				return false, err
+			}
+		}
+		return a.finish(ctx, tx, &p, channel, attempts, now, sendErr)
+	}
 	switch {
 	case monitorID != nil:
 		sendErr = a.loadCron(ctx, tx, &p, *monitorID, checkinID)
@@ -459,6 +477,9 @@ func (a *Alerter) finish(ctx context.Context, tx pgx.Tx, p *pending, channel str
 
 // target es de qué es el aviso, para el registro: el issue o el monitor.
 func (p *pending) target() slog.Attr {
+	if p.digestProject != 0 {
+		return slog.Int64("resumen", p.digestProject)
+	}
 	if p.cron != nil {
 		return slog.Int64("monitor", p.cron.monitorID)
 	}

@@ -398,6 +398,40 @@ export interface Rule {
 
 export type RuleInput = Omit<Rule, 'id' | 'project_id' | 'created_at' | 'updated_at'>;
 
+export type DigestFrequency = 'daily' | 'weekly';
+export type DigestDestinationType = 'email' | 'slack' | 'webhook';
+
+export interface DigestConfig {
+  project_id?: number;
+  enabled: boolean;
+  frequency: DigestFrequency;
+  /** El día del semanal: 0 es domingo y 6 sábado. */
+  weekday: number;
+  hour: number;
+  timezone: string;
+  language: 'es' | 'en';
+  send_empty: boolean;
+  destinations: RuleAction[];
+  last_period_end?: string | null;
+  last_sent_at?: string | null;
+  next_send_at?: string | null;
+}
+
+export interface DigestPreview {
+  subject: string;
+  html: string;
+  text: string;
+  markdown: string;
+  digest: { empty: boolean; period: string; sections: { id: string; title: string }[] };
+}
+
+export interface DigestResult {
+  id: string;
+  type: DigestDestinationType;
+  ok: boolean;
+  error?: string;
+}
+
 export interface Filters {
   messages: string[];
   exception_types: string[];
@@ -700,6 +734,28 @@ export class Api {
     return this.http.post<{ ok: boolean }>(`${BASE}/projects/${projectId}/rules/${id}/test`, {
       action_id: actionId,
     });
+  }
+
+  digest(projectId: number): Observable<DigestConfig> {
+    return this.http.get<DigestConfig>(`${BASE}/projects/${projectId}/digest`);
+  }
+
+  setDigest(projectId: number, c: DigestConfig): Observable<DigestConfig> {
+    return this.http.put<DigestConfig>(`${BASE}/projects/${projectId}/digest`, c);
+  }
+
+  digestPreview(
+    projectId: number,
+    language: string,
+    frequency: DigestFrequency,
+  ): Observable<DigestPreview> {
+    return this.http.get<DigestPreview>(`${BASE}/projects/${projectId}/digest/preview`, {
+      params: new HttpParams().set('language', language).set('frequency', frequency),
+    });
+  }
+
+  sendDigest(projectId: number): Observable<Page<DigestResult>> {
+    return this.http.post<Page<DigestResult>>(`${BASE}/projects/${projectId}/digest/send`, {});
   }
 
   filters(projectId: number): Observable<Filters> {

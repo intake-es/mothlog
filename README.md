@@ -179,6 +179,40 @@ Para conectarlos (las URL salen también en Ajustes del proyecto → Integracion
 
 Las dos rutas no piden token: las protege la firma. Sin su secreto, responden 503.
 
+### Resumen diario o semanal
+
+Cada proyecto puede mandar, cada día o cada semana, cómo le ha ido sin entrar en la interfaz: se configura en **Ajustes → Resumen** o con `PUT /api/0/projects/{id}/digest`. Se elige la hora y la zona horaria (las horas son las del reloj de esa zona, también en los cambios de hora), el día en el semanal, el idioma (`es` o `en`) y los destinos, uno o varios, por correo (`SMTP_URL`), Slack o el webhook firmado, con sus datos guardados y tapados como los de las reglas. El periodo es el que acaba a esa hora: las 24 horas (o los 7 días) anteriores.
+
+Trae, por secciones, y sin las que no tienen nada:
+
+- **En números**: los eventos del periodo y su cambio respecto al anterior, los errores con eventos, los usuarios afectados y cuántos se marcaron resueltos.
+- **Errores nuevos** y **Han vuelto** (regresiones), los que más eventos tienen primero, hasta 10, con su enlace.
+- **Los que más crecen**: los que ya existían y tienen al menos 5 eventos más y el doble que en el periodo anterior.
+- **Crons con problemas**: los monitores con ejecuciones fallidas, sin llegar o pasadas de tiempo.
+- **Webs que no respondieron**: los monitores de disponibilidad con incidentes en el periodo, cuántas caídas y cuánto tiempo sin responder dentro de él, los que más primero.
+- **Salud de la release**: la última release, si tiene sesiones: sesiones y usuarios sin crash.
+
+Los eventos y usuarios son los de los eventos guardados, así que el muestreo y el tope por issue los rebajan. Un periodo sin nada manda un resumen corto que lo dice o, con `send_empty: false`, ninguno. El correo va en HTML sencillo con su versión en texto; Slack, con Block Kit; el webhook, con las secciones en JSON y el resumen en `markdown`, firmado como el de las reglas, con `type: digest` y `X-Intake-Errors-Event: digest`:
+
+```json
+{
+  "type": "digest",
+  "delivery": "outbox-913",
+  "sent_at": "2026-11-23T08:00:04Z",
+  "project": {"id": 4, "name": "tienda"},
+  "frequency": "daily",
+  "language": "es",
+  "period": {"start": "2026-11-22T08:00:00Z", "end": "2026-11-23T08:00:00Z", "timezone": "Europe/Madrid"},
+  "title": "Resumen diario de tienda",
+  "empty": false,
+  "sections": [{"id": "new", "title": "Errores nuevos", "total": 1,
+                "items": [{"title": "TypeError: …", "detail": "3 eventos · checkout/cart.ts", "url": "https://errores.ejemplo.com/issues/42"}]}],
+  "markdown": "# Resumen diario de tienda\n…"
+}
+```
+
+Lo manda un proceso dentro del servicio, que mira cada minuto si toca alguno. El periodo encolado queda apuntado en la base, con la fila del proyecto bloqueada, en la misma transacción que deja un envío por destino en la tabla de salida de los avisos, con sus mismos reintentos: varias réplicas no lo duplican y un reinicio no lo repite. Si el servicio estaba parado a la hora, sale al arrancar el del último periodo cerrado (no los anteriores que se perdieron). Al encenderlo o cambiar la hora, el primero sale a la hora siguiente. «Mandar uno ahora» (`POST /api/0/projects/{id}/digest/send`) manda ya el de las últimas 24 horas (o 7 días) a cada destino, sin pasar por la tabla de salida, y dice cómo ha ido en cada uno. En el MCP, `get_digest` da en Markdown el resumen de cualquier periodo.
+
 ## API y MCP
 
 La API REST (`/api/0/`) y el servidor MCP (`/mcp`) piden un token en `Authorization: Bearer <token>`. Los tokens se gestionan con el mismo binario y la misma `DATABASE_URL`:
@@ -195,7 +229,7 @@ Para conectarlo con Claude Code:
 claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
 
-Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `assign_issue`, `list_assignees`, `list_releases`, `get_release`, `list_monitors` y `get_monitor` (que también traen los de disponibilidad: `list_monitors` en `uptime` y `get_monitor` con `type` `uptime`); las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` y `assign_issue` como idempotentes. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, asignárselo con `assign_issue` y `"assignee": "me"`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
+Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `assign_issue`, `list_assignees`, `list_releases`, `get_release`, `list_monitors`, `get_monitor` (que también traen los de disponibilidad: `list_monitors` en `uptime` y `get_monitor` con `type` `uptime`) y `get_digest`; las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` y `assign_issue` como idempotentes. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, asignárselo con `assign_issue` y `"assignee": "me"`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -235,6 +269,9 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issu
 | `POST /api/0/projects/{id}/uptime-monitors/` | crea uno con `{"name": "...", "url": "https://..."}` y, si se quiere, `slug`, `method` (`GET` o `HEAD`), `interval_seconds` (de 30 a 3600, 60 por defecto), `timeout_seconds` (de 1 a 60, 10 por defecto, no más que el intervalo), `expected_status` (`200-299` por defecto; vale `2xx,301`), `failure_threshold` (de 1 a 10, 2 por defecto) y `paused` (201) |
 | `GET`, `PATCH`, `DELETE /api/0/projects/{id}/uptime-monitors/{slug}/` | el monitor con sus incidentes (`incidents`), sus 60 últimas comprobaciones (`checks`) y los tiempos de respuesta de las últimas 24 h en tramos de 15 min (`response_times`); cambia los campos que trae el cuerpo, con `{"paused": true}` lo pausa; lo borra con sus comprobaciones e incidentes (204) |
 | `POST /api/0/projects/{id}/rules/{rule}/test` | con `{"action_id": "..."}`, manda un aviso de prueba por esa acción; 502 con el error si el destino falla |
+| `GET`, `PUT /api/0/projects/{id}/digest` | el [resumen](#resumen-diario-o-semanal) del proyecto: `enabled`, `frequency` (`daily` o `weekly`), `weekday` (0 domingo … 6 sábado), `hour`, `timezone`, `language` (`es` o `en`), `send_empty` y `destinations` (acciones `email`, `slack` o `webhook`, con los secretos tapados), más `last_sent_at` y `next_send_at`; `PUT` lo sustituye y conserva los secretos que llegan tapados o vacíos |
+| `GET /api/0/projects/{id}/digest/preview?language=&frequency=` | el resumen de las últimas 24 horas (o 7 días) con la configuración guardada: `subject`, `html`, `text`, `markdown` y `digest`, las secciones |
+| `POST /api/0/projects/{id}/digest/send` | lo manda ya a cada destino y devuelve en `data` cómo ha ido en cada uno (`ok` o `error`) |
 
 Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
 

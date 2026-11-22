@@ -63,6 +63,8 @@ const ALLOWED = new Set([
   ...['up', 'down', 'paused', 'uptime', 'edit', 'empty', 'fail'],
   // Enlaces a Linear y GitHub: las marcas, sus tipos y estados, y la sección de integraciones.
   ...['Linear', 'GitHub', 'issue', 'closed', 'canceled', 'merged', 'integrations', 'repo'],
+  // La configuración del resumen y sus opciones de Intl.
+  ...['digest', 'weekly', 'language', 'frequency', 'timeZone', 'long'],
   'fill: currentColor; stroke: none',
 ]);
 

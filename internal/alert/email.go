@@ -88,8 +88,11 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 }
 
 func (e *email) send(ctx context.Context, _ pgx.Tx, p *pending) error {
-	msg, err := e.message(ctx, p, time.Now())
-	if err != nil {
+	var msg []byte
+	var err error
+	if p.digest != nil {
+		msg = e.digestMessage(p.digest, time.Now())
+	} else if msg, err = e.message(ctx, p, time.Now()); err != nil {
 		return err
 	}
 	if err := e.deliver(ctx, msg); err != nil {

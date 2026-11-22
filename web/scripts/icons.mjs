@@ -37,6 +37,7 @@ const ICONS = {
     'kanban',
     'magnifying-glass',
     'moon',
+    'newspaper',
     'package',
     'paper-plane-tilt',
     'plug',

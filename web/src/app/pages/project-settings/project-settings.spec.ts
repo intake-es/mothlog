@@ -417,6 +417,26 @@ describe('ProjectSettingsPage', () => {
     expect(el.querySelector('.toast')?.textContent).toContain('Filtros guardados');
   });
 
+  it('tiene la sección Resumen entre las pestañas y la abre por su ruta', async () => {
+    const { el } = await render('alerts');
+    const tabs = Array.from(el.querySelectorAll<HTMLAnchorElement>('.tabs__tab'));
+    const digest = tabs.find((a) => a.textContent?.includes('Resumen'));
+    expect(digest?.getAttribute('href')).toBe('/projects/4/settings/digest');
+
+    const fixture = TestBed.createComponent(ProjectSettingsPage);
+    fixture.componentRef.setInput('id', '4');
+    fixture.componentRef.setInput('section', 'digest');
+    fixture.detectChanges();
+    http.expectOne('/api/0/projects/').flush(PROJECTS);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    http.expectOne('/api/0/projects/4/digest');
+    expect(fixture.nativeElement.querySelector('app-digest-settings')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[aria-current=page]')?.textContent).toContain(
+      'Resumen',
+    );
+  });
+
   it('cambia de proyecto desde el selector', async () => {
     const { fixture, el } = await render('filters');
     const router = TestBed.inject(Router);

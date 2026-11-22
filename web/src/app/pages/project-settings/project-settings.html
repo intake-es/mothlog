@@ -52,6 +52,8 @@
         <app-alert-rules [projectId]="p.id" />
       } @else if (current() === 'integrations') {
         <app-integrations />
+      } @else if (current() === 'digest') {
+        <app-digest-settings [projectId]="p.id" />
       } @else {
         <app-project-filters [projectId]="p.id" />
       }

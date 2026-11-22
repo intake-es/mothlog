@@ -142,6 +142,9 @@ func (w *webhook) payload(ctx context.Context, p *pending) (WebhookPayload, erro
 }
 
 func (w *webhook) send(ctx context.Context, _ pgx.Tx, p *pending) error {
+	if p.digest != nil {
+		return w.sendDigest(ctx, p)
+	}
 	var pl WebhookPayload
 	var err error
 	if p.cron != nil {
@@ -151,16 +154,21 @@ func (w *webhook) send(ctx context.Context, _ pgx.Tx, p *pending) error {
 	} else if pl, err = w.payload(ctx, p); err != nil {
 		return err
 	}
+	return w.post(ctx, pl.Type, pl.Delivery, pl.SentAt, pl)
+}
+
+// post manda el cuerpo firmado con las cabeceras del webhook.
+func (w *webhook) post(ctx context.Context, typ, delivery string, sentAt time.Time, payload any) error {
 	var body bytes.Buffer
 	enc := json.NewEncoder(&body)
 	enc.SetEscapeHTML(false)
-	if err := enc.Encode(pl); err != nil {
+	if err := enc.Encode(payload); err != nil {
 		return err
 	}
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
-	h.Set(HeaderEvent, pl.Type)
-	h.Set(HeaderDelivery, pl.Delivery)
-	h.Set(HeaderSignature, Sign(w.secret, pl.SentAt, body.Bytes()))
+	h.Set(HeaderEvent, typ)
+	h.Set(HeaderDelivery, delivery)
+	h.Set(HeaderSignature, Sign(w.secret, sentAt, body.Bytes()))
 	return post(ctx, w.client, "webhook", w.url, body.Bytes(), h)
 }

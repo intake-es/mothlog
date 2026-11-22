@@ -14,21 +14,23 @@ import { I18n, type Key } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
 import { Pick, type PickOption } from '../../ui/pick';
 import { AlertRules } from './alert-rules';
+import { DigestSettings } from './digest-settings';
 import { IntegrationsSection } from './integrations';
 import { ProjectFilters } from './project-filters';
 
-type Section = 'alerts' | 'filters' | 'integrations';
+type Section = 'alerts' | 'filters' | 'integrations' | 'digest';
 
 const SECTIONS: { value: Section; label: Key; icon: string }[] = [
   { value: 'alerts', label: 'settings.alerts', icon: 'bell' },
   { value: 'filters', label: 'settings.filters', icon: 'funnel' },
   { value: 'integrations', label: 'settings.integrations', icon: 'plug' },
+  { value: 'digest', label: 'settings.digest', icon: 'newspaper' },
 ];
 
 /** Los ajustes de un proyecto: /projects/:id/settings/:section; /settings va al primero. */
 @Component({
   selector: 'app-project-settings',
-  imports: [RouterLink, Icon, Pick, AlertRules, ProjectFilters, IntegrationsSection],
+  imports: [RouterLink, Icon, Pick, AlertRules, ProjectFilters, IntegrationsSection, DigestSettings],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './project-settings.html',
   styleUrl: './project-settings.css',

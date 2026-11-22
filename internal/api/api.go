@@ -26,6 +26,8 @@ type Options struct {
 	Alerts Alerts
 	// Integrations da el estado de Linear y GitHub; sin él, no hay ruta.
 	Integrations Integrations
+	// Digests comprueba y manda el resumen; sin él, no se manda a mano.
+	Digests Digests
 }
 
 type handlers struct {
@@ -33,11 +35,12 @@ type handlers struct {
 	publicURL *url.URL
 	alerts    Alerts
 	integ     Integrations
+	digests   Digests
 }
 
 // Register añade las rutas de la API y del MCP a mux.
 func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
-	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations}
+	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations, digests: opts.Digests}
 	if opts.PublicURL != "" {
 		u, err := url.Parse(opts.PublicURL)
 		if err != nil || u.Host == "" {
@@ -59,6 +62,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/projects/{id}/dropped", h.dropped)
 	route("GET /api/0/projects/{id}/dropped/{$}", h.dropped)
 	h.registerRules(route)
+	h.registerDigest(route)
 	route("GET /api/0/issues/{$}", h.issues)
 	route("GET /api/0/issues/{id}/{$}", h.issue)
 	route("GET /api/0/issues/{id}/events/{$}", h.issueEvents)
@@ -79,6 +83,10 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 		IssueURL: func(ctx context.Context, id int64) string {
 			base, _ := ctx.Value(baseURLKey{}).(string)
 			return base + "/issues/" + strconv.FormatInt(id, 10)
+		},
+		BaseURL: func(ctx context.Context) string {
+			base, _ := ctx.Value(baseURLKey{}).(string)
+			return base
 		},
 	})
 	mux.Handle("/mcp", auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

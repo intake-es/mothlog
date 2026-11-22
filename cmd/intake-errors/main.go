@@ -15,6 +15,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/alert"
 	"github.com/intake-es/intake-errors/internal/api"
+	"github.com/intake-es/intake-errors/internal/digest"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/monitor"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
@@ -161,6 +162,7 @@ func run(args []string) error {
 		log.Warn("sin PUBLIC_URL: los avisos van sin enlace a la interfaz")
 	}
 	go alerts.Run(ctx)
+	go digest.NewScheduler(db, log, cfg.PublicURL).Run(ctx, digest.TickInterval)
 	ingester := ingest.NewIngester(db.Pool(), maps, alerts, log)
 	drops := ingest.NewDrops(db)
 	go drops.Run(ctx, 10*time.Second, log)
@@ -176,7 +178,7 @@ func run(args []string) error {
 	})
 	mux := routes(db, envelopes, maps.Register, auth.Register, hooks.Register)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks}); err != nil {
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks, Digests: alerts}); err != nil {
 		return err
 	}
 	srv := &http.Server{

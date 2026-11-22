@@ -8,7 +8,7 @@ Un agente puede llevar un error de principio a fin sin salir del MCP: buscarlo, 
 
 - Servidor: {base}/mcp (Streamable HTTP, sin sesión; cabecera `Authorization: Bearer <token>`)
 - Flujo: `list_issues` (con una búsqueda como `is:open is:unassigned environment:production`) → `assign_issue` con `"assignee": "me"` → `get_issue_context` → arreglar el código → `add_comment` → `set_issue_status` con `resolved_next` (resuelto en la siguiente release) o `resolved`.
-- Herramientas: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `assign_issue`, `list_assignees`, `list_releases`, `get_release`, `list_monitors` y `get_monitor`.
+- Herramientas: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `assign_issue`, `list_assignees`, `list_releases`, `get_release`, `list_monitors`, `get_monitor` y `get_digest`.
 
 ## API
 
@@ -20,6 +20,7 @@ Un agente puede llevar un error de principio a fin sin salir del MCP: buscarlo, 
 - [Releases]({base}/api/0/releases/): las releases con sus despliegues, lo que trajo cada una y su salud: el porcentaje de sesiones y de usuarios sin crash y la adopción.
 - [Monitores de cron]({base}/api/0/monitors/): los crons con su último estado y la próxima ejecución esperada; `{base}/api/0/projects/{id}/monitors/{slug}/` da el historial de uno.
 - [Monitores de disponibilidad]({base}/api/0/uptime-monitors/): las URLs que comprueba el servicio con su estado y su disponibilidad de 24 h y 30 días; `{base}/api/0/projects/{id}/uptime-monitors/{slug}/` da sus incidentes y tiempos de respuesta.
+- [Resumen de un proyecto]({base}/api/0/projects/{id}/digest/preview): lo nuevo, lo que vuelve, lo que crece, los crons, las webs caídas y la salud de la última release de las últimas 24 horas (o 7 días), en `markdown`; en el MCP, `get_digest`.
 
 ## Más
 
