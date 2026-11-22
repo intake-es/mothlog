@@ -75,6 +75,7 @@ func TestDoesNotCoverOtherRoutes(t *testing.T) {
 		{http.MethodPost, "/mcp"},
 		{http.MethodGet, "/healthz"},
 		{http.MethodHead, "/healthz"},
+		{http.MethodGet, "/llms.txt"},
 		{http.MethodGet, "/auth/session"},
 		{http.MethodGet, "/auth/github/callback"},
 		{http.MethodPost, "/auth/logout"},

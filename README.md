@@ -39,7 +39,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 
 ## Interfaz
 
-El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos, su primera y última release y «Copiar para Claude», que copia el `stacktrace.md`, y las releases (`/releases`) con lo que trajo cada una. El selector de entorno del raíl filtra todas las pantallas ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)). Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
+El binario sirve en `/` la interfaz para ver, entender y resolver los errores: la lista con filtros, búsqueda y la gráfica de 14 días de cada uno, el detalle (`/issues/<id>`) con la cadena de excepciones, los breadcrumbs, las etiquetas, los eventos, su primera y última release, el historial con los comentarios y los cambios de estado (con un cuadro para comentar) y «Copiar para un agente», que copia el `context.md` del entorno elegido, y las releases (`/releases`) con lo que trajo cada una. El selector de entorno del raíl filtra todas las pantallas ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)). Es la app de Angular de `web/`, compilada dentro del binario con `go:embed` (`internal/ui`); no pide nada a terceros, ni la fuente.
 
 La interfaz está en español y en inglés: empieza en español si el idioma del navegador empieza por `es` y en inglés en el resto, y se cambia desde el raíl, junto al tema, sin recargar; la elección se guarda en el navegador. Los textos están en `web/src/app/core/i18n/` (`es.ts` y `en.ts`, con las mismas claves); lo que viene del servidor, como los mensajes de error de la API o el Markdown de `stacktrace.md`, no se traduce.
 
@@ -172,7 +172,7 @@ Para conectarlo con Claude Code:
 claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
 
-Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_tags`, `get_stacktrace`, `list_events` y `set_issue_status`; las de leer aceptan `environment`, como la API. Hacen las mismas consultas que la API:
+Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `list_releases` y `get_release`; las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` como idempotente. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
 
 | Ruta | Qué devuelve |
 |---|---|
@@ -184,7 +184,11 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_tags`, `get_stacktr
 | `GET /api/0/tags/?project=` | las claves de etiqueta que hay, con en cuántos issues sale cada una; para autocompletar |
 | `GET /api/0/tags/{key}/values/?prefix=&project=` | los 20 valores más frecuentes de una clave que empiezan por `prefix`, sin distinguir mayúsculas |
 | `GET /api/0/issues/{id}/stacktrace.md` | el último evento en Markdown, pensado para un modelo |
-| `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}`; `resolved_next` guarda el release del último evento (409 si no tiene) |
+| `GET /api/0/issues/{id}/context.md?environment=&event=` | todo el contexto del error en un Markdown para un agente: el resumen con el enlace a la interfaz, las releases, los entornos, las etiquetas más frecuentes, la traza con el código, los breadcrumbs, la petición y el usuario del último evento (o del de `event`, por id o `event_id`), el historial y qué puede hacer; si pasa de 64 KB, quita breadcrumbs, fotogramas de librerías e historial viejo, y lo dice |
+| `POST /api/0/issues/{id}/status` | cambia el estado con `{"status": "open\|resolved\|resolved_next\|silenced"}` y, si se quiere, `"comment"`, que queda unido al cambio en el historial; `resolved_next` guarda el release del último evento (409 si no tiene) |
+| `GET /api/0/issues/{id}/history/` | el historial, del más viejo al más nuevo: comentarios (`type: comment`) y cambios de estado (`type: status`, con `source`, `from`, `to`, `release` y el `comment` del cambio); `mine` marca lo de quien pregunta |
+| `POST /api/0/issues/{id}/comments/` | comenta con `{"body": "..."}` en Markdown, hasta 20 000 caracteres (201) |
+| `DELETE /api/0/issues/{id}/comments/{comment}` | borra un comentario propio (204; 403 si es de otro) |
 | `GET /api/0/environments/?project=` y `GET /api/0/projects/{id}/environments/` | los entornos de los eventos, con cuántos issues y eventos tienen y cuándo se vio el último |
 | `GET /api/0/releases/?project=&environment=&cursor=&limit=` y `GET /api/0/projects/{id}/releases/` | las releases, de la más nueva a la más vieja, con sus despliegues y cuántos errores nuevos (`new_issues`), con eventos (`issues`), regresiones y eventos trajo cada una; con `environment`, las que tienen eventos o despliegues en él, contando solo lo suyo |
 | `POST /api/0/projects/{id}/releases/` | crea la release `{"version": "..."}` (201, o 200 si ya existía); con `"environment"` (y `"deployed_at"`, opcional) apunta además un despliegue y devuelve en `resolved_issues` los issues que resolvió |
@@ -199,6 +203,12 @@ Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_tags`, `get_stacktr
 | `POST /api/0/projects/{id}/rules/{rule}/test` | con `{"action_id": "..."}`, manda un aviso de prueba por esa acción; 502 con el error si el destino falla |
 
 Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página siguiente, se pasa `cursor=<next_cursor>`; `limit` va de 1 a 100 (25 por defecto). Los errores son `{"error": "..."}`, con 401 si falta el token, no existe o está revocado.
+
+### Agentes
+
+[docs/agentes.md](docs/agentes.md) explica cómo crear un token para un agente, conectar un cliente de MCP por HTTP (Claude Code o uno genérico) y el flujo de punta a punta. `GET /llms.txt`, público y sin token, resume el servicio para un modelo.
+
+**Historial.** Cada issue guarda sus comentarios (Markdown, con el autor y si es una persona o un token) y sus cambios de estado: quién, cuándo, de qué estado a cuál, la release si la hay y desde dónde (`ui`, `api`, `mcp`, `ingest` al reabrirse como regresión o `deploy` al resolverse por un despliegue). El autor es el usuario de la sesión en la interfaz o el nombre del token en la API y el MCP. Repetir el mismo estado no apunta nada; un comentario que llega con él queda suelto. Se borra con el issue.
 
 ### Búsqueda
 

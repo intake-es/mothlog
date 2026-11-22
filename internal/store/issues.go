@@ -39,6 +39,11 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pe) && pe.Code == "23505"
 }
 
+func isForeignKeyViolation(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "23503"
+}
+
 type Issue struct {
 	ID                int64      `json:"id"`
 	ProjectID         int64      `json:"project_id"`
@@ -582,41 +587,4 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 		page.Events = []EventSummary{}
 	}
 	return page, nil
-}
-
-// SetIssueStatus cambia el estado a mano. Con resolved_next guarda el release
-// del último evento, que la ingesta compara para decidir si hay regresión.
-// resolved_at guarda desde cuándo está resuelto; en otro estado queda vacío.
-func (s *Store) SetIssueStatus(ctx context.Context, id int64, status string) (Issue, error) {
-	if !slices.Contains(Statuses, status) {
-		return Issue{}, fmt.Errorf("%w: status es open, resolved, resolved_next o silenced", ErrInvalid)
-	}
-	var release *string
-	if status == "resolved_next" {
-		if _, err := s.Issue(ctx, id); err != nil {
-			return Issue{}, err
-		}
-		err := s.pool.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
-			WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&release)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return Issue{}, fmt.Errorf("release del último evento: %w", err)
-		}
-		if release == nil {
-			return Issue{}, ErrNoRelease
-		}
-	}
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE issues SET status = $2, resolved_in_release = $3, fixed_in_release = NULL,
-			resolved_at = CASE
-				WHEN $2 NOT IN ('resolved', 'resolved_next') THEN NULL
-				WHEN status IN ('resolved', 'resolved_next') THEN COALESCE(resolved_at, now())
-				ELSE now() END
-		WHERE id = $1`, id, status, release)
-	if err != nil {
-		return Issue{}, fmt.Errorf("cambiar estado: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return Issue{}, ErrNotFound
-	}
-	return s.Issue(ctx, id)
 }

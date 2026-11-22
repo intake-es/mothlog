@@ -20,7 +20,7 @@ import (
 //go:embed all:dist
 var dist embed.FS
 
-// Handler sirve la app y pasa a next /api/, /mcp, /healthz, /auth/ y todo lo
+// Handler sirve la app y pasa a next /api/, /mcp, /healthz, /llms.txt, /auth/ y todo lo
 // que no sea GET ni HEAD.
 func Handler(next http.Handler) http.Handler {
 	app, err := fs.Sub(dist, "dist/app")
@@ -80,7 +80,7 @@ func New(app fs.FS, next http.Handler) http.Handler {
 func reserved(p string) bool {
 	return p == "/api" || strings.HasPrefix(p, "/api/") ||
 		p == "/mcp" || strings.HasPrefix(p, "/mcp/") ||
-		p == "/healthz" ||
+		p == "/healthz" || p == "/llms.txt" ||
 		p == "/auth" || strings.HasPrefix(p, "/auth/")
 }
 

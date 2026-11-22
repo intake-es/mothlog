@@ -260,6 +260,11 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		if err != nil {
 			return res, fmt.Errorf("actualizar issue: %w", err)
 		}
+		if regressed {
+			if err := store.RecordRegression(ctx, tx, found.id, found.status, ev.Release); err != nil {
+				return res, err
+			}
+		}
 	}
 	if err := store.TrackEvent(ctx, tx, projectID, res.IssueID, ev.Release, ev.Environment, ev.Timestamp, res.Outcome == Regressed); err != nil {
 		return res, err

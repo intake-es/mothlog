@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { IssueDetail, IssueTags, StoredEvent } from '../../core/api';
+import type { HistoryEntry, IssueDetail, IssueTags, StoredEvent } from '../../core/api';
 import { environment } from '../../core/environment';
 import { I18n, lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
@@ -129,9 +129,21 @@ describe('IssueDetailPage', () => {
     http = TestBed.inject(HttpTestingController);
   });
 
-  afterEach(() => http.verify());
+  afterEach(() => {
+    // Cada cambio de estado vuelve a pedir el historial; aquí da igual su contenido.
+    for (const req of http.match('/api/0/issues/5/history/')) {
+      if (!req.cancelled) {
+        req.flush({ data: [] });
+      }
+    }
+    http.verify();
+  });
 
-  async function render(d: IssueDetail = detail(), tags: IssueTags = issueTags()) {
+  async function render(
+    d: IssueDetail = detail(),
+    tags: IssueTags = issueTags(),
+    history: HistoryEntry[] = [],
+  ) {
     const fixture = TestBed.createComponent(IssueDetailPage);
     fixture.componentRef.setInput('id', '5');
     fixture.detectChanges();
@@ -163,6 +175,8 @@ describe('IssueDetailPage', () => {
           },
         ],
       });
+    await fixture.whenStable();
+    http.expectOne('/api/0/issues/5/history/').flush({ data: history });
     await fixture.whenStable();
     return fixture;
   }
@@ -277,16 +291,16 @@ describe('IssueDetailPage', () => {
     expect(el.querySelector('.toast')?.textContent).toContain('no tiene release');
   });
 
-  it('«Copiar para Claude» copia el stacktrace.md', async () => {
+  it('«Copiar para un agente» copia el context.md', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     const fixture = await render();
     const el: HTMLElement = fixture.nativeElement;
     const copy = Array.from(el.querySelectorAll<HTMLButtonElement>('.titlebar .btn')).find((b) =>
-      b.textContent?.includes('Copiar para Claude'),
+      b.textContent?.includes('Copiar para un agente'),
     );
     copy?.click();
-    http.expectOne('/api/0/issues/5/stacktrace.md').flush('# TypeError: Cannot read properties');
+    http.expectOne('/api/0/issues/5/context.md').flush('# TypeError: Cannot read properties');
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
     expect(writeText).toHaveBeenCalledWith('# TypeError: Cannot read properties');
@@ -304,13 +318,13 @@ describe('IssueDetailPage', () => {
       const fixture = await render();
       const el: HTMLElement = fixture.nativeElement;
       const copy = Array.from(el.querySelectorAll<HTMLButtonElement>('.titlebar .btn')).find((b) =>
-        b.textContent?.includes('Copiar para Claude'),
+        b.textContent?.includes('Copiar para un agente'),
       );
       copy?.click();
       // Aún sin respuesta del servidor: el portapapeles ya se ha pedido en el gesto.
       expect(write).toHaveBeenCalledOnce();
       const item = write.mock.calls[0][0][0] as FakeItem;
-      http.expectOne('/api/0/issues/5/stacktrace.md').flush('# TypeError: md');
+      http.expectOne('/api/0/issues/5/context.md').flush('# TypeError: md');
       const blob = await item.items['text/plain'];
       expect(await blob.text()).toBe('# TypeError: md');
       await new Promise((resolve) => setTimeout(resolve));
@@ -329,10 +343,10 @@ describe('IssueDetailPage', () => {
     const fixture = await render();
     const el: HTMLElement = fixture.nativeElement;
     Array.from(el.querySelectorAll<HTMLButtonElement>('.titlebar .btn'))
-      .find((b) => b.textContent?.includes('Copiar para Claude'))
+      .find((b) => b.textContent?.includes('Copiar para un agente'))
       ?.click();
     http
-      .expectOne('/api/0/issues/5/stacktrace.md')
+      .expectOne('/api/0/issues/5/context.md')
       .flush({ error: 'no encontrado' }, { status: 404, statusText: 'x' });
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
@@ -429,6 +443,7 @@ describe('IssueDetailPage', () => {
         'Exception',
         'Breadcrumbs',
         'Events',
+        'History',
         'Details',
         'Affected users',
         'Tags',
@@ -496,14 +511,14 @@ describe('IssueDetailPage', () => {
       expect(el.querySelector('.btn--primary')?.textContent?.trim()).toBe('Reopen');
 
       const copy = Array.from(el.querySelectorAll<HTMLButtonElement>('.titlebar .btn')).find((b) =>
-        b.textContent?.includes('Copy for Claude'),
+        b.textContent?.includes('Copy for an agent'),
       );
       copy?.click();
-      http.expectOne('/api/0/issues/5/stacktrace.md').flush('# md');
+      http.expectOne('/api/0/issues/5/context.md').flush('# md');
       await new Promise((resolve) => setTimeout(resolve));
       await fixture.whenStable();
       expect(copy?.textContent?.trim()).toBe('Copied');
-      expect(el.querySelector('.toast')?.textContent).toBe('Copied: paste it into Claude');
+      expect(el.querySelector('.toast')?.textContent).toBe('Copied: paste it into your agent');
     });
 
     it('un id que no existe, en inglés', async () => {

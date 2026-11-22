@@ -10,7 +10,7 @@
 
   @if (detail(); as d) {
     <div class="titlebar__actions">
-      <button type="button" class="btn" (click)="copyForClaude()">
+      <button type="button" class="btn" [attr.title]="t('detail.copyHint')" (click)="copyForAgent()">
         <svg [appIcon]="copied() ? 'check' : 'copy'"></svg>
         {{ copied() ? t('detail.copied') : t('detail.copy') }}
       </button>
@@ -197,6 +197,11 @@
             </ol>
           </section>
         }
+
+        <section class="block">
+          <h3 class="block__title block__title--gap">{{ t('history.title') }}</h3>
+          <app-history [issueId]="d.id" [version]="historyVersion()" (notice)="notify($event)" />
+        </section>
       </div>
 
       <aside class="side">

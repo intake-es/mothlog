@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -63,9 +64,21 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/tags/{key}/values/{$}", h.tagValues)
 	route("GET /api/0/issues/{id}/stacktrace.md", h.stacktrace)
 	route("POST /api/0/issues/{id}/status", h.setStatus)
+	h.registerHistory(route)
 	route("GET /api/0/events/{id}/{$}", h.event)
 	h.registerReleases(route)
-	mux.Handle("/mcp", auth(mcpserver.Handler(st)))
+	mcpHandler := mcpserver.Handler(st, mcpserver.Options{
+		Actor: actorFrom,
+		IssueURL: func(ctx context.Context, id int64) string {
+			base, _ := ctx.Value(baseURLKey{}).(string)
+			return base + "/issues/" + strconv.FormatInt(id, 10)
+		},
+	})
+	mux.Handle("/mcp", auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), baseURLKey{}, h.baseURL(r).String())
+		mcpHandler.ServeHTTP(w, r.WithContext(ctx))
+	})))
+	mux.HandleFunc("GET /llms.txt", h.llms)
 	return nil
 }
 
@@ -290,13 +303,16 @@ func (h *handlers) setStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Status string `json:"status"`
+		Status  string `json:"status"`
+		Comment string `json:"comment"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<18)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "el cuerpo debe ser {\"status\": \"...\"}")
 		return
 	}
-	issue, err := h.st.SetIssueStatus(r.Context(), id, body.Status)
+	issue, err := h.st.ChangeIssueStatus(r.Context(), id, body.Status, store.StatusChange{
+		Actor: actorFrom(r.Context()), Source: sourceFrom(r.Context()), Comment: body.Comment,
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -345,6 +361,8 @@ func (h *handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, store.ErrNoRelease):
 		writeError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, store.ErrNotOwner):
+		writeError(w, http.StatusForbidden, err.Error())
 	default:
 		slog.ErrorContext(r.Context(), "api", "path", r.URL.Path, "err", err)
 		writeError(w, http.StatusInternalServerError, "error interno")

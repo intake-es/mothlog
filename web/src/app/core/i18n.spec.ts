@@ -42,6 +42,8 @@ const ALLOWED = new Set([
   ...['user', 'es', 'en', 'login', 'regular', 'duotone', 'start', 'end', 'true', 'false'],
   ...['element', 'UTC'],
   ...['releases', 'env', 'page', 'new', 'continued', 'stopped', 'issues'],
+  // Tipos y orígenes del historial.
+  ...['comment', 'ui', 'api', 'mcp', 'ingest', 'deploy'],
   // Claves y valores del lenguaje de búsqueda, y las teclas del autocompletado.
   ...['is', 'release', 'environment', 'regressed', 'browser', 'os', 'device', 'runtime'],
   ...['prefix', 'percent', 'input', 'ArrowDown', 'ArrowUp', 'Tab', 'Enter', 'Escape'],

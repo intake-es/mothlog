@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -41,13 +42,70 @@ type listEventsIn struct {
 type setStatusIn struct {
 	IssueID int64  `json:"issue_id" jsonschema:"id del issue"`
 	Status  string `json:"status" jsonschema:"open, resolved, resolved_next o silenced"`
+	Comment string `json:"comment,omitempty" jsonschema:"comentario en Markdown que queda unido al cambio en el historial, p. ej. qué se arregló y en qué commit"`
 }
 
-func New(st *store.Store) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "intake-errors", Version: "0.1.0"}, &mcp.ServerOptions{
-		Instructions: "Errores de las aplicaciones que envían a intake-errors. Para investigar uno: list_issues para encontrarlo, get_stacktrace para leer la traza y set_issue_status cuando esté arreglado.",
+type contextIn struct {
+	IssueID     int64  `json:"issue_id" jsonschema:"id del issue"`
+	Environment string `json:"environment,omitempty" jsonschema:"solo los eventos de este entorno (production, staging…): recuentos y último evento; vacío, todos"`
+	Event       string `json:"event,omitempty" jsonschema:"id interno o event_id de un evento del issue (de list_events), para leer ese en vez del último"`
+}
+
+type eventIn struct {
+	EventID string `json:"event_id" jsonschema:"id interno (de list_events) o event_id del SDK, en 32 hex o UUID"`
+}
+
+type issueOnlyIn struct {
+	IssueID int64 `json:"issue_id" jsonschema:"id del issue"`
+}
+
+type addCommentIn struct {
+	IssueID int64  `json:"issue_id" jsonschema:"id del issue"`
+	Body    string `json:"body" jsonschema:"el comentario, en Markdown"`
+}
+
+type listReleasesIn struct {
+	Project     string `json:"project,omitempty" jsonschema:"id o nombre del proyecto; vacío, todos"`
+	Environment string `json:"environment,omitempty" jsonschema:"solo las releases con eventos o despliegues en este entorno, contando solo lo suyo; vacío, todos"`
+	Cursor      string `json:"cursor,omitempty" jsonschema:"next_cursor de la respuesta anterior"`
+	Limit       int    `json:"limit,omitempty" jsonschema:"releases por página, de 1 a 100; 25 por defecto"`
+}
+
+type releaseIn struct {
+	Project     string `json:"project" jsonschema:"id o nombre del proyecto (sale en list_issues y list_releases)"`
+	Version     string `json:"version" jsonschema:"la versión, como web@1.4.0"`
+	Environment string `json:"environment,omitempty" jsonschema:"solo lo de este entorno; vacío, todos"`
+}
+
+// Options dice al servidor quién llama y cómo enlazar a la interfaz.
+type Options struct {
+	// Actor es quien hace la petición (el nombre del token); sin él, no se puede comentar.
+	Actor func(context.Context) *store.Actor
+	// IssueURL es el enlace al issue en la interfaz; sin él, el contexto va sin enlace.
+	IssueURL func(ctx context.Context, id int64) string
+}
+
+const instructions = `Errores de las aplicaciones que envían a intake-errors, agrupados en issues. Para llevar un error de principio a fin:
+
+1. Encontrarlo con list_issues. Sin query, los abiertos que han pasado más recientemente. Ejemplos de query: "is:open environment:production", "is:regressed release:1.4.0", "TypeError browser:Safari", "user:ana@example.com is:open".
+2. Leer get_issue_context: un único Markdown con el resumen, las releases, los entornos, las etiquetas, la traza con el código de los fotogramas propios, los breadcrumbs, la petición, el usuario y el historial (comentarios y cambios de estado anteriores, que conviene leer antes de ponerse).
+3. Arreglarlo en el código.
+4. Dejar constancia con add_comment: qué causaba el error y qué se ha cambiado (commit, PR, fichero).
+5. Marcar el estado con set_issue_status: resolved_next si el arreglo aún no está desplegado (pasa a resolved solo al desplegarse una release posterior), resolved si ya lo está, silenced si no hay nada que arreglar. Lleva un comment opcional que queda unido al cambio en el historial.
+
+Si hace falta más: list_events y get_event para otros eventos, get_issue_tags para todas las etiquetas, list_releases y get_release para lo que trajo una release, list_comments para el historial. Las herramientas de leer aceptan environment (production, staging…) para quedarse con los eventos de ese entorno.`
+
+func New(st *store.Store, opts Options) *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "intake-errors", Version: "0.2.0"}, &mcp.ServerOptions{
+		Instructions: instructions,
 	})
 	readOnly := &mcp.ToolAnnotations{ReadOnlyHint: true}
+	actor := func(ctx context.Context) *store.Actor {
+		if opts.Actor == nil {
+			return nil
+		}
+		return opts.Actor(ctx)
+	}
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_issues",
@@ -113,6 +171,101 @@ func New(st *store.Store) *mcp.Server {
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_issue_context",
+		Annotations: readOnly,
+		Description: "Devuelve en un único documento Markdown todo lo que hace falta para entender y arreglar un issue: el resumen (estado, nivel, proyecto, eventos, usuarios, primera y última vez y el enlace a la interfaz), " +
+			"las releases (primera, última y con la que se resolvió), los entornos con sus eventos, las etiquetas más frecuentes con su porcentaje, " +
+			"el evento con la traza y el código de los fotogramas de la aplicación, los breadcrumbs, la petición y el usuario, el historial de comentarios y cambios de estado, " +
+			"y qué herramientas usar para comentarlo o resolverlo. " +
+			"Úsala después de encontrar el issue con list_issues y antes de tocar código; es más completa que get_stacktrace. " +
+			"Con event, el de ese evento (id o event_id, de list_events) en vez del último. Si el documento pasa de 64 KB, recorta breadcrumbs, fotogramas de librerías e historial viejo, y lo dice al principio.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contextIn) (*mcp.CallToolResult, any, error) {
+		c, err := st.IssueContextIn(ctx, in.IssueID, in.Environment, in.Event, actor(ctx), time.Now())
+		if err != nil {
+			return nil, nil, toolErrorFor(err, "no existe ese issue, o ese evento no es suyo")
+		}
+		url := ""
+		if opts.IssueURL != nil {
+			url = opts.IssueURL(ctx, in.IssueID)
+		}
+		return textResult(markdown.Context(c, url, markdown.MaxContextBytes)), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_event",
+		Annotations: readOnly,
+		Description: "Devuelve un evento entero en JSON: excepciones con todos sus fotogramas, breadcrumbs, contexts, request, usuario, etiquetas, release, entorno y SDK. " +
+			"Úsala cuando get_issue_context no basta: para ver un evento que no es el último (los ids salen en list_events) o los datos que el Markdown resume, como contexts o los fotogramas de librerías.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in eventIn) (*mcp.CallToolResult, any, error) {
+		e, err := st.Event(ctx, in.EventID)
+		if err != nil {
+			return nil, nil, toolErrorFor(err, "no existe ese evento")
+		}
+		return result(e, nil)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_comments",
+		Annotations: readOnly,
+		Description: "Devuelve el historial de un issue, del más viejo al más nuevo: los comentarios (Markdown, autor y si es una persona o un token) y los cambios de estado (quién, desde dónde: interfaz, API, MCP, la ingesta al volver como regresión o un despliegue; de qué estado a cuál, la release y el comentario que se dejó con el cambio). " +
+			"Úsala para saber qué se ha intentado ya con un error antes de ponerte, o para comprobar que tu comentario o tu cambio de estado han quedado.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in issueOnlyIn) (*mcp.CallToolResult, any, error) {
+		h, err := st.History(ctx, in.IssueID, actor(ctx))
+		if err != nil {
+			return nil, nil, toolErrorFor(err, "no existe ese issue")
+		}
+		return result(map[string]any{"data": h}, nil)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name: "add_comment",
+		Annotations: &mcp.ToolAnnotations{
+			DestructiveHint: new(false),
+			OpenWorldHint:   new(false),
+		},
+		Description: "Añade un comentario en Markdown al historial de un issue, firmado con el nombre de tu token. " +
+			"Úsala para dejar constancia de lo que has averiguado o hecho: la causa, el arreglo (commit, PR, fichero) o por qué no hay nada que arreglar. " +
+			"Si a la vez cambias el estado, mejor el comment de set_issue_status, que queda unido al cambio. Cada llamada añade un comentario nuevo.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in addCommentIn) (*mcp.CallToolResult, any, error) {
+		a := actor(ctx)
+		if a == nil {
+			return nil, nil, errors.New("no se sabe quién comenta: hace falta un token")
+		}
+		c, err := st.AddComment(ctx, in.IssueID, *a, in.Body)
+		if err != nil {
+			return nil, nil, toolErrorFor(err, "no existe ese issue")
+		}
+		return result(c, nil)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_releases",
+		Annotations: readOnly,
+		Description: "Lista las releases, de la más nueva a la más vieja, con sus despliegues y cuántos errores nuevos (new_issues), con eventos (issues), regresiones y eventos trajo cada una. " +
+			"Úsala para saber qué se ha desplegado y dónde, o qué release empeoró las cosas; luego get_release para el detalle de una. Si la respuesta trae next_cursor, hay más páginas.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listReleasesIn) (*mcp.CallToolResult, any, error) {
+		page, err := st.ListReleases(ctx, store.ReleaseFilter(in))
+		return result(page, err)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "get_release",
+		Annotations: readOnly,
+		Description: "Devuelve una release de un proyecto con sus despliegues, la anterior y la siguiente, y lo nuevo que trajo: los issues que aparecieron con ella (new), las regresiones (regressed), los que ya existían y siguieron saliendo (continued) y los que dejaron de salir o se resolvieron al desplegarla (stopped). " +
+			"Úsala tras un despliegue para ver si rompió algo o si arregló lo que debía; para buscar los issues de una release, list_issues con release:<versión>.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in releaseIn) (*mcp.CallToolResult, any, error) {
+		p, err := project(ctx, st, in.Project)
+		if err != nil {
+			return nil, nil, toolErrorFor(err, "no existe ese proyecto")
+		}
+		d, err := st.ReleaseDetail(ctx, p.ID, in.Version, in.Environment)
+		if err != nil {
+			return nil, nil, toolErrorFor(err, "no existe esa release en el proyecto")
+		}
+		return result(d, nil)
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
 		Name: "set_issue_status",
 		Annotations: &mcp.ToolAnnotations{
 			IdempotentHint:  true,
@@ -121,17 +274,42 @@ func New(st *store.Store) *mcp.Server {
 		},
 		Description: "Cambia el estado de un issue. resolved: arreglado; si vuelve a ocurrir, se reabre como regresión. " +
 			"resolved_next: arreglado en el próximo release (úsalo cuando el arreglo aún no está desplegado); pasa a resolved al desplegarse una release posterior a la de su último evento, y se reabre como regresión si ocurre en una release posterior. " +
-			"silenced: no avisar más aunque siga ocurriendo. open: reabrirlo. Úsala solo cuando el usuario lo pida o tras arreglar el error.",
+			"silenced: no avisar más aunque siga ocurriendo. open: reabrirlo. Úsala solo cuando el usuario lo pida o tras arreglar el error. " +
+			"Con comment (Markdown), el comentario queda unido al cambio en el historial: di qué se arregló y dónde. El cambio queda en el historial con el nombre de tu token; repetir el mismo estado no apunta nada nuevo.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in setStatusIn) (*mcp.CallToolResult, any, error) {
-		issue, err := st.SetIssueStatus(ctx, in.IssueID, in.Status)
+		issue, err := st.ChangeIssueStatus(ctx, in.IssueID, in.Status, store.StatusChange{
+			Actor: actor(ctx), Source: store.SourceMCP, Comment: in.Comment,
+		})
 		return result(issue, err)
 	})
 	return s
 }
 
+// project busca un proyecto por id o por nombre.
+func project(ctx context.Context, st *store.Store, ref string) (store.Project, error) {
+	if id, err := strconv.ParseInt(ref, 10, 64); err == nil {
+		if p, err := st.ProjectByID(ctx, id); !errors.Is(err, store.ErrNotFound) {
+			return p, err
+		}
+	}
+	return st.ProjectByName(ctx, ref)
+}
+
+func textResult(s string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+}
+
+// toolErrorFor es toolError con su propio mensaje para lo que no existe.
+func toolErrorFor(err error, notFound string) error {
+	if errors.Is(err, store.ErrNotFound) {
+		return errors.New(notFound)
+	}
+	return toolError(err)
+}
+
 // Handler sirve el MCP por Streamable HTTP. La autenticación va fuera.
-func Handler(st *store.Store) http.Handler {
-	s := New(st)
+func Handler(st *store.Store, opts Options) http.Handler {
+	s := New(st, opts)
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, &mcp.StreamableHTTPOptions{
 		// Sin sesiones en memoria: cualquier réplica atiende cualquier petición.
 		Stateless:    true,

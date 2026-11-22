@@ -84,7 +84,7 @@ func Issue(d store.IssueDetail) string {
 			if len(x.Frames) == 0 {
 				w("(sin fotogramas)\n")
 			}
-			writeFrames(&b, x.Frames)
+			writeFrames(&b, x.Frames, "####", false)
 		}
 	}
 
@@ -104,11 +104,29 @@ func Issue(d store.IssueDetail) string {
 	return b.String()
 }
 
-func writeFrames(b *strings.Builder, frames []event.Frame) {
+// writeFrames pone los fotogramas con código bajo un título de nivel heading.
+// Con libsCollapsed, cada tira de fotogramas de librerías es una sola línea.
+func writeFrames(b *strings.Builder, frames []event.Frame, heading string, libsCollapsed bool) {
 	afterCode := false
+	libs := 0
+	flushLibs := func() {
+		if libs > 0 {
+			fmt.Fprintf(b, "- (%d %s de librerías, sin poner)\n", libs, map[bool]string{true: "fotograma", false: "fotogramas"}[libs == 1])
+			libs = 0
+		}
+	}
 	for i, f := range frames {
 		// Un fotograma sin in_app es casi siempre código propio (el __main__ en Python).
 		app := f.InApp == nil || *f.InApp
+		if !app && libsCollapsed {
+			if libs == 0 && afterCode {
+				b.WriteString("\n")
+			}
+			afterCode = false
+			libs++
+			continue
+		}
+		flushLibs()
 		if !app || (f.ContextLine == "" && len(f.PreContext) == 0) {
 			if afterCode {
 				b.WriteString("\n")
@@ -125,7 +143,7 @@ func writeFrames(b *strings.Builder, frames []event.Frame) {
 			b.WriteString("\n")
 		}
 		afterCode = true
-		fmt.Fprintf(b, "#### %s (app)\n\n", location(f))
+		fmt.Fprintf(b, "%s %s (app)\n\n", heading, location(f))
 		var lines []string
 		first := f.Line - len(f.PreContext)
 		width := len(strconv.Itoa(f.Line + len(f.PostContext)))
@@ -145,6 +163,7 @@ func writeFrames(b *strings.Builder, frames []event.Frame) {
 		}
 		b.WriteString(codeBlock(lines))
 	}
+	flushLibs()
 }
 
 func location(f event.Frame) string {

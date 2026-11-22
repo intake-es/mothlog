@@ -110,6 +110,41 @@ export interface EventSummary {
   message: string;
 }
 
+export interface Actor {
+  name: string;
+  /** user: una persona con sesión; token: un token de la API o del MCP. */
+  kind: 'user' | 'token';
+}
+
+export interface IssueComment {
+  id: number;
+  issue_id: number;
+  author: Actor;
+  body: string;
+  created_at: string;
+  /** Si es de quien pregunta: solo puede borrar los suyos. */
+  mine: boolean;
+}
+
+export type ChangeSource = 'ui' | 'api' | 'mcp' | 'ingest' | 'deploy';
+
+/** Un comentario o un cambio de estado del historial de un error. */
+export interface HistoryEntry {
+  type: 'comment' | 'status';
+  id: number;
+  at: string;
+  /** Vacío en los cambios de la ingesta y de los despliegues. */
+  author: Actor | null;
+  body?: string;
+  mine?: boolean;
+  source?: ChangeSource;
+  from?: IssueStatus;
+  to?: IssueStatus;
+  release?: string;
+  /** El comentario que se dejó con el cambio. */
+  comment?: IssueComment;
+}
+
 export interface TagValue {
   value: string;
   count: number;
@@ -363,6 +398,26 @@ export class Api {
     return this.http.get(`${BASE}/issues/${issueId}/stacktrace.md`, { responseType: 'text' });
   }
 
+  /** El Markdown con todo el contexto del error, para pegárselo a un agente. */
+  context(issueId: number, environment = ''): Observable<string> {
+    return this.http.get(`${BASE}/issues/${issueId}/context.md`, {
+      params: envParams(environment),
+      responseType: 'text',
+    });
+  }
+
+  history(issueId: number): Observable<Page<HistoryEntry>> {
+    return this.http.get<Page<HistoryEntry>>(`${BASE}/issues/${issueId}/history/`);
+  }
+
+  addComment(issueId: number, body: string): Observable<IssueComment> {
+    return this.http.post<IssueComment>(`${BASE}/issues/${issueId}/comments/`, { body });
+  }
+
+  deleteComment(issueId: number, commentId: number): Observable<void> {
+    return this.http.delete<void>(`${BASE}/issues/${issueId}/comments/${commentId}`);
+  }
+
   setStatus(issueId: number, status: IssueStatus): Observable<Issue> {
     return this.http.post<Issue>(`${BASE}/issues/${issueId}/status`, { status });
   }
@@ -419,7 +474,7 @@ export function apiError(err: unknown): string {
   if (e?.error && typeof e.error === 'object' && e.error.error) {
     return e.error.error;
   }
-  // Las peticiones de texto (stacktrace.md) traen el JSON del error sin leer.
+  // Las peticiones de texto (stacktrace.md, context.md) traen el JSON del error sin leer.
   if (typeof e?.error === 'string') {
     try {
       const body = JSON.parse(e.error) as { error?: unknown };

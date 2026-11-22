@@ -1,0 +1,103 @@
+@if (loading()) {
+  <div aria-busy="true" [attr.aria-label]="t('history.loading')">
+    <span class="sp-skeleton" style="width: 55%; height: 0.8rem"></span>
+    <span class="sp-skeleton" style="width: 35%; height: 0.8rem; margin-top: 0.6rem"></span>
+  </div>
+} @else if (failed()) {
+  <p class="muted" role="alert">
+    {{ t('history.error') }}
+    <button type="button" class="link" (click)="retry()">{{ t('common.retry') }}</button>
+  </p>
+} @else {
+  @if (rows().length) {
+    <ol class="feed">
+      @for (r of rows(); track r.entry.type + r.entry.id) {
+        <li class="item" [class.item--comment]="r.entry.type === 'comment'">
+          @if (r.entry.type === 'comment') {
+            <span class="avatar" [class.avatar--token]="r.entry.author?.kind === 'token'" aria-hidden="true">
+              @if (r.entry.author?.kind === 'token') {
+                <svg appIcon="robot"></svg>
+              } @else {
+                {{ initial(r.entry.author) }}
+              }
+            </span>
+          } @else {
+            <span class="marker" aria-hidden="true"><svg [appIcon]="r.icon"></svg></span>
+          }
+          <div class="item__body">
+            <p class="item__line">
+              @if (r.entry.author; as a) {
+                <strong class="item__who">{{ a.name }} </strong>
+                @if (a.kind === 'token') {
+                  <span class="item__kind">{{ t('history.token') }} </span>
+                }
+                @if (r.entry.type === 'comment') {
+                  <span>{{ t('history.commented') }} </span>
+                } @else {
+                  <span>{{ t('history.changed') }} </span>
+                  @if (r.entry.from; as from) {
+                    <span class="sp-badge sp-badge--sm" [class]="statusBadge[from]">{{ t(statusLabel[from]) }} </span>
+                  }
+                  <span class="item__arrow" aria-hidden="true">→ </span>
+                  @if (r.entry.to; as to) {
+                    <span class="sp-badge sp-badge--sm" [class]="statusBadge[to]">{{ t(statusLabel[to]) }} </span>
+                  }
+                }
+              } @else {
+                <strong class="item__who">intake-errors </strong>
+                <span>{{ r.system }} </span>
+              }
+              @if (r.entry.author && r.entry.release) {
+                <span class="item__meta mono">{{ r.entry.release }} </span>
+              }
+              @if (r.source) {
+                <span class="item__meta">{{ r.source }} </span>
+              }
+              <time class="item__meta item__when" [attr.datetime]="r.entry.at" [attr.title]="r.title">{{ r.when }}</time>
+            </p>
+            @if (r.comment; as c) {
+              <div class="comment">
+                <p class="comment__body">{{ c.body }}</p>
+                @if (c.mine) {
+                  <button
+                    type="button"
+                    class="icon-btn comment__delete"
+                    [attr.aria-label]="t('history.delete')"
+                    [attr.title]="t('history.delete')"
+                    [disabled]="deleting() === c.id"
+                    (click)="remove(c)"
+                  >
+                    <svg appIcon="trash"></svg>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        </li>
+      }
+    </ol>
+  } @else {
+    <p class="muted">{{ t('history.empty') }}</p>
+  }
+
+  <form class="composer" (submit)="$event.preventDefault(); send()">
+    <label class="visually-hidden" for="history-comment">{{ t('history.label') }}</label>
+    <textarea
+      id="history-comment"
+      class="composer__input"
+      rows="3"
+      [value]="draft()"
+      [placeholder]="t('history.placeholder')"
+      [disabled]="sending()"
+      (input)="onInput($event)"
+      (keydown)="onKeydown($event)"
+    ></textarea>
+    <div class="composer__foot">
+      <span class="composer__hint">{{ t('history.hint') }}</span>
+      <button type="submit" class="btn" [disabled]="!canSend()">
+        <svg appIcon="paper-plane-tilt"></svg>
+        {{ t('history.send') }}
+      </button>
+    </div>
+  </form>
+}

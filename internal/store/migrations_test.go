@@ -291,3 +291,81 @@ func TestMigrationAlertRules(t *testing.T) {
 		t.Fatalf("volver a subir: %v", err)
 	}
 }
+
+func TestMigrationComments(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 12); err != nil {
+		t.Fatal(err)
+	}
+	var issue int64
+	if err := pool.QueryRow(ctx, `
+		WITH p AS (INSERT INTO projects (name, public_key) VALUES ('web', 'clave-web') RETURNING id)
+		INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		SELECT id, 'fp', 'TypeError', now(), now(), 1 FROM p RETURNING id`).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	res, err := p.UpTo(ctx, 13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res) != 1 || res[0].Source.Version != 13 {
+		t.Fatalf("aplicadas = %v", res)
+	}
+	var comment int64
+	if err := pool.QueryRow(ctx, `INSERT INTO issue_comments (issue_id, author, author_kind, body)
+		VALUES ($1, 'agente', 'token', 'mirado') RETURNING id`, issue).Scan(&comment); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO issue_status_changes (issue_id, author, author_kind, source, from_status, to_status, comment_id)
+		VALUES ($1, 'agente', 'token', 'mcp', 'open', 'resolved', $2)`, issue, comment); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO issue_status_changes (issue_id, source, from_status, to_status, release)
+		VALUES ($1, 'ingest', 'resolved', 'open', 'v2')`, issue); err != nil {
+		t.Fatalf("un cambio sin autor: %v", err)
+	}
+	for _, bad := range []string{
+		`INSERT INTO issue_comments (issue_id, author, author_kind, body) VALUES ($1, 'x', 'robot', 'hola')`,
+		`INSERT INTO issue_comments (issue_id, author, author_kind, body) VALUES ($1, 'x', 'user', '')`,
+		`INSERT INTO issue_status_changes (issue_id, author, source, from_status, to_status) VALUES ($1, 'x', 'mcp', 'open', 'resolved')`,
+		`INSERT INTO issue_status_changes (issue_id, source, from_status, to_status) VALUES ($1, 'cli', 'open', 'resolved')`,
+	} {
+		if _, err := pool.Exec(ctx, bad, issue); err == nil {
+			t.Errorf("no debería caber: %s", bad)
+		}
+	}
+	// Borrar el comentario deja el cambio; borrar el issue se lleva los dos.
+	if _, err := pool.Exec(ctx, `DELETE FROM issue_comments WHERE id = $1`, comment); err != nil {
+		t.Fatal(err)
+	}
+	var changes int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM issue_status_changes WHERE issue_id = $1 AND comment_id IS NULL`, issue).Scan(&changes); err != nil || changes != 2 {
+		t.Errorf("cambios tras borrar el comentario = %d, %v", changes, err)
+	}
+
+	if _, err := p.DownTo(ctx, 12); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('issue_comments') IS NOT NULL OR to_regclass('issue_status_changes') IS NOT NULL`).Scan(&exists); err != nil || exists {
+		t.Errorf("tras bajar siguen las tablas: %v, %v", exists, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM issues WHERE id = $1`, issue); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -28,6 +28,7 @@ import { PageTitle } from '../../core/page-title';
 import { DayChart } from '../../ui/day-chart';
 import { Icon } from '../../ui/icon';
 import { Breadcrumbs } from './breadcrumbs';
+import { History } from './history';
 import { Stacktrace } from './stacktrace';
 import { TagsPanel } from './tags-panel';
 
@@ -57,7 +58,7 @@ const STATUS_TOAST: Record<IssueStatus, Key> = {
 
 @Component({
   selector: 'app-issue-detail',
-  imports: [RouterLink, Icon, DayChart, Stacktrace, Breadcrumbs, TagsPanel],
+  imports: [RouterLink, Icon, DayChart, Stacktrace, Breadcrumbs, TagsPanel, History],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown.escape)': 'menuOpen.set(false)' },
   templateUrl: './issue-detail.html',
@@ -92,6 +93,8 @@ export class IssueDetailPage {
   protected readonly menuOpen = signal(false);
   protected readonly copied = signal(false);
   protected readonly toast = signal('');
+  /** Sube con cada cambio de estado, para que el historial lo vuelva a pedir. */
+  protected readonly historyVersion = signal(0);
 
   private subs: Subscription[] = [];
   private eventSub?: Subscription;
@@ -330,6 +333,7 @@ export class IssueDetailPage {
       next: (issue) => {
         this.detail.set({ ...d, ...issue });
         this.busy.set(false);
+        this.historyVersion.update((v) => v + 1);
         this.notify(this.t(STATUS_TOAST[status]));
       },
       error: (err) => {
@@ -339,13 +343,13 @@ export class IssueDetailPage {
     });
   }
 
-  protected copyForClaude(): void {
+  protected copyForAgent(): void {
     const d = this.detail();
     if (!d) {
       return;
     }
     // La petición sale ya, pero el portapapeles se abre aquí, dentro del clic.
-    const md = firstValueFrom(this.api.stacktrace(d.id));
+    const md = firstValueFrom(this.api.context(d.id, environment()));
     copyText(md).then(
       () => {
         this.copied.set(true);
@@ -360,7 +364,7 @@ export class IssueDetailPage {
     );
   }
 
-  private notify(message: string): void {
+  protected notify(message: string): void {
     this.toast.set(message);
     this.later(() => {
       if (this.toast() === message) {

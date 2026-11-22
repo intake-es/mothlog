@@ -1,0 +1,23 @@
+# intake-errors
+
+> Recibe los errores que envían los SDK de Sentry, los agrupa en issues y deja leerlos, comentarlos y resolverlos con una API REST y un servidor MCP. Todo pide `Authorization: Bearer <token>` salvo este fichero.
+
+Un agente puede llevar un error de principio a fin sin salir del MCP: buscarlo, leer su contexto, arreglarlo, comentar y marcar el estado. Cada comentario y cada cambio de estado queda en el historial del issue con el nombre del token.
+
+## MCP
+
+- Servidor: {base}/mcp (Streamable HTTP, sin sesión; cabecera `Authorization: Bearer <token>`)
+- Flujo: `list_issues` (con una búsqueda como `is:open environment:production`) → `get_issue_context` → arreglar el código → `add_comment` → `set_issue_status` con `resolved_next` (resuelto en la siguiente release) o `resolved`.
+- Herramientas: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `list_releases` y `get_release`.
+
+## API
+
+- [Contexto de un issue en Markdown]({base}/api/0/issues/{id}/context.md): resumen, releases, entornos, etiquetas, la traza con el código, breadcrumbs, historial y qué hacer; `?environment=` y `?event=`.
+- [Issues]({base}/api/0/issues/?query=is:open): la lista, con el lenguaje de búsqueda en `query`.
+- [Historial]({base}/api/0/issues/{id}/history/): comentarios y cambios de estado, por fecha.
+- `POST {base}/api/0/issues/{id}/comments/` con `{"body": "..."}` comenta; `POST {base}/api/0/issues/{id}/status` con `{"status": "resolved_next", "comment": "..."}` cambia el estado.
+- [Releases]({base}/api/0/releases/): las releases con sus despliegues y lo que trajo cada una.
+
+## Más
+
+- En el repositorio: `docs/agentes.md` (crear un token, conectar un cliente de MCP y un ejemplo del flujo) y `README.md` (la API entera, la búsqueda, los avisos y el despliegue).

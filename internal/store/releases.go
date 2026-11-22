@@ -225,6 +225,11 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 		if err != nil {
 			return fmt.Errorf("resolver issues: %w", err)
 		}
+		for _, id := range resolved {
+			if err := recordStatusChange(ctx, tx, id, nil, SourceDeploy, "resolved_next", "resolved", &version, nil); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {

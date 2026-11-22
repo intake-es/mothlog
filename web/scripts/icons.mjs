@@ -38,6 +38,7 @@ const ICONS = {
     'package',
     'paper-plane-tilt',
     'plus',
+    'robot',
     'rocket-launch',
     'sign-out',
     'slack-logo',
