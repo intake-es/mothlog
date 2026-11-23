@@ -190,6 +190,54 @@ export function draftOf(r: Rule): Draft {
   };
 }
 
+/** El campo secreto que el servidor no conserva si la acción cambia de URL. */
+const BOUND_SECRET: Partial<Record<ActionType, 'token' | 'secret'>> = {
+  ntfy: 'token',
+  webhook: 'secret',
+};
+
+/**
+ * Cambia un campo de la acción. Si cambia la URL de ntfy o del webhook, el
+ * secreto guardado no la sigue: se vacía para escribirlo otra vez y vuelve si
+ * la URL vuelve a ser la guardada.
+ */
+export function withField(
+  a: ActionDraft,
+  field: ActionField,
+  value: string,
+  saved?: RuleAction,
+): ActionDraft {
+  const next = { ...a, [field]: value };
+  const key = BOUND_SECRET[a.type];
+  if (field !== 'url' || !key || !saved || saved.type !== a.type) {
+    return next;
+  }
+  const kept = saved[key] ?? '';
+  if (value.trim() === (saved.url ?? '')) {
+    if (next[key] === '') {
+      next[key] = kept;
+    }
+  } else if (next[key] === kept) {
+    next[key] = '';
+  }
+  return next;
+}
+
+/** Si la acción ha cambiado de URL y su secreto guardado hay que escribirlo otra vez. */
+export function secretAgain(a: ActionDraft, field: ActionField, saved?: RuleAction): Key | null {
+  const key = BOUND_SECRET[a.type];
+  if (
+    field !== key ||
+    !saved ||
+    saved.type !== a.type ||
+    !saved[key] ||
+    a.url.trim() === (saved.url ?? '')
+  ) {
+    return null;
+  }
+  return a.type === 'ntfy' ? 'editor.tokenAgain' : 'editor.secretAgain';
+}
+
 function list(s: string): string[] {
   return s
     .split(',')

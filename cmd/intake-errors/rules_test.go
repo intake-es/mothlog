@@ -21,7 +21,7 @@ func TestRulesCommand(t *testing.T) {
 	db := storetest.NewDB(t)
 	ctx := context.Background()
 	db.AddProject(t, "web")
-	alerts, err := alert.New(db.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), alert.Options{})
+	alerts, err := alert.New(db.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), alert.Options{AllowPrivate: true})
 	if err != nil {
 		t.Fatal(err)
 	}

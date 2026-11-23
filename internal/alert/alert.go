@@ -22,6 +22,7 @@ import (
 	"github.com/intake-es/intake-errors/internal/digest"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
+	"github.com/intake-es/intake-errors/internal/netguard"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -60,7 +61,30 @@ type Options struct {
 	// GitHubAPIURL vacío es la API de GitHub.
 	GitHubAPIURL string
 	Interval     time.Duration
-	HTTPClient   *http.Client
+	// HTTPClient es el de los endpoints que pone el operador: SLACK_WEBHOOK_URL,
+	// Linear, GitHub y Telegram.
+	HTTPClient *http.Client
+	// AllowPrivate deja a las acciones y los resúmenes mandar a loopback y a
+	// redes privadas (ALERTS_ALLOW_PRIVATE); a metadatos y link-local, nunca.
+	AllowPrivate bool
+	// DestinationClient es el de las URL que pone quien edita las reglas y los
+	// resúmenes (Slack, Discord, ntfy y webhook); vacío, uno con netguard.
+	DestinationClient *http.Client
+}
+
+// AllowPrivateEnv es la variable que deja a los avisos ir a redes privadas.
+const AllowPrivateEnv = "ALERTS_ALLOW_PRIVATE"
+
+// DestinationClient no sigue redirecciones (un 302 convertiría el POST en un
+// GET a otro sitio) y solo conecta a las direcciones que netguard permite.
+func DestinationClient(allowPrivate bool) *http.Client {
+	return &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: netguard.Transport(netguard.Policy{AllowPrivate: allowPrivate, Env: AllowPrivateEnv}),
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 type Alerter struct {
@@ -74,6 +98,7 @@ type Alerter struct {
 
 	base           string
 	client         *http.Client
+	dest           *http.Client
 	linearKey      string
 	linearEndpoint string
 	linearTeam     string
@@ -101,8 +126,10 @@ type rulesSeen struct {
 // otra réplica o de la CLI, como mucho pasado este tiempo.
 const RulesCacheTTL = 30 * time.Second
 
+// sender manda el aviso fuera de cualquier transacción: lo que haya que
+// guardar en la base tras mandarlo lo deja en a.after.
 type sender interface {
-	send(ctx context.Context, tx db.Tx, a *pending) error
+	send(ctx context.Context, a *pending) error
 }
 
 type pending struct {
@@ -131,6 +158,11 @@ type pending struct {
 	digest        *digest.Digest
 	digestProject int64
 
+	// test es un envío a mano, de prueba o del resumen, que no guarda nada.
+	test bool
+	// after se aplica, si el envío sale bien, en la transacción que lo apunta.
+	after []func(ctx context.Context, tx db.Tx) error
+
 	project          string
 	labels           []string
 	title            string
@@ -151,6 +183,10 @@ func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 	a.client = o.HTTPClient
 	if a.client == nil {
 		a.client = &http.Client{Timeout: 15 * time.Second}
+	}
+	a.dest = o.DestinationClient
+	if a.dest == nil {
+		a.dest = DestinationClient(o.AllowPrivate)
 	}
 	a.linearKey, a.linearTeam, a.linearLabels = o.LinearAPIKey, o.LinearTeamID, o.LinearLabelIDs
 	a.linearEndpoint = o.LinearAPIURL
@@ -385,14 +421,12 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	if digestID != nil {
 		snd, sendErr = a.loadDigest(ctx, &p, *digestID, detail)
 		if sendErr == nil {
-			sendErr = snd.send(ctx, tx, &p)
+			id := *digestID
+			p.after = append(p.after, func(ctx context.Context, tx db.Tx) error {
+				return a.st.DigestSent(ctx, tx, id, a.now().UTC())
+			})
 		}
-		if sendErr == nil {
-			if err := a.st.DigestSent(ctx, tx, *digestID, a.now().UTC()); err != nil {
-				return false, err
-			}
-		}
-		return a.finish(ctx, tx, &p, channel, attempts, now, sendErr)
+		return a.deliver(ctx, tx, &p, snd, channel, attempts, now, sendErr)
 	}
 	switch {
 	case monitorID != nil:
@@ -421,10 +455,54 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 			p.ev = &latest.Event
 		}
 	}
-	if sendErr == nil {
-		sendErr = snd.send(ctx, tx, &p)
+	return a.deliver(ctx, tx, &p, snd, channel, attempts, now, sendErr)
+}
+
+// SendLease es lo que se aparta un aviso mientras se manda, fuera de la
+// transacción: si el proceso muere a medias, otro lo vuelve a coger pasado
+// este tiempo.
+const SendLease = 5 * time.Minute
+
+// deliver aparta el aviso y confirma tx antes de mandarlo, para no tener la
+// base bloqueada mientras espera al destino (con SQLite, todas las escrituras,
+// también la ingesta). El resultado se apunta después en otra transacción.
+func (a *Alerter) deliver(ctx context.Context, tx db.Tx, p *pending, snd sender, channel string, attempts int,
+	now time.Time, sendErr error) (bool, error) {
+	if sendErr != nil {
+		return a.finish(ctx, tx, p, channel, attempts, now, sendErr)
 	}
-	return a.finish(ctx, tx, &p, channel, attempts, now, sendErr)
+	if _, err := tx.Exec(ctx, `UPDATE alert_outbox SET next_attempt_at = $2 WHERE id = $1`, p.id, now.Add(SendLease)); err != nil {
+		return false, fmt.Errorf("apartar aviso %d: %w", p.id, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("apartar aviso %d: %w", p.id, err)
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, SendLease/2)
+	sendErr = snd.send(sendCtx, p)
+	cancel()
+	stopping := ctx.Err()
+	// Lo enviado se apunta aunque el servidor se esté parando.
+	ctx = context.WithoutCancel(ctx)
+	if sendErr != nil && stopping != nil {
+		// Cortado al pararse: vuelve a la cola sin contar como intento.
+		if _, err := a.st.Pool().Exec(ctx, `UPDATE alert_outbox SET next_attempt_at = $2 WHERE id = $1`, p.id, now); err != nil {
+			return false, err
+		}
+		return false, stopping
+	}
+	tx, err := a.st.Pool().Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if sendErr == nil {
+		for _, f := range p.after {
+			if err := f(ctx, tx); err != nil {
+				return false, fmt.Errorf("guardar aviso %d: %w", p.id, err)
+			}
+		}
+	}
+	return a.finish(ctx, tx, p, channel, attempts, now, sendErr)
 }
 
 func (a *Alerter) loadIssue(ctx context.Context, tx db.Tx, p *pending) error {

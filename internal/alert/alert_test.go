@@ -314,6 +314,8 @@ func newEnv(t *testing.T, configure func(*Options)) *env {
 		LinearAPIURL:    linearSrv.URL,
 		LinearTeamID:    teamID,
 		LinearLabelIDs:  baseLabels,
+		// Los destinos de las reglas de los tests son servidores en loopback.
+		AllowPrivate: true,
 	}
 	if configure != nil {
 		configure(&e.opts)
@@ -551,6 +553,11 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 	if _, err := e.db.Pool().Exec(ctx, db.ByEngine(e.db.Pool().Dialect(), `DROP TRIGGER rompe ON issue_links`, `DROP TRIGGER rompe`)); err != nil {
 		t.Fatal(err)
 	}
+	// El aviso se quedó apartado mientras se mandaba; vuelve pasado SendLease.
+	if n := e.send(t); n != 0 {
+		t.Fatalf("enviados antes de SendLease = %d", n)
+	}
+	e.clock.set(e.clock.now().Add(SendLease))
 	if n := e.send(t); n != 1 {
 		t.Fatalf("enviados = %d", n)
 	}

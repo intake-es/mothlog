@@ -29,6 +29,9 @@ const (
 	MaxAge = time.Minute
 
 	maxBody = 5 << 20
+
+	// MaxLinkedIssues son los errores que puede enlazar un PR como mucho.
+	MaxLinkedIssues = 20
 )
 
 type Options struct {
@@ -156,9 +159,9 @@ func (h *Handler) apply(ctx context.Context, issueID int64, status string, by st
 
 // failed responde con un error para que el sitio reintente la entrega, y la
 // olvida para aceptar el reintento.
-func (h *Handler) failed(w http.ResponseWriter, r *http.Request, provider, delivery string, err error) {
+func (h *Handler) failed(w http.ResponseWriter, r *http.Request, provider, delivery string, body []byte, err error) {
 	h.opts.Log.ErrorContext(r.Context(), "webhook", "origen", provider, "entrega", delivery, "err", err)
-	if ferr := h.st.ForgetWebhookDelivery(context.WithoutCancel(r.Context()), provider, delivery); ferr != nil {
+	if ferr := h.st.ForgetWebhookDelivery(context.WithoutCancel(r.Context()), provider, delivery, body); ferr != nil {
 		h.opts.Log.ErrorContext(r.Context(), "webhook", "origen", provider, "err", ferr)
 	}
 	reply(w, http.StatusInternalServerError, "error interno")

@@ -9,7 +9,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { type ActionType, Api, apiError, type Rule } from '../../core/api';
+import { type ActionType, Api, apiError, type Rule, type RuleAction } from '../../core/api';
 import { copyText } from '../../core/clipboard';
 import { I18n, type Key } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
@@ -26,7 +26,9 @@ import {
   inputOf,
   LEVELS,
   newDraft,
+  secretAgain,
   textParts,
+  withField,
 } from './rule-draft';
 
 type TestState = { state: 'sending' | 'ok' | 'error'; message?: string };
@@ -133,8 +135,18 @@ export class RuleEditor {
 
   protected setAction(i: number, field: ActionField, value: string): void {
     this.patch({
-      actions: this.draft().actions.map((a, j) => (j === i ? { ...a, [field]: value } : a)),
+      actions: this.draft().actions.map((a, j) =>
+        j === i ? withField(a, field, value, this.savedAction(a.id)) : a,
+      ),
     });
+  }
+
+  private savedAction(id: string): RuleAction | undefined {
+    return this.rule()?.actions.find((a) => a.id === id);
+  }
+
+  protected secretAgain(a: ActionDraft, field: ActionField): Key | null {
+    return secretAgain(a, field, this.savedAction(a.id));
   }
 
   protected addAction(type: ActionType): void {

@@ -21,7 +21,7 @@ import (
 func setupDigest(t *testing.T) *env {
 	t.Helper()
 	db := storetest.NewDB(t)
-	alerts, err := alert.New(db.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), alert.Options{PublicURL: "https://errors.example.com"})
+	alerts, err := alert.New(db.Store, slog.New(slog.NewTextHandler(io.Discard, nil)), alert.Options{PublicURL: "https://errors.example.com", AllowPrivate: true})
 	if err != nil {
 		t.Fatal(err)
 	}

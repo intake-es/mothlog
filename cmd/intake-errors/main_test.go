@@ -53,6 +53,19 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAlertsAllowPrivate(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	t.Setenv("UPTIME_ALLOW_PRIVATE", "1")
+	t.Setenv("ALERTS_ALLOW_PRIVATE", "")
+	if c, err := loadConfig(); err != nil || c.Alerts.AllowPrivate {
+		t.Fatalf("sin ALERTS_ALLOW_PRIVATE = %v, %v: UPTIME_ALLOW_PRIVATE no vale para los avisos", c.Alerts.AllowPrivate, err)
+	}
+	t.Setenv("ALERTS_ALLOW_PRIVATE", "1")
+	if c, err := loadConfig(); err != nil || !c.Alerts.AllowPrivate {
+		t.Fatalf("con ALERTS_ALLOW_PRIVATE=1 = %v, %v", c.Alerts.AllowPrivate, err)
+	}
+}
+
 func TestLoadConfigLimits(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://x")
 	t.Setenv("RATE_LIMIT_PER_MINUTE", "")

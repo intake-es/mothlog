@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/intake-errors/internal/netguard"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -199,14 +201,44 @@ func post(ctx context.Context, client *http.Client, name, url string, body []byt
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s: %w", name, cleanErr(err))
+		return &connError{name: name, err: cleanErr(err)}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	// Del cuerpo no se guarda nada: el destino lo elige quien edita la regla.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("%s: %s: %s", name, resp.Status, strings.TrimSpace(string(msg)))
+		return fmt.Errorf("%s: %s", name, resp.Status)
 	}
 	return nil
+}
+
+// connError es un envío que no llegó a tener respuesta. El detalle va al
+// registro; a quien prueba la acción le llega lo que dice publicError.
+type connError struct {
+	name string
+	err  error
+}
+
+func (e *connError) Error() string { return e.name + ": " + e.err.Error() }
+func (e *connError) Unwrap() error { return e.err }
+
+// publicError es el fallo de un envío como se le cuenta a quien lo pide por
+// la API: si la dirección está bloqueada, por qué; de los demás fallos de
+// conexión, solo que no se pudo.
+func publicError(err error) string {
+	var ce *connError
+	if !errors.As(err, &ce) {
+		return err.Error()
+	}
+	var be *netguard.BlockedError
+	var ne net.Error
+	switch {
+	case errors.As(err, &be):
+		return ce.name + ": " + be.Reason()
+	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &ne) && ne.Timeout():
+		return ce.name + ": sin respuesta del destino"
+	}
+	return ce.name + ": no se pudo conectar con el destino"
 }
 
 func newUUID() string {

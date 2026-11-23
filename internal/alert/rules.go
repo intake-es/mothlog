@@ -269,7 +269,7 @@ func (a *Alerter) ruleSender(ctx context.Context, tx db.Tx, p *pending) (sender,
 func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
 	switch act.Type {
 	case store.ActionSlack:
-		return &slack{url: act.URL, client: a.client}, nil
+		return &slack{url: act.URL, client: a.dest}, nil
 	case store.ActionLinear:
 		if a.linearKey == "" {
 			return nil, errors.New("linear: falta LINEAR_API_KEY")
@@ -292,13 +292,13 @@ func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
 		}
 		return &email{st: a.st, cfg: a.smtp, to: act.To}, nil
 	case store.ActionDiscord:
-		return &discord{url: act.URL, client: a.client}, nil
+		return &discord{url: act.URL, client: a.dest}, nil
 	case store.ActionTelegram:
 		return &telegram{api: a.telegramAPI, token: act.BotToken, chat: act.ChatID, client: a.client}, nil
 	case store.ActionNtfy:
-		return &ntfy{url: act.URL, token: act.Token, client: a.client}, nil
+		return &ntfy{url: act.URL, token: act.Token, client: a.dest}, nil
 	case store.ActionWebhook:
-		return &webhook{st: a.st, url: act.URL, secret: act.Secret, client: a.client, now: a.now}, nil
+		return &webhook{st: a.st, url: act.URL, secret: act.Secret, client: a.dest, now: a.now}, nil
 	case store.ActionGitHub:
 		token := act.Token
 		if token == "" {
@@ -377,8 +377,9 @@ func (a *Alerter) TestAction(ctx context.Context, r store.Rule, actionID string)
 	if a.base != "" {
 		p.link = fmt.Sprintf("%s/projects/%d/settings", a.base, project.ID)
 	}
-	if err := snd.send(ctx, nil, p); err != nil {
-		return fmt.Errorf("%w: %v", ErrTestFailed, err)
+	if err := snd.send(ctx, p); err != nil {
+		a.log.WarnContext(ctx, "aviso de prueba fallido", "regla", r.ID, "accion", actionID, "err", err)
+		return fmt.Errorf("%w: %s", ErrTestFailed, publicError(err))
 	}
 	return nil
 }
@@ -393,7 +394,7 @@ func testPending(project store.Project, r store.Rule, now time.Time) *pending {
 	issue := store.Issue{ProjectID: project.ID, Project: project.Name, Title: title, Level: "info", Status: "open",
 		Count: 1, FirstSeen: now, LastSeen: now}
 	return &pending{
-		kind: kindTest, eventAt: now, createID: newUUID(), ruleID: r.ID, ruleName: r.Name,
+		kind: kindTest, test: true, eventAt: now, createID: newUUID(), ruleID: r.ID, ruleName: r.Name,
 		project: project.Name, labels: project.LinearLabelIDs, title: title, count: 1, ev: ev,
 		issue: &store.IssueDetail{Issue: issue, LatestEvent: &store.StoredEvent{EventID: ev.ID, ProjectID: project.ID,
 			OccurredAt: now, ReceivedAt: now, Event: *ev}},

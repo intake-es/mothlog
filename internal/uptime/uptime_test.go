@@ -120,7 +120,8 @@ func newEnv(t *testing.T) *env {
 	e := &env{db: db, slack: &slackMsgs{}, clock: &clock{t: time.Now().UTC().Truncate(time.Second).Add(time.Second)}}
 	slackSrv := httptest.NewServer(e.slack)
 	t.Cleanup(slackSrv.Close)
-	a, err := alert.New(db.Store, quiet(), alert.Options{PublicURL: "https://errores.test", SlackWebhookURL: slackSrv.URL + "/services/T/B/x"})
+	a, err := alert.New(db.Store, quiet(), alert.Options{PublicURL: "https://errores.test", SlackWebhookURL: slackSrv.URL + "/services/T/B/x",
+		AllowPrivate: true})
 	if err != nil {
 		t.Fatal(err)
 	}

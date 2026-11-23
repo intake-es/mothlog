@@ -162,7 +162,7 @@ type github struct {
 
 // send crea la issue del error en el repositorio o, si ya la tiene, la
 // comenta (y la reabre en una regresión). tx es nil en los avisos de prueba.
-func (g *github) send(ctx context.Context, tx db.Tx, p *pending) error {
+func (g *github) send(ctx context.Context, p *pending) error {
 	if p.cron != nil {
 		if p.kind == store.KindCronRecovered {
 			return nil
@@ -171,14 +171,16 @@ func (g *github) send(ctx context.Context, tx db.Tx, p *pending) error {
 		_, err := g.create(ctx, "["+p.project+"] "+what+": "+oneLine(p.cron.name), cronMarkdown(p))
 		return err
 	}
-	if tx == nil {
+	if p.test {
 		_, err := g.create(ctx, "["+p.project+"] "+oneLine(p.title), g.body(ctx, p))
 		return err
 	}
 	var ref string
 	var linkID int64
-	err := tx.QueryRow(ctx, `SELECT id, external_id FROM issue_links
-		WHERE issue_id = $1 AND provider = 'github' AND kind = 'issue' AND external_id LIKE $2 || '#%'
+	// El repositorio es exacto: con LIKE, «_» y «%» del nombre serían comodines.
+	err := g.st.Pool().QueryRow(ctx, `SELECT id, external_id FROM issue_links
+		WHERE issue_id = $1 AND provider = 'github' AND kind = 'issue'
+			AND substr(external_id, 1, length(CAST($2 AS text)) + 1) = CAST($2 AS text) || '#'
 		ORDER BY id DESC LIMIT 1`, p.issueID, g.repo).Scan(&linkID, &ref)
 	if err != nil && !errors.Is(err, db.ErrNoRows) {
 		return err
@@ -187,13 +189,14 @@ func (g *github) send(ctx context.Context, tx db.Tx, p *pending) error {
 		if p.kind == "new" {
 			return nil
 		}
-		err := g.update(ctx, tx, p, linkID, ref)
+		err := g.update(ctx, p, linkID, ref)
 		if !errors.Is(err, errGitHubNotFound) {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `DELETE FROM issue_links WHERE id = $1`, linkID); err != nil {
+		p.after = append(p.after, func(ctx context.Context, tx db.Tx) error {
+			_, err := tx.Exec(ctx, `DELETE FROM issue_links WHERE id = $1`, linkID)
 			return err
-		}
+		})
 	}
 	is, err := g.create(ctx, "["+p.project+"] "+oneLine(p.title), g.body(ctx, p))
 	if err != nil {
@@ -203,13 +206,16 @@ func (g *github) send(ctx context.Context, tx db.Tx, p *pending) error {
 	if g.ruleID == 0 {
 		ruleID = nil
 	}
-	_, err = store.SaveLink(ctx, tx, store.IssueLink{IssueID: p.issueID, Provider: store.ProviderGitHub, Kind: store.LinkIssue,
-		ExternalID: GitHubRef(g.repo, is.Number), Identifier: GitHubRef(g.repo, is.Number), URL: is.HTMLURL,
-		State: store.LinkOpen, StateName: "open", RuleID: ruleID, ActionID: g.actionID}, false)
-	return err
+	p.after = append(p.after, func(ctx context.Context, tx db.Tx) error {
+		_, err := store.SaveLink(ctx, tx, store.IssueLink{IssueID: p.issueID, Provider: store.ProviderGitHub, Kind: store.LinkIssue,
+			ExternalID: GitHubRef(g.repo, is.Number), Identifier: GitHubRef(g.repo, is.Number), URL: is.HTMLURL,
+			State: store.LinkOpen, StateName: "open", RuleID: ruleID, ActionID: g.actionID}, false)
+		return err
+	})
+	return nil
 }
 
-func (g *github) update(ctx context.Context, tx db.Tx, p *pending, linkID int64, ref string) error {
+func (g *github) update(ctx context.Context, p *pending, linkID int64, ref string) error {
 	if p.kind == "regressed" {
 		is, err := g.api.issue(ctx, ref)
 		if err != nil {
@@ -220,10 +226,11 @@ func (g *github) update(ctx context.Context, tx db.Tx, p *pending, linkID int64,
 				return err
 			}
 		}
-		if _, err := tx.Exec(ctx, `UPDATE issue_links SET state = 'open', state_name = 'open', updated_at = now() WHERE id = $1`,
-			linkID); err != nil {
+		p.after = append(p.after, func(ctx context.Context, tx db.Tx) error {
+			_, err := tx.Exec(ctx, `UPDATE issue_links SET state = 'open', state_name = 'open', updated_at = now() WHERE id = $1`,
+				linkID)
 			return err
-		}
+		})
 	}
 	what, _ := kindText(p)
 	body := fmt.Sprintf("%s: release %s, %s.", what, orNone(p.release, "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))

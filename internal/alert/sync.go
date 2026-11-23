@@ -53,7 +53,28 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	state, name, moved, sendErr := a.pushState(ctx, tx, link, store.StatusCategory(status))
+	// Como en deliver: se aparta el cambio y se confirma antes de llamar fuera.
+	if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET next_attempt_at = $2 WHERE id = $1`, id, now.Add(SendLease)); err != nil {
+		return false, fmt.Errorf("apartar cambio para enlace: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("apartar cambio para enlace: %w", err)
+	}
+	pushCtx, cancel := context.WithTimeout(ctx, SendLease/2)
+	state, name, moved, sendErr := a.pushState(pushCtx, link, store.StatusCategory(status))
+	cancel()
+	stopping := ctx.Err()
+	ctx = context.WithoutCancel(ctx)
+	if sendErr != nil && stopping != nil {
+		if _, err := a.st.Pool().Exec(ctx, `UPDATE issue_link_sync SET next_attempt_at = $2 WHERE id = $1`, id, now); err != nil {
+			return false, err
+		}
+		return false, stopping
+	}
+	if tx, err = a.st.Pool().Begin(ctx); err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
 	attempts++
 	switch {
 	case sendErr == nil:
@@ -93,7 +114,7 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 
 // pushState deja la issue de allí en la categoría, si no lo está ya, y
 // devuelve su estado, el nombre que tiene allí y si la ha movido.
-func (a *Alerter) pushState(ctx context.Context, tx db.Tx, link store.IssueLink, category string) (string, string, bool, error) {
+func (a *Alerter) pushState(ctx context.Context, link store.IssueLink, category string) (string, string, bool, error) {
 	switch link.Provider {
 	case store.ProviderLinear:
 		if a.linearKey == "" {
@@ -106,7 +127,7 @@ func (a *Alerter) pushState(ctx context.Context, tx db.Tx, link store.IssueLink,
 		}
 		return store.LinearStateCategory(st.Type), st.Name, moved, nil
 	case store.ProviderGitHub:
-		api, err := a.githubFor(ctx, tx, link)
+		api, err := a.githubFor(ctx, link)
 		if err != nil {
 			return "", "", false, err
 		}
@@ -127,11 +148,11 @@ func (a *Alerter) pushState(ctx context.Context, tx db.Tx, link store.IssueLink,
 
 // githubFor es la API de GitHub con el token de la acción que creó la issue
 // o, si no tiene, GITHUB_TOKEN.
-func (a *Alerter) githubFor(ctx context.Context, tx db.Tx, link store.IssueLink) (*githubAPI, error) {
+func (a *Alerter) githubFor(ctx context.Context, link store.IssueLink) (*githubAPI, error) {
 	token := a.githubToken
 	if link.RuleID != nil {
 		var actions []store.RuleAction
-		err := tx.QueryRow(ctx, `SELECT actions FROM alert_rules WHERE id = $1`, *link.RuleID).Scan(&actions)
+		err := a.st.Pool().QueryRow(ctx, `SELECT actions FROM alert_rules WHERE id = $1`, *link.RuleID).Scan(&actions)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return nil, err
 		}

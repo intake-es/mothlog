@@ -88,7 +88,9 @@
                     <label class="field">
                       <span class="field__label">{{ t(f.label) }}</span>
                       <input class="input" [class.mono]="f.secret" type="text" autocomplete="off" spellcheck="false" [value]="a[f.field]" (input)="setDestination(i, f.field, $any($event.target).value)" />
-                      @if (f.secret && isMasked(a, f.field)) {
+                      @if (secretAgain(a, f.field); as again) {
+                        <span class="field__hint">{{ t(again) }}</span>
+                      } @else if (f.secret && isMasked(a, f.field)) {
                         <span class="field__hint">{{ t('editor.keepSecret') }}</span>
                       }
                     </label>

@@ -63,7 +63,7 @@ func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 	if delivery == "" {
 		delivery = p.WebhookID + ":" + strconv.FormatInt(p.WebhookTimestamp, 10) + ":" + p.Data.ID
 	}
-	fresh, err := h.st.RecordWebhookDelivery(ctx, store.ProviderLinear, delivery, p.Type+"."+p.Action)
+	fresh, err := h.st.RecordWebhookDelivery(ctx, store.ProviderLinear, delivery, body, p.Type+"."+p.Action)
 	if err != nil {
 		h.opts.Log.ErrorContext(ctx, "webhook de Linear", "err", err)
 		reply(w, http.StatusInternalServerError, "error interno")
@@ -83,7 +83,7 @@ func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 	}
 	links, err := h.st.LinksTo(ctx, store.ProviderLinear, store.LinkIssue, p.Data.ID)
 	if err != nil {
-		h.failed(w, r, store.ProviderLinear, delivery, err)
+		h.failed(w, r, store.ProviderLinear, delivery, body, err)
 		return
 	}
 	category := store.LinearStateCategory(p.Data.State.Type)
@@ -102,7 +102,7 @@ func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, l := range links {
 		if err := h.st.SetLinkState(ctx, l.ID, category, p.Data.State.Name); err != nil {
-			h.failed(w, r, store.ProviderLinear, delivery, err)
+			h.failed(w, r, store.ProviderLinear, delivery, body, err)
 			return
 		}
 		status := ""
@@ -119,7 +119,7 @@ func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 		}
 		by.LinkID = l.ID
 		if err := h.apply(ctx, l.IssueID, status, by); err != nil {
-			h.failed(w, r, store.ProviderLinear, delivery, err)
+			h.failed(w, r, store.ProviderLinear, delivery, body, err)
 			return
 		}
 	}

@@ -32,6 +32,8 @@ import {
   type ActionDraft,
   type ActionField,
   emptyAction,
+  secretAgain,
+  withField,
 } from './rule-draft';
 
 const TYPES: DigestDestinationType[] = ['email', 'slack', 'webhook'];
@@ -305,7 +307,9 @@ export class DigestSettings {
       d
         ? {
             ...d,
-            destinations: d.destinations.map((a, j) => (j === i ? { ...a, [field]: value } : a)),
+            destinations: d.destinations.map((a, j) =>
+              j === i ? withField(a, field, value, this.savedDestination(a.id)) : a,
+            ),
           }
         : d,
     );
@@ -339,6 +343,14 @@ export class DigestSettings {
     if (h) {
       frame.height = String(h);
     }
+  }
+
+  private savedDestination(id: string): RuleAction | undefined {
+    return this.saved()?.destinations.find((a) => a.id === id);
+  }
+
+  protected secretAgain(a: ActionDraft, field: ActionField): Key | null {
+    return secretAgain(a, field, this.savedDestination(a.id));
   }
 
   protected isMasked(a: ActionDraft, field: ActionField): boolean {

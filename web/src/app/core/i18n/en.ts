@@ -450,6 +450,10 @@ export const en: Record<Key, string> = {
   'editor.secret.copy': 'Copy secret',
   'editor.secret.copied': 'Secret copied',
   'editor.keepSecret': 'Saved. Leave it as is to keep it, or type a new one.',
+  'editor.tokenAgain':
+    'With a new URL, the saved token is not sent: type it again if the topic needs it.',
+  'editor.secretAgain':
+    'With a new URL, the saved signing secret is not used: type one or a new one is generated on save.',
   'editor.dismiss': 'Got it',
 
   'action.slack': 'Slack',

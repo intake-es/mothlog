@@ -6,8 +6,6 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-
-	"github.com/intake-es/intake-errors/internal/db"
 )
 
 const TelegramEndpoint = "https://api.telegram.org"
@@ -68,7 +66,7 @@ func discordMessage(p *pending) discordPayload {
 	}
 }
 
-func (d *discord) send(ctx context.Context, _ db.Tx, p *pending) error {
+func (d *discord) send(ctx context.Context, p *pending) error {
 	return postJSON(ctx, d.client, "discord", d.url, discordMessage(p), nil)
 }
 
@@ -109,7 +107,7 @@ func telegramText(p *pending) string {
 	return text
 }
 
-func (t *telegram) send(ctx context.Context, _ db.Tx, p *pending) error {
+func (t *telegram) send(ctx context.Context, p *pending) error {
 	text := telegramText(p)
 	payload := map[string]any{"chat_id": t.chat, "text": text, "link_preview_options": map[string]bool{"is_disabled": true}}
 	if strings.HasPrefix(text, "<b>") {
@@ -131,7 +129,7 @@ var ntfyTags = map[string]string{
 	"uptime_down": "red_circle", "uptime_up": "white_check_mark",
 }
 
-func (n *ntfy) send(ctx context.Context, _ db.Tx, p *pending) error {
+func (n *ntfy) send(ctx context.Context, p *pending) error {
 	s := summarize(p)
 	h := http.Header{}
 	h.Set("Content-Type", "text/plain; charset=utf-8")

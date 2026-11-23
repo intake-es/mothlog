@@ -613,6 +613,10 @@ func TestOwnEchoAfterNewerChangeIsIgnored(t *testing.T) {
 	}
 
 	// Una persona que de verdad la cierra y la reabre en GitHub sigue contando.
+	// GitHub fecha updated_at al segundo y dos cuerpos iguales son la misma
+	// entrega: cada acción de luis, un segundo después de la anterior.
+	tick := time.Now()
+	w.gh.Now = func() time.Time { tick = tick.Add(time.Second); return tick }
 	if err := w.gh.Close(repo, 1, "completed", "luis"); err != nil {
 		t.Fatal(err)
 	}

@@ -213,15 +213,24 @@ func CheckUptimeURL(s string) (string, error) {
 	case u.User != nil:
 		return "", fmt.Errorf("%w: la URL no puede llevar usuario ni clave", ErrInvalid)
 	}
-	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
-	if blockedHosts[host] {
-		return "", fmt.Errorf("%w: la URL apunta a los metadatos de la nube", ErrInvalid)
-	}
-	if a, err := netip.ParseAddr(host); err == nil && netguard.Classify(a) == netguard.Blocked {
-		return "", fmt.Errorf("%w: la URL apunta a %s, una dirección de metadatos, link-local o reservada", ErrInvalid, a.Unmap())
+	if err := checkHost(u.Hostname()); err != nil {
+		return "", err
 	}
 	u.Fragment, u.RawFragment = "", ""
 	return u.String(), nil
+}
+
+// checkHost rechaza los nombres de metadatos de la nube y las direcciones
+// escritas tal cual que netguard bloquea siempre.
+func checkHost(hostname string) error {
+	host := strings.ToLower(strings.TrimSuffix(hostname, "."))
+	if blockedHosts[host] {
+		return fmt.Errorf("%w: la URL apunta a los metadatos de la nube", ErrInvalid)
+	}
+	if a, err := netip.ParseAddr(host); err == nil && netguard.Classify(a) == netguard.Blocked {
+		return fmt.Errorf("%w: la URL apunta a %s, una dirección de metadatos, link-local o reservada", ErrInvalid, a.Unmap())
+	}
+	return nil
 }
 
 func (in UptimeInput) apply(m *UptimeMonitor) error {

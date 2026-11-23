@@ -60,7 +60,7 @@ func TestIntegrations(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := &env{db: db, srv: srv, token: token}
-	if _, err := db.RecordWebhookDelivery(context.Background(), store.ProviderLinear, "d1", "Issue.update"); err != nil {
+	if _, err := db.RecordWebhookDelivery(context.Background(), store.ProviderLinear, "d1", []byte(`{}`), "Issue.update"); err != nil {
 		t.Fatal(err)
 	}
 	var s webhooks.Status

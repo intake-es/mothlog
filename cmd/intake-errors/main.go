@@ -70,6 +70,7 @@ func loadConfig() (config, error) {
 	}
 	c.Alerts.PublicURL = c.PublicURL
 	c.UptimeAllowPrivate = os.Getenv("UPTIME_ALLOW_PRIVATE") == "1"
+	c.Alerts.AllowPrivate = os.Getenv(alert.AllowPrivateEnv) == "1"
 	if c.DatabaseURL == "" {
 		return c, errors.New("falta DATABASE_URL")
 	}

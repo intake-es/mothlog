@@ -44,8 +44,8 @@ type linearRef struct {
 }
 
 // send crea la issue de Linear o, si ya hay una, la reabre en una regresión y
-// la comenta en el resto de avisos. tx es nil en los avisos de prueba.
-func (l *linear) send(ctx context.Context, tx db.Tx, p *pending) error {
+// la comenta en el resto de avisos. Los avisos de prueba no guardan el enlace.
+func (l *linear) send(ctx context.Context, p *pending) error {
 	if p.isMonitor() {
 		return l.createCron(ctx, p)
 	}
@@ -72,12 +72,15 @@ func (l *linear) send(ctx context.Context, tx db.Tx, p *pending) error {
 		}
 		state = store.LinkOpen
 	}
-	if tx == nil {
+	if p.test {
 		return nil
 	}
-	_, err = store.SaveLink(ctx, tx, store.IssueLink{IssueID: p.issueID, Provider: store.ProviderLinear, Kind: store.LinkIssue,
-		ExternalID: is.ID, Identifier: is.Identifier, URL: is.URL, State: state}, true)
-	return err
+	p.after = append(p.after, func(ctx context.Context, tx db.Tx) error {
+		_, err := store.SaveLink(ctx, tx, store.IssueLink{IssueID: p.issueID, Provider: store.ProviderLinear, Kind: store.LinkIssue,
+			ExternalID: is.ID, Identifier: is.Identifier, URL: is.URL, State: state}, true)
+		return err
+	})
+	return nil
 }
 
 // labelIDs son las etiquetas de LINEAR_LABEL_IDS más las del proyecto, sin repetir.

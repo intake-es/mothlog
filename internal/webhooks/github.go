@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -23,10 +24,11 @@ type githubUser struct {
 type githubIssuesPayload struct {
 	Action string `json:"action"`
 	Issue  struct {
-		Number      int    `json:"number"`
-		HTMLURL     string `json:"html_url"`
-		State       string `json:"state"`
-		StateReason string `json:"state_reason"`
+		Number      int       `json:"number"`
+		HTMLURL     string    `json:"html_url"`
+		State       string    `json:"state"`
+		StateReason string    `json:"state_reason"`
+		UpdatedAt   time.Time `json:"updated_at"`
 		// PullRequest está en las issues que son PRs.
 		PullRequest json.RawMessage `json:"pull_request"`
 	} `json:"issue"`
@@ -38,12 +40,13 @@ type githubPullPayload struct {
 	Action      string `json:"action"`
 	Number      int    `json:"number"`
 	PullRequest struct {
-		Number  int    `json:"number"`
-		HTMLURL string `json:"html_url"`
-		State   string `json:"state"`
-		Title   string `json:"title"`
-		Body    string `json:"body"`
-		Merged  bool   `json:"merged"`
+		Number    int       `json:"number"`
+		HTMLURL   string    `json:"html_url"`
+		State     string    `json:"state"`
+		Title     string    `json:"title"`
+		Body      string    `json:"body"`
+		Merged    bool      `json:"merged"`
+		UpdatedAt time.Time `json:"updated_at"`
 	} `json:"pull_request"`
 	Repository githubRepo `json:"repository"`
 	Sender     githubUser `json:"sender"`
@@ -70,13 +73,36 @@ func (h *Handler) github(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusUnauthorized, err.Error())
 		return
 	}
+	// X-GitHub-Delivery no va firmada: sin ella, la entrega se reconoce por su cuerpo.
 	event, delivery := r.Header.Get("X-GitHub-Event"), r.Header.Get("X-GitHub-Delivery")
-	if delivery == "" {
-		reply(w, http.StatusBadRequest, "falta X-GitHub-Delivery")
+	// GitHub no fecha las entregas: lo firmado más reciente es el updated_at
+	// de la issue o el PR. Una más vieja de lo que se guardan las entregas ya
+	// no se reconocería como repetida.
+	var apply func() error
+	var updated time.Time
+	switch event {
+	case "issues":
+		var p githubIssuesPayload
+		if err := json.Unmarshal(body, &p); err != nil {
+			reply(w, http.StatusBadRequest, "cuerpo no válido")
+			return
+		}
+		updated, apply = p.Issue.UpdatedAt, func() error { return h.githubIssue(r, p) }
+	case "pull_request":
+		var p githubPullPayload
+		if err := json.Unmarshal(body, &p); err != nil {
+			reply(w, http.StatusBadRequest, "cuerpo no válido")
+			return
+		}
+		updated, apply = p.PullRequest.UpdatedAt, func() error { return h.githubPull(r, p) }
+	}
+	if apply != nil && (updated.IsZero() || h.opts.Now().Sub(updated) > store.WebhookDeliveryRetention) {
+		h.opts.Log.WarnContext(ctx, "webhook de GitHub rechazado", "motivo", "entrega vieja", "entrega", delivery, "updated_at", updated)
+		reply(w, http.StatusUnauthorized, "entrega vieja o sin updated_at")
 		return
 	}
-	// GitHub no fecha las entregas: una repetida se reconoce por su id.
-	fresh, err := h.st.RecordWebhookDelivery(ctx, store.ProviderGitHub, delivery, event)
+	// Una repetida se reconoce por su id o por su cuerpo.
+	fresh, err := h.st.RecordWebhookDelivery(ctx, store.ProviderGitHub, delivery, body, event)
 	if err != nil {
 		h.opts.Log.ErrorContext(ctx, "webhook de GitHub", "err", err)
 		reply(w, http.StatusInternalServerError, "error interno")
@@ -87,27 +113,12 @@ func (h *Handler) github(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusOK, "ya recibida")
 		return
 	}
-	switch event {
-	case "issues":
-		var p githubIssuesPayload
-		if err := json.Unmarshal(body, &p); err != nil {
-			reply(w, http.StatusBadRequest, "cuerpo no válido")
-			return
-		}
-		err = h.githubIssue(r, p)
-	case "pull_request":
-		var p githubPullPayload
-		if err := json.Unmarshal(body, &p); err != nil {
-			reply(w, http.StatusBadRequest, "cuerpo no válido")
-			return
-		}
-		err = h.githubPull(r, p)
-	default:
+	if apply == nil {
 		reply(w, http.StatusOK, "ignorada")
 		return
 	}
-	if err != nil {
-		h.failed(w, r, store.ProviderGitHub, delivery, err)
+	if err := apply(); err != nil {
+		h.failed(w, r, store.ProviderGitHub, delivery, body, err)
 		return
 	}
 	reply(w, http.StatusOK, "ok")
@@ -169,7 +180,22 @@ func (h *Handler) githubPull(r *http.Request, p githubPullPayload) error {
 	ref := githubRef(p.Repository.FullName, pr.Number)
 	by := githubActor(p.Sender)
 	by.PullRequest = true
+	// El tope es del PR, no de cada cuerpo: los enlaces de ediciones
+	// anteriores siguen contando.
+	links, err := h.st.LinksTo(ctx, store.ProviderGitHub, store.LinkPullRequest, ref)
+	if err != nil {
+		return err
+	}
+	linked := map[int64]bool{}
+	for _, l := range links {
+		linked[l.IssueID] = true
+	}
+	skipped := 0
 	for _, id := range ids {
+		if !linked[id] && len(linked) >= MaxLinkedIssues {
+			skipped++
+			continue
+		}
 		_, err := store.SaveLink(ctx, h.st.Pool(), store.IssueLink{IssueID: id, Provider: store.ProviderGitHub,
 			Kind: store.LinkPullRequest, ExternalID: ref, Identifier: ref, URL: pr.HTMLURL, State: state, StateName: state}, false)
 		if errors.Is(err, store.ErrNotFound) {
@@ -178,11 +204,15 @@ func (h *Handler) githubPull(r *http.Request, p githubPullPayload) error {
 		if err != nil {
 			return err
 		}
+		linked[id] = true
 		if p.Action == "closed" && pr.Merged {
 			if err := h.apply(ctx, id, "resolved_next", by); err != nil {
 				return err
 			}
 		}
+	}
+	if skipped > 0 {
+		h.opts.Log.WarnContext(ctx, "PR con demasiados errores enlazados", "pr", pr.HTMLURL, "sin_enlazar", skipped, "tope", MaxLinkedIssues)
 	}
 	return nil
 }

@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -251,27 +253,49 @@ func (s *Store) ApplyExternalStatus(ctx context.Context, id int64, status string
 	return changed, err
 }
 
-// webhookDeliveryRetention es lo que se guardan las entregas de los webhooks.
-const webhookDeliveryRetention = 30 * 24 * time.Hour
+// WebhookDeliveryRetention es lo que se guardan las entregas de los webhooks:
+// una más vieja ya no se reconocería como repetida.
+const WebhookDeliveryRetention = 30 * 24 * time.Hour
 
-// RecordWebhookDelivery apunta una entrega de un webhook y dice si es nueva.
-// Guarda las de los últimos 30 días.
-func (s *Store) RecordWebhookDelivery(ctx context.Context, provider, deliveryID, event string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, `INSERT INTO webhook_deliveries (provider, delivery_id, event) VALUES ($1, $2, $3)
-		ON CONFLICT DO NOTHING`, provider, deliveryID, event)
+// bodyKey es la clave de una entrega por su cuerpo, que va firmado; la
+// cabecera con el id de la entrega no lo va.
+func bodyKey(body []byte) string {
+	sum := sha256.Sum256(body)
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// RecordWebhookDelivery apunta una entrega de un webhook por su id, si lo
+// trae, y por el sha256 de su cuerpo, y dice si es nueva: si ya se vio
+// cualquiera de las dos, es repetida. Guarda las de los últimos 30 días.
+func (s *Store) RecordWebhookDelivery(ctx context.Context, provider, deliveryID string, body []byte, event string) (bool, error) {
+	fresh := true
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
+		keys := []string{bodyKey(body)}
+		if deliveryID != "" {
+			keys = append(keys, deliveryID)
+		}
+		for _, key := range keys {
+			tag, err := tx.Exec(ctx, `INSERT INTO webhook_deliveries (provider, delivery_id, event) VALUES ($1, $2, $3)
+				ON CONFLICT DO NOTHING`, provider, key, event)
+			if err != nil {
+				return err
+			}
+			fresh = fresh && tag.RowsAffected() == 1
+		}
+		_, err := tx.Exec(ctx, `DELETE FROM webhook_deliveries WHERE provider = $1 AND received_at < `+
+			tx.Dialect().SubSeconds("now()", "$2"), provider, int64(WebhookDeliveryRetention.Seconds()))
+		return err
+	})
 	if err != nil {
 		return false, fmt.Errorf("apuntar entrega: %w", err)
 	}
-	if _, err := s.pool.Exec(ctx, `DELETE FROM webhook_deliveries WHERE provider = $1 AND received_at < `+
-		s.pool.Dialect().SubSeconds("now()", "$2"), provider, int64(webhookDeliveryRetention.Seconds())); err != nil {
-		return false, fmt.Errorf("apuntar entrega: %w", err)
-	}
-	return tag.RowsAffected() == 1, nil
+	return fresh, nil
 }
 
-// ForgetWebhookDelivery borra una entrega que no se pudo aplicar.
-func (s *Store) ForgetWebhookDelivery(ctx context.Context, provider, deliveryID string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM webhook_deliveries WHERE provider = $1 AND delivery_id = $2`, provider, deliveryID)
+// ForgetWebhookDelivery borra una entrega que no se pudo aplicar, por su id y por su cuerpo.
+func (s *Store) ForgetWebhookDelivery(ctx context.Context, provider, deliveryID string, body []byte) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM webhook_deliveries WHERE provider = $1 AND `+
+		s.pool.Dialect().InList("delivery_id", "$2"), provider, []string{deliveryID, bodyKey(body)})
 	return err
 }
 

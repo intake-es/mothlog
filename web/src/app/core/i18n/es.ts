@@ -448,6 +448,10 @@ export const es = {
   'editor.secret.copy': 'Copiar el secreto',
   'editor.secret.copied': 'Secreto copiado',
   'editor.keepSecret': 'Guardado. Déjalo así para conservarlo o escribe otro.',
+  'editor.tokenAgain':
+    'Con otra URL, el token guardado no se manda: escríbelo otra vez si el tema lo pide.',
+  'editor.secretAgain':
+    'Con otra URL, la clave de firma guardada no se usa: escribe una o se generará otra al guardar.',
   'editor.dismiss': 'Entendido',
 
   'action.slack': 'Slack',

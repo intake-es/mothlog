@@ -82,11 +82,13 @@ func (a *Alerter) SendDigestNow(ctx context.Context, projectID int64) ([]DigestR
 			snd, err = a.actionSender(dest)
 		}
 		if err == nil {
-			p := &pending{kind: store.KindDigest, digest: d, digestProject: projectID, project: d.Project, eventAt: now}
-			err = snd.send(ctx, nil, p)
+			p := &pending{kind: store.KindDigest, digest: d, digestProject: projectID, project: d.Project, eventAt: now, test: true}
+			if err = snd.send(ctx, p); err != nil {
+				a.log.WarnContext(ctx, "resumen fallido", "proyecto", projectID, "destino", dest.ID, "err", err)
+			}
 		}
 		if err != nil {
-			r.Error = strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
+			r.Error = strings.TrimPrefix(publicError(err), store.ErrInvalid.Error()+": ")
 		} else {
 			r.OK = true
 		}

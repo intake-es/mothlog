@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/markdown"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -140,7 +139,7 @@ func (w *webhook) payload(ctx context.Context, p *pending) (WebhookPayload, erro
 	return out, nil
 }
 
-func (w *webhook) send(ctx context.Context, _ db.Tx, p *pending) error {
+func (w *webhook) send(ctx context.Context, p *pending) error {
 	if p.digest != nil {
 		return w.sendDigest(ctx, p)
 	}

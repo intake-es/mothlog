@@ -225,7 +225,9 @@ func (r Rule) Masked(reveal ...string) Rule {
 }
 
 // keepSecrets pone el secreto guardado en los campos que llegan tapados, como
-// los devolvió Masked, o vacíos.
+// los devolvió Masked, o vacíos. Si la acción de ntfy o el webhook van a otra
+// URL, no conserva ninguno: el token o la clave de firma no viajan al destino
+// nuevo, y uno tapado lo rechaza Normalize.
 func (r *Rule) keepSecrets(old Rule) {
 	for i := range r.Actions {
 		a := &r.Actions[i]
@@ -234,6 +236,9 @@ func (r *Rule) keepSecrets(old Rule) {
 			continue
 		}
 		o := old.Actions[j]
+		if (a.Type == ActionNtfy || a.Type == ActionWebhook) && movedURL(a.URL, o.URL) {
+			continue
+		}
 		olds := o.secrets()
 		for k, s := range a.secrets() {
 			if *s == "" || *s == Mask(*olds[k]) {
@@ -241,6 +246,13 @@ func (r *Rule) keepSecrets(old Rule) {
 			}
 		}
 	}
+}
+
+// movedURL dice si la URL que llega es otra que la guardada; vacía o tapada
+// como la devuelve Masked, es la misma.
+func movedURL(in, old string) bool {
+	in = strings.TrimSpace(in)
+	return in != "" && in != old && in != Mask(old)
 }
 
 func hexID(n int) string {
@@ -277,10 +289,10 @@ func cleanList(name string, in []string, check func(string) error) ([]string, er
 func checkURL(field string) func(string) error {
 	return func(s string) error {
 		u, err := url.Parse(s)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 			return fmt.Errorf("%w: %s debe ser una URL http o https", ErrInvalid, field)
 		}
-		return nil
+		return checkHost(u.Hostname())
 	}
 }
 
