@@ -186,10 +186,69 @@ describe('MonitorListPage', () => {
     expect(rows[2].querySelectorAll('.row__when')[0].textContent?.trim()).toBe('—');
   });
 
-  it('sin monitores dice cómo se crean', async () => {
-    const { el } = await render([]);
+  it('sin monitores explica qué son y da las dos formas de tener uno', async () => {
+    const { fixture, el } = await render([]);
     expect(el.querySelector('.state__title')?.textContent).toBe('Todavía no hay monitores');
-    expect(el.querySelector('.state__text')?.textContent).toContain('sentry-cli monitors run');
+    expect(el.querySelector('.state__text')?.textContent).toBe(
+      'Un monitor avisa cuando una web deja de responder o un cron no se ejecuta.',
+    );
+    expect(el.querySelector('.state')?.textContent).not.toMatch(/monitor_config|sentry-cli|README/);
+    const ways = Array.from(el.querySelectorAll('.way'));
+    expect(ways.map((w) => w.querySelector('.way__title')?.textContent)).toEqual([
+      'Comprobar una web o una API',
+      'Vigilar un cron',
+    ]);
+    const create = ways[0].querySelector<HTMLAnchorElement>('a.btn');
+    expect(create?.getAttribute('href')).toBe('/monitors/uptime/new');
+    expect(create?.textContent?.trim()).toBe('Nuevo monitor');
+    // El icono del botón es el de los demás botones, no el grande del bloque vacío.
+    expect(create?.querySelector('svg')?.parentElement).toBe(create);
+    expect(el.querySelector('.state > svg[appIcon=heartbeat]')).not.toBeNull();
+
+    const toggle = ways[1].querySelector<HTMLButtonElement>('.way__toggle')!;
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(el.querySelector('#cron-example')).toBeNull();
+    toggle.click();
+    fixture.detectChanges();
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(toggle.textContent?.trim()).toBe('Ocultar el ejemplo');
+    const code = el.querySelector('#cron-example code')?.textContent ?? '';
+    expect(code).toContain('from sentry_sdk.crons import monitor');
+    expect(code).toContain('monitor_slug="limpieza-nocturna"');
+
+    let copied = '';
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (v: string) => {
+          copied = v;
+          return Promise.resolve();
+        },
+      },
+    });
+    el.querySelector<HTMLButtonElement>('.example__copy')?.click();
+    await fixture.whenStable();
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(copied).toBe(code);
+    expect(el.querySelector('.example__copy')?.textContent?.trim()).toBe('Copiado');
+
+    toggle.click();
+    fixture.detectChanges();
+    expect(el.querySelector('#cron-example')).toBeNull();
+  });
+
+  it('en inglés, el bloque vacío y su ejemplo tampoco dejan texto en español', async () => {
+    TestBed.inject(I18n).set('en');
+    const { fixture, el } = await render([]);
+    expect(el.querySelector('.state__title')?.textContent).toBe('No monitors yet');
+    el.querySelector<HTMLButtonElement>('.way__toggle')?.click();
+    fixture.detectChanges();
+    expect(el.querySelector('.way__toggle')?.textContent?.trim()).toBe('Hide the example');
+    expect(el.querySelector('#cron-example code')?.textContent).toContain(
+      'monitor_slug="nightly-cleanup"',
+    );
+    expect(spanishLeft(el)).toEqual([]);
   });
 
   it('filtra por proyecto', async () => {

@@ -12,6 +12,7 @@ import {
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, type Subscription } from 'rxjs';
 import { Api, apiError, type Monitor, type Project, type UptimeMonitor } from '../../core/api';
+import { copyText } from '../../core/clipboard';
 import { ago, count, fullDate } from '../../core/format';
 import { I18n, plural } from '../../core/i18n';
 import { CheckInStrip } from '../../ui/checkin-strip';
@@ -80,6 +81,8 @@ export class MonitorListPage {
   protected readonly monitors = signal<Monitor[]>([]);
   protected readonly uptime = signal<UptimeMonitor[]>([]);
   protected readonly loading = signal(true);
+  protected readonly example = signal(false);
+  protected readonly copied = signal(false);
   private readonly failure = signal<unknown>(null);
   protected readonly error = computed(() =>
     this.failure() === null ? '' : apiError(this.failure()),
@@ -172,6 +175,16 @@ export class MonitorListPage {
 
   protected retry(): void {
     this.load(this.project() ?? '');
+  }
+
+  protected async copyExample(): Promise<void> {
+    try {
+      await copyText(Promise.resolve(this.t('monitors.empty.example')));
+      this.copied.set(true);
+      setTimeout(() => this.copied.set(false), 2000);
+    } catch {
+      this.copied.set(false);
+    }
   }
 
   protected setProject(value: string): void {

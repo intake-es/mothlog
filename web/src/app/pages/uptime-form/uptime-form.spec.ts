@@ -182,4 +182,66 @@ describe('UptimeFormPage', () => {
     expect(el.querySelector('select[name=interval]')?.textContent).toContain('Every 30 s');
     expect(spanishLeft(el)).toEqual([]);
   });
+  function pick(el: HTMLElement, name: string, option: string) {
+    const host = el.querySelector(`app-pick:has(select[name=${name}])`)!;
+    host.querySelector<HTMLButtonElement>('.pick')!.click();
+    return () =>
+      Array.from(host.querySelectorAll<HTMLButtonElement>('.menu__item'))
+        .find((b) => b.textContent?.trim() === option)
+        ?.click();
+  }
+
+  it('el proyecto y la frecuencia se eligen con los selectores del panel', async () => {
+    const { fixture, el } = await render({});
+    http.expectOne('/api/0/projects/').flush({
+      data: [
+        { id: 4, name: 'api', dsn: '' },
+        { id: 5, name: 'web', dsn: '' },
+      ],
+    });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector('select:not(.visually-hidden)')).toBeNull();
+    expect(el.querySelector('.section__title')?.textContent).toBe('Comprobar una web o una API');
+    const project = el.querySelector('app-pick:has(select[name=project]) .pick');
+    expect(project?.getAttribute('aria-label')).toBe('Proyecto: api');
+
+    const chooseWeb = pick(el, 'project', 'web');
+    fixture.detectChanges();
+    chooseWeb();
+    fixture.detectChanges();
+    expect(project?.getAttribute('aria-label')).toBe('Proyecto: web');
+
+    const chooseInterval = pick(el, 'interval', 'Cada 5 minutos');
+    fixture.detectChanges();
+    chooseInterval();
+    fixture.detectChanges();
+    expect(el.querySelector('app-pick:has(select[name=interval]) .pick__value')?.textContent).toBe(
+      'Cada 5 minutos',
+    );
+
+    type(el, 'input[name=name]', 'Web');
+    type(el, 'input[name=url]', 'https://example.com/');
+    fixture.detectChanges();
+    el.querySelector<HTMLButtonElement>('button[type=submit]')?.click();
+    const req = http.expectOne('/api/0/projects/5/uptime-monitors/');
+    expect(req.request.body.interval_seconds).toBe(300);
+    req.flush(MONITOR);
+    await fixture.whenStable();
+  });
+
+  it('en inglés, los selectores y la cabecera del editor van traducidos', async () => {
+    TestBed.inject(I18n).set('en');
+    const { fixture, el } = await render({ project: '5', slug: 'web-principal' });
+    http.expectOne('/api/0/projects/5/uptime-monitors/web-principal/').flush(MONITOR);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector('.section__title')?.textContent).toBe('Web principal');
+    const interval = el.querySelector('app-pick:has(select[name=interval]) .pick');
+    expect(interval?.getAttribute('aria-label')).toBe('How often: Every minute');
+    interval?.dispatchEvent(new MouseEvent('click'));
+    fixture.detectChanges();
+    expect(el.querySelector('.menu')?.textContent).toContain('Every 30 s');
+    expect(spanishLeft(el)).toEqual([]);
+  });
 });

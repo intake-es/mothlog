@@ -6,7 +6,10 @@ export interface PickOption {
   label: string;
 }
 
-/** El filtro en píldora: icono de qué filtra, el valor elegido y un menú. */
+/**
+ * El filtro en píldora: icono de qué filtra, el valor elegido y un menú. Con name
+ * lleva además un select nativo oculto con el mismo valor, como campo del formulario.
+ */
 @Component({
   selector: 'app-pick',
   imports: [Icon],
@@ -26,6 +29,13 @@ export interface PickOption {
       <span class="pick__value">{{ current() }}</span>
       <svg appIcon="caret-down" class="pick__caret"></svg>
     </button>
+    @if (name(); as n) {
+      <select class="visually-hidden" tabindex="-1" aria-hidden="true" [name]="n" (change)="choose($any($event.target).value)">
+        @for (o of options(); track o.value) {
+          <option [value]="o.value" [selected]="o.value === value()">{{ o.label }}</option>
+        }
+      </select>
+    }
     @if (open()) {
       <button type="button" class="menu__veil" tabindex="-1" aria-hidden="true" (click)="open.set(false)"></button>
       <div class="menu" [class.menu--end]="align() === 'end'" role="menu" [attr.aria-label]="label()">
@@ -101,6 +111,7 @@ export class Pick {
   readonly options = input.required<PickOption[]>();
   readonly value = input.required<string>();
   readonly align = input<'start' | 'end'>('start');
+  readonly name = input<string>();
   /** Más oscuro cuando el filtro no está en su valor por defecto. */
   readonly highlight = input(false);
   readonly changed = output<string>();

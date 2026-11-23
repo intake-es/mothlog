@@ -11,8 +11,10 @@
 
 <div class="content">
   @if (loading()) {
-    <div class="pad" aria-busy="true" [attr.aria-label]="t('monitor.loading')">
-      <span class="sp-skeleton" style="width: 100%; height: 320px; border-radius: 12px"></span>
+    <div class="page" aria-busy="true" [attr.aria-label]="t('monitor.loading')">
+      <span class="sp-skeleton" style="width: 30%; height: 0.9rem"></span>
+      <span class="sp-skeleton" style="width: 60%; height: 0.7rem; margin-top: 0.6rem"></span>
+      <span class="sp-skeleton" style="width: 100%; height: 320px; margin-top: 1rem; border-radius: 12px"></span>
     </div>
   } @else if (notFound()) {
     <div class="state">
@@ -28,21 +30,29 @@
       <p class="state__text">{{ error() || t('uptimeForm.noProjects.text') }}</p>
     </div>
   } @else {
-    <div class="wrap">
-      <p class="lede">{{ t('uptimeForm.lede') }}</p>
+    <div class="page">
+      <div class="section__head">
+        <div>
+          <h2 class="section__title">{{ editing()?.name ?? t('uptimeForm.newHeading') }}</h2>
+          <p class="section__lede">{{ t('uptimeForm.lede') }}</p>
+        </div>
+      </div>
       <form class="card" (submit)="$event.preventDefault(); save()">
         <fieldset class="group">
           <legend class="group__title">{{ t('uptimeForm.section.target') }}</legend>
           <div class="group__body">
             @if (!editing()) {
-              <label class="field">
+              <div class="field">
                 <span class="field__label">{{ t('uptimeForm.project') }}</span>
-                <select class="input" name="project" [value]="draft().projectId" (change)="patch({ projectId: num($any($event.target).value) })">
-                  @for (p of projects(); track p.id) {
-                    <option [value]="p.id" [selected]="p.id === draft().projectId">{{ p.name }}</option>
-                  }
-                </select>
-              </label>
+                <app-pick
+                  icon="squares-four"
+                  name="project"
+                  [label]="t('uptimeForm.project')"
+                  [options]="projectOptions()"
+                  [value]="'' + draft().projectId"
+                  (changed)="patch({ projectId: num($event) })"
+                />
+              </div>
             }
             <label class="field">
               <span class="field__label">{{ t('uptimeForm.name') }}</span>
@@ -69,14 +79,17 @@
         <fieldset class="group">
           <legend class="group__title">{{ t('uptimeForm.section.check') }}</legend>
           <div class="group__body grid">
-            <label class="field">
+            <div class="field">
               <span class="field__label">{{ t('uptimeForm.interval') }}</span>
-              <select class="input" name="interval" (change)="patch({ interval: num($any($event.target).value) })">
-                @for (i of intervals; track i.value) {
-                  <option [value]="i.value" [selected]="i.value === draft().interval">{{ i.label }}</option>
-                }
-              </select>
-            </label>
+              <app-pick
+                icon="clock"
+                name="interval"
+                [label]="t('uptimeForm.interval')"
+                [options]="intervalOptions()"
+                [value]="'' + draft().interval"
+                (changed)="patch({ interval: num($event) })"
+              />
+            </div>
             <label class="field">
               <span class="field__label">{{ t('uptimeForm.timeout') }}</span>
               <input class="input" type="number" name="timeout" min="1" max="60" [value]="draft().timeout" (input)="patch({ timeout: num($any($event.target).value) })" />
@@ -97,10 +110,10 @@
 
         <div class="group">
           <label class="check">
-            <input type="checkbox" class="switch" role="switch" [checked]="draft().paused" (change)="patch({ paused: $any($event.target).checked })" />
-            {{ t('uptimeForm.paused') }}
+            <input type="checkbox" class="switch" role="switch" name="paused" [checked]="draft().paused" (change)="patch({ paused: $any($event.target).checked })" />
+            <span class="check__strong">{{ t('uptimeForm.paused') }}</span>
           </label>
-          <p class="field__hint">{{ t('uptimeForm.pausedHint') }}</p>
+          <p class="group__hint">{{ t('uptimeForm.pausedHint') }}</p>
         </div>
 
         <div class="group foot">
@@ -122,7 +135,7 @@
         </div>
       </form>
       @if (confirmDelete()) {
-        <p class="field__hint warn" role="status">{{ t('uptimeForm.deleteHint') }}</p>
+        <p class="group__hint warn" role="status">{{ t('uptimeForm.deleteHint') }}</p>
       }
     </div>
   }

@@ -182,7 +182,160 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* La pantalla vacía: las dos formas de tener un monitor. */
+.ways {
+  width: min(100%, 36rem);
+  margin: 1.25rem 0 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  list-style: none;
+  text-align: left;
+}
+
+.way {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem 0.75rem;
+  padding: 1rem 1.1rem;
+}
+
+.way + .way {
+  border-top: 1px solid var(--border);
+}
+
+.way__icon {
+  align-self: start;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.way__title {
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.way__text {
+  margin-top: 0.1rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.way__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.way__toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.way__toggle .way__caret {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.way__toggle[aria-expanded='true'] .way__caret {
+  transform: rotate(180deg);
+}
+
+.example {
+  grid-column: 2 / -1;
+  margin-top: 0.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+}
+
+.example__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  height: 32px;
+  padding: 0 0.4rem 0 0.85rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.example__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 24px;
+  padding: 0 0.45rem;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.example__copy:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.example__copy svg {
+  width: 14px;
+  height: 14px;
+}
+
+.example__code {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  overflow-x: auto;
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.55;
+}
+
 @media (max-width: 768px) {
+  .empty {
+    padding-inline: 0.9rem;
+  }
+
+  .way {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .way__action {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 0.4rem;
+  }
+
+  .example {
+    grid-column: 1 / -1;
+  }
+
+  .example__code {
+    font-size: 0.6875rem;
+  }
+
   .list__head {
     display: none;
   }

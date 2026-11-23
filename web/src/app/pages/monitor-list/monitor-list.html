@@ -39,7 +39,7 @@
       <button type="button" class="btn" (click)="retry()">{{ t('common.retry') }}</button>
     </div>
   } @else if (rows().length === 0 && uptimeRows().length === 0) {
-    <div class="state">
+    <div class="state empty">
       @if (project()) {
         <svg appIcon="magnifying-glass" weight="duotone"></svg>
         <p class="state__title">{{ t('monitors.noMatch.title') }}</p>
@@ -48,10 +48,47 @@
         <svg appIcon="heartbeat" weight="duotone"></svg>
         <p class="state__title">{{ t('monitors.empty.title') }}</p>
         <p class="state__text">{{ t('monitors.empty.text') }}</p>
-        <p class="state__text">{{ t('monitors.empty.uptime') }}</p>
-        <a class="btn" routerLink="/monitors/uptime/new">
-          <svg appIcon="plus"></svg>{{ t('monitors.new') }}
-        </a>
+        <ul class="ways">
+          <li class="way">
+            <svg appIcon="globe-simple" class="way__icon"></svg>
+            <div class="way__body">
+              <p class="way__title">{{ t('monitors.empty.uptimeTitle') }}</p>
+              <p class="way__text">{{ t('monitors.empty.uptimeText') }}</p>
+            </div>
+            <a class="btn way__action" routerLink="/monitors/uptime/new">
+              <svg appIcon="plus"></svg>{{ t('monitors.new') }}
+            </a>
+          </li>
+          <li class="way">
+            <svg appIcon="clock" class="way__icon"></svg>
+            <div class="way__body">
+              <p class="way__title">{{ t('monitors.empty.cronTitle') }}</p>
+              <p class="way__text">{{ t('monitors.empty.cronText') }}</p>
+            </div>
+            <button
+              type="button"
+              class="way__toggle way__action"
+              aria-controls="cron-example"
+              [attr.aria-expanded]="example()"
+              (click)="example.set(!example())"
+            >
+              {{ example() ? t('monitors.empty.hideExample') : t('monitors.empty.showExample') }}
+              <svg appIcon="caret-down" class="way__caret"></svg>
+            </button>
+            @if (example()) {
+              <div class="example" id="cron-example">
+                <div class="example__bar">
+                  <span>{{ t('monitors.empty.exampleLang') }}</span>
+                  <button type="button" class="example__copy" (click)="copyExample()">
+                    <svg [appIcon]="copied() ? 'check' : 'copy'"></svg>
+                    {{ copied() ? t('monitors.empty.copied') : t('monitors.empty.copy') }}
+                  </button>
+                </div>
+                <pre class="example__code"><code>{{ t('monitors.empty.example') }}</code></pre>
+              </div>
+            }
+          </li>
+        </ul>
       }
     </div>
   } @else {

@@ -606,8 +606,20 @@ export const en: Record<Key, string> = {
   'monitors.loading': 'Loading monitors',
   'monitors.error': 'Couldn’t load the monitors',
   'monitors.empty.title': 'No monitors yet',
-  'monitors.empty.text':
-    'A cron shows up here with its first check-in carrying monitor_config, from the SDK or from sentry-cli monitors run. The README has examples.',
+  'monitors.empty.text': 'A monitor alerts when a website stops responding or a cron doesn’t run.',
+  'monitors.empty.uptimeTitle': 'Check a website or an API',
+  'monitors.empty.uptimeText':
+    'Its URL is requested on a schedule, with an alert if it stops responding.',
+  'monitors.empty.cronTitle': 'Watch a cron',
+  'monitors.empty.cronText':
+    'If the cron already uses the SDK, mark its function and it shows up here when it runs.',
+  'monitors.empty.showExample': 'Show an example',
+  'monitors.empty.hideExample': 'Hide the example',
+  'monitors.empty.copy': 'Copy the example',
+  'monitors.empty.copied': 'Copied',
+  'monitors.empty.example':
+    'from sentry_sdk.crons import monitor\n\nschedule = {\n    "type": "crontab",\n    "value": "0 3 * * *",\n}\n\n@monitor(\n    monitor_slug="nightly-cleanup",\n    monitor_config={"schedule": schedule},\n)\ndef cleanup():\n    ...',
+  'monitors.empty.exampleLang': 'Python',
   'monitors.noMatch.title': 'No monitors in this project',
   'monitors.noMatch.text': 'Try another project.',
   'monitors.failing.one': '{n} monitor is failing, missed or timed out.',
@@ -686,7 +698,6 @@ export const en: Record<Key, string> = {
   'title.uptimeEdit': 'Edit monitor · intake-errors',
   'title.uptimeEditNamed': 'Edit {name} · Monitors',
   'monitors.new': 'New monitor',
-  'monitors.empty.uptime': 'To watch a website or an API, create an uptime monitor.',
   'monitors.section.uptime': 'Uptime',
   'monitors.section.cron': 'Crons',
   'monitors.col.checks': 'Latest checks',
@@ -736,8 +747,9 @@ export const en: Record<Key, string> = {
 
   'uptimeForm.newTitle': 'New uptime monitor',
   'uptimeForm.editTitle': 'Edit {name}',
+  'uptimeForm.newHeading': 'Check a website or an API',
   'uptimeForm.lede':
-    'The service requests the URL on a schedule and alerts when it stops responding and when it’s back.',
+    'The URL is requested on a schedule, with an alert when it stops responding and when it’s back.',
   'uptimeForm.section.target': 'What to check',
   'uptimeForm.section.check': 'How',
   'uptimeForm.project': 'Project',
@@ -746,13 +758,12 @@ export const en: Record<Key, string> = {
   'uptimeForm.method': 'Method',
   'uptimeForm.url': 'URL',
   'uptimeForm.urlPlaceholder': 'https://example.com/health',
-  'uptimeForm.urlHint':
-    'http or https. Cloud metadata and link-local addresses are never requested; private networks only if the server allows them. HEAD skips the page body, but some servers reject it.',
+  'uptimeForm.urlHint': 'http or https. HEAD skips the page body, but some servers reject it.',
   'uptimeForm.interval': 'How often',
   'uptimeForm.timeout': 'Timeout (s)',
-  'uptimeForm.timeoutHint': 'No response within this time counts as a failure.',
+  'uptimeForm.timeoutHint': 'No response in time counts as a failure.',
   'uptimeForm.expected': 'Status codes that count as up',
-  'uptimeForm.expectedHint': 'Comma-separated, like 200-299,301 or 2xx.',
+  'uptimeForm.expectedHint': 'For example, 2xx or 200-299,301.',
   'uptimeForm.threshold': 'Failures in a row before it’s down',
   'uptimeForm.thresholdHint': 'With 2, a single failure doesn’t alert.',
   'uptimeForm.paused': 'Paused',

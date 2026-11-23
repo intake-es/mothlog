@@ -221,6 +221,8 @@ kbd {
 
 .btn svg {
   flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
 }
 
 .icon-btn {
@@ -332,13 +334,13 @@ kbd {
   text-align: center;
 }
 
-.state svg {
+.state > svg {
   width: 26px;
   height: 26px;
   color: var(--text-subtle);
 }
 
-.state--error svg {
+.state--error > svg {
   color: var(--danger);
 }
 

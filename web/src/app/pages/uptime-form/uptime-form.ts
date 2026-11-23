@@ -22,6 +22,7 @@ import {
 import { I18n } from '../../core/i18n';
 import { PageTitle } from '../../core/page-title';
 import { Icon } from '../../ui/icon';
+import { Pick, type PickOption } from '../../ui/pick';
 import { INTERVALS, intervalText } from '../monitor-list/uptime-format';
 
 export interface UptimeDraft {
@@ -80,7 +81,7 @@ export function uptimeInputOf(d: UptimeDraft): UptimeInput {
 /** Crear o editar un monitor de disponibilidad. */
 @Component({
   selector: 'app-uptime-form',
-  imports: [RouterLink, Icon],
+  imports: [RouterLink, Icon, Pick],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './uptime-form.html',
   styleUrls: ['../project-settings/settings.css', './uptime-form.css'],
@@ -97,7 +98,6 @@ export class UptimeFormPage {
   private readonly router = inject(Router);
   private readonly pageTitle = inject(PageTitle);
   protected readonly t = inject(I18n).t;
-  protected readonly intervals = INTERVALS.map((s) => ({ value: s, label: intervalText(s) }));
   protected readonly methods: UptimeMethod[] = ['GET', 'HEAD'];
 
   protected readonly projects = signal<Project[]>([]);
@@ -110,6 +110,14 @@ export class UptimeFormPage {
   private readonly failure = signal<unknown>(null);
   protected readonly error = computed(() =>
     this.failure() === null ? '' : apiError(this.failure()),
+  );
+
+  protected readonly projectOptions = computed<PickOption[]>(() =>
+    this.projects().map((p) => ({ value: String(p.id), label: p.name })),
+  );
+
+  protected readonly intervalOptions = computed<PickOption[]>(() =>
+    INTERVALS.map((s) => ({ value: String(s), label: intervalText(s) })),
   );
 
   protected readonly backLink = computed(() => {
