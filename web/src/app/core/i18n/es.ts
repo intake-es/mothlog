@@ -37,8 +37,10 @@ export const es = {
   'login.lede.choose': 'Elige con qué cuenta entrar.',
   'login.oidc': 'Entrar con {name}',
   'login.dev': 'Entrar como dev',
+  'login.devKey': 'Clave de desarrollo',
+  'login.devKeyPlaceholder': 'La del enlace del log',
   'login.devNote':
-    'El modo de desarrollo deja entrar sin GitHub y solo funciona escuchando en 127.0.0.1 o localhost.',
+    'Al arrancar, el servidor escribe en su log un enlace que ya entra, con una clave nueva en cada arranque. Ábrelo o pega aquí su clave. Solo funciona escuchando en 127.0.0.1 o localhost.',
   'login.off.title': 'El login no está configurado',
   'login.off.text': 'Faltan {vars} en el servidor. La API y el MCP con tokens siguen funcionando.',
   'login.off.oidc':
@@ -56,6 +58,8 @@ export const es = {
   'login.error.oidc': '{name} no ha respondido como se esperaba. Vuelve a probar en un momento.',
   'login.error.oidcDenied': 'Has cancelado el acceso en {name}.',
   'login.error.save': 'No se ha podido guardar quién eres. Vuelve a probar en un momento.',
+  'login.error.devKey':
+    'Esa no es la clave de este arranque. Cópiala del enlace que el servidor escribe en su log.',
   'login.error.oidcConfig': 'El login con OIDC no está configurado en este servidor.',
   'login.error.other': 'No se ha podido entrar. Vuelve a probar.',
 

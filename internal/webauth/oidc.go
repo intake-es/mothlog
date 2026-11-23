@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -152,14 +151,6 @@ func checkEndpoint(raw, issuer string) error {
 		}
 	}
 	return fmt.Errorf("%q tiene que ser https", raw)
-}
-
-func loopbackHost(h string) bool {
-	if h == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
 }
 
 func (p *oidcProvider) getJSON(ctx context.Context, rawURL, bearer string, v any) error {
@@ -514,6 +505,9 @@ func (a *Auth) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, meta.AuthorizationEndpoint+sep+q.Encode(), http.StatusFound)
 }
 
+// oidcLoginPrefix va delante del login de OIDC que no es un correo verificado.
+const oidcLoginPrefix = "oidc:"
+
 func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if a.oidc == nil {
 		toLogin(w, r, "oidc_config")
@@ -577,16 +571,18 @@ func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	email, _ := claims["email"].(string)
 	username, _ := claims["preferred_username"].(string)
-	// Un correo sin verificar podría ser el de otra persona: no sirve de login.
+	// Un correo sin verificar podría ser el de otra persona: no sirve de
+	// login. preferred_username tampoco es de fiar, así que va con el prefijo
+	// oidc:, que no puede ser un correo ni un login de GitHub.
 	shown := ""
 	if boolClaim(claims["email_verified"]) {
 		shown = email
 	}
-	if shown == "" {
-		shown = username
+	if shown == "" && username != "" {
+		shown = oidcLoginPrefix + username
 	}
 	if shown == "" {
-		shown = sub
+		shown = oidcLoginPrefix + sub
 	}
 	name, _ := claims["name"].(string)
 	if name == "" {
@@ -600,6 +596,18 @@ func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		toLogin(w, r, "save")
 		return
+	}
+	// Quien entró antes de que existiera el prefijo pudo quedarse con un
+	// correo o un login de GitHub ajeno: sin correo verificado, pasa a oidc:.
+	if strings.HasPrefix(shown, oidcLoginPrefix) && !strings.HasPrefix(login, oidcLoginPrefix) {
+		renamed, err := a.people.RenamePerson(ctx, login, oidcLoginPrefix+login)
+		if err != nil {
+			a.log.Error("login oidc: poner el prefijo al login", "login", login, "sub", sub, "err", err)
+			toLogin(w, r, "save")
+			return
+		}
+		a.log.Warn("login oidc: el login sin correo verificado pasa a llevar el prefijo", "from", login, "to", renamed, "sub", sub)
+		login = renamed
 	}
 	if err := a.setSession(w, login, name); err != nil {
 		http.Error(w, "error interno", http.StatusInternalServerError)

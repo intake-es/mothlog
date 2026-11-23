@@ -123,6 +123,18 @@ func TestDevLoginOnlyLocal(t *testing.T) {
 	}
 }
 
+func TestPprofOnlyLoopback(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://127.0.0.1:1/nada")
+	t.Setenv("LISTEN_ADDR", "127.0.0.1:0")
+	for _, addr := range []string{":6060", "0.0.0.0:6060", "[::]:6060", "192.168.1.20:6060", "pprof.example.com:6060", "6060"} {
+		t.Setenv("PPROF_ADDR", addr)
+		err := run(nil)
+		if err == nil || !strings.Contains(err.Error(), "PPROF_ADDR") {
+			t.Errorf("PPROF_ADDR=%q = %v; quiero que se niegue a arrancar", addr, err)
+		}
+	}
+}
+
 type metricsSource struct{ pool db.DB }
 
 func (m metricsSource) MetricsSnapshot(context.Context) (store.MetricsSnapshot, error) {

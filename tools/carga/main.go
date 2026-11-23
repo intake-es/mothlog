@@ -53,6 +53,9 @@ func (l *listaFlag) Set(v string) error { *l = append(*l, v); return nil }
 const (
 	tokenMetricas = "carga-metricas"
 	tokenMapas    = "carga-sourcemaps"
+	imagenProxy   = "caddy:2-alpine"
+	// puertoPprof es donde el proxy publica el pprof del servicio.
+	puertoPprof = "6061"
 )
 
 func main() {
@@ -173,13 +176,13 @@ func run(ctx context.Context, o opciones) error {
 
 	svc := id + "-svc"
 	args := []string{"--network", id, "--cpus", o.cpus, "--memory", o.memoria,
-		"-p", "127.0.0.1::8000", "-p", "127.0.0.1::6060",
+		"-p", "127.0.0.1::8000", "-p", "127.0.0.1::" + puertoPprof,
 		"-e", "DATABASE_URL=" + dbURL,
 		"-e", "LISTEN_ADDR=:8000",
 		"-e", "RATE_LIMIT_PER_MINUTE=1000000000",
 		"-e", "METRICS_TOKEN=" + tokenMetricas,
 		"-e", "SOURCEMAP_UPLOAD_TOKEN=" + tokenMapas,
-		"-e", "PPROF_ADDR=:6060",
+		"-e", "PPROF_ADDR=127.0.0.1:6060",
 		"-e", "LOG_LEVEL=warn",
 	}
 	args = append(args, dbArgs...)
@@ -196,7 +199,13 @@ func run(ctx context.Context, o opciones) error {
 	if err != nil {
 		return err
 	}
-	pprofAddr, err := puerto(ctx, svc, "6060/tcp")
+	// PPROF_ADDR solo vale en loopback: un proxy en la red del servicio lo
+	// publica, como el de los compose.
+	if err := env.arrancar(ctx, svc+"-pprof", "--network", "container:"+svc, imagenProxy,
+		"caddy", "reverse-proxy", "--from", ":"+puertoPprof, "--to", "127.0.0.1:6060"); err != nil {
+		return err
+	}
+	pprofAddr, err := puerto(ctx, svc, puertoPprof+"/tcp")
 	if err != nil {
 		return err
 	}

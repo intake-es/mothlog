@@ -55,10 +55,12 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 	return p, ok
 }
 
-// RequireAuth deja pasar la petición si alguno de auths la reconoce.
+// RequireAuth deja pasar la petición si alguno de auths la reconoce. Lo que
+// pasa por aquí depende de quién lo pide: nadie lo guarda en caché.
 func RequireAuth(auths ...Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Cache-Control", "no-store")
 			for _, auth := range auths {
 				p, ok, err := auth(r)
 				if errors.Is(err, errBadToken) {
@@ -75,7 +77,7 @@ func RequireAuth(auths ...Authenticator) func(http.Handler) http.Handler {
 					return
 				}
 				if ok {
-					next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+					next.ServeHTTP(&noStoreWriter{ResponseWriter: w}, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 					return
 				}
 			}
@@ -83,6 +85,37 @@ func RequireAuth(auths ...Authenticator) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// noStoreWriter deja Cache-Control: no-store aunque el handler ponga otro,
+// como hace el MCP con sus respuestas en streaming.
+type noStoreWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *noStoreWriter) WriteHeader(code int) {
+	if !w.wrote {
+		w.wrote = true
+		w.Header().Set("Cache-Control", "no-store")
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *noStoreWriter) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *noStoreWriter) Flush() {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = http.NewResponseController(w.ResponseWriter).Flush()
+}
+
+func (w *noStoreWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func unauthorized(w http.ResponseWriter, msg string) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="intake-errors"`)

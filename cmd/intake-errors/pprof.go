@@ -8,7 +8,8 @@ import (
 )
 
 // servePprof sirve los perfiles de net/http/pprof en addr, aparte del puerto
-// público. Solo con PPROF_ADDR, para medir: la prueba de carga lo usa.
+// público. Solo con PPROF_ADDR, que tiene que ser de loopback, para medir: la
+// prueba de carga lo usa.
 func servePprof(addr string, log *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)

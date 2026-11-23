@@ -41,9 +41,26 @@
           </a>
         }
         @if (dev()) {
-          <a class="btn login__btn" [class.btn--primary]="!github() && !oidc()" [href]="href('/auth/dev/login')">
-            {{ t('login.dev') }}
-          </a>
+          <form class="login__dev" method="get" action="/auth/dev/login">
+            @if (next()) {
+              <input type="hidden" name="next" [value]="next()" />
+            }
+            <label class="login__field">
+              <span class="login__label">{{ t('login.devKey') }}</span>
+              <input
+                class="login__input"
+                type="password"
+                name="key"
+                required
+                autocomplete="off"
+                spellcheck="false"
+                [placeholder]="t('login.devKeyPlaceholder')"
+              />
+            </label>
+            <button type="submit" class="btn login__btn" [class.btn--primary]="!github() && !oidc()">
+              {{ t('login.dev') }}
+            </button>
+          </form>
         }
       </div>
       @if (dev()) {

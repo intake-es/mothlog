@@ -20,6 +20,11 @@ type Person struct {
 	Provider    string    `json:"provider"`
 	Subject     string    `json:"-"`
 	LastLoginAt time.Time `json:"last_login_at"`
+	// LegacySubject es el subject con el que pudo guardarse antes: si no hay
+	// fila con Subject y sí con este, esa fila pasa a Subject.
+	LegacySubject string `json:"-"`
+	// SessionsValidSince: las sesiones emitidas hasta este momento no valen.
+	SessionsValidSince time.Time `json:"-"`
 }
 
 // Por dónde entra cada persona, en people.provider.
@@ -88,7 +93,8 @@ func (s *Store) SavePerson(ctx context.Context, p Person) error {
 
 // SaveIdentity guarda o pone al día a quien entra por (Provider, Subject) y
 // devuelve su login. La primera vez toma p.Login si nadie lo tiene, sin
-// mirar mayúsculas; si ya es de otra persona, p.Login~2, p.Login~3...
+// mirar mayúsculas; si ya es de otra persona, p.Login~2, p.Login~3... El
+// índice único sobre lower(login) hace que dos altas a la vez no lo compartan.
 func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 	p.Login = strings.TrimSpace(p.Login)
 	if p.Login == "" {
@@ -118,13 +124,29 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 		if !errors.Is(err, db.ErrNoRows) {
 			return "", fmt.Errorf("guardar persona: %w", err)
 		}
+		if p.LegacySubject != "" {
+			// Si hay varias, la que coincide en mayúsculas y luego la más antigua.
+			err := s.pool.QueryRow(ctx, `
+				UPDATE people SET subject = $2, name = $4, avatar_url = $5, last_login_at = now()
+				WHERE provider = $1 AND subject = (
+					SELECT subject FROM people WHERE provider = $1 AND lower(subject) = lower($3)
+					ORDER BY CASE WHEN subject = $3 THEN 0 ELSE 1 END, first_seen_at LIMIT 1)
+				AND NOT EXISTS (SELECT 1 FROM people WHERE provider = $1 AND subject = $2)
+				RETURNING login`,
+				p.Provider, p.Subject, p.LegacySubject, p.Name, p.AvatarURL).Scan(&login)
+			if err == nil {
+				return login, nil
+			}
+			if !errors.Is(err, db.ErrNoRows) {
+				return "", fmt.Errorf("guardar persona: %w", err)
+			}
+		}
 		candidate := p.Login
 		if n > 1 {
 			candidate = fmt.Sprintf("%s~%d", p.Login, n)
 		}
 		err = s.pool.QueryRow(ctx, `
-			INSERT INTO people (login, name, avatar_url, provider, subject)
-			SELECT $1, $2, $3, $4, $5 WHERE NOT EXISTS (SELECT 1 FROM people WHERE lower(login) = lower($1))
+			INSERT INTO people (login, name, avatar_url, provider, subject) VALUES ($1, $2, $3, $4, $5)
 			ON CONFLICT DO NOTHING RETURNING login`,
 			candidate, p.Name, p.AvatarURL, p.Provider, p.Subject).Scan(&login)
 		if err == nil {
@@ -137,30 +159,41 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 	return "", fmt.Errorf("guardar persona: %q y sus %d variantes ya son de otras personas", p.Login, maxLoginSuffix)
 }
 
-// ensurePerson guarda a alguien con sesión que entró antes de que se
-// guardaran las personas, sin tocar a quien ya está. Esas sesiones son de
-// GitHub o del modo de desarrollo: las de OIDC no entran sin guardarse.
+// ensurePerson guarda a alguien con sesión que no consta en people, sin
+// tocar a quien ya está. Falla si el login, sin mirar mayúsculas, es de otra
+// persona: entonces asignarle el issue se lo daría a ella.
 func (s *Store) ensurePerson(ctx context.Context, q Querier, login string) error {
-	provider := LoginGitHub
+	provider, subject := LoginGitHub, LegacyGitHubSubject(login)
 	if login == "dev" {
-		provider = LoginDev
+		provider, subject = LoginDev, login
 	}
-	_, err := q.Exec(ctx, `INSERT INTO people (login, name, provider, subject) VALUES ($1, $1, $2, $1) ON CONFLICT DO NOTHING`, login, provider)
+	_, err := q.Exec(ctx, `INSERT INTO people (login, name, provider, subject) VALUES ($1, $1, $2, $3) ON CONFLICT DO NOTHING`, login, provider, subject)
 	if err != nil {
 		return fmt.Errorf("guardar persona: %w", err)
+	}
+	var got string
+	if err := q.QueryRow(ctx, `SELECT login FROM people WHERE lower(login) = lower($1)`, login).Scan(&got); err != nil {
+		return fmt.Errorf("guardar persona: %w", err)
+	}
+	if got != login {
+		return fmt.Errorf("%w: el login %q es de otra persona (%q)", ErrInvalid, login, got)
 	}
 	return nil
 }
 
+// LegacyGitHubSubject es el subject de una persona de GitHub guardada por su
+// login, antes de identificarla por el id.
+func LegacyGitHubSubject(login string) string { return "login:" + login }
+
 // People son las personas que han entrado, por nombre.
 func (s *Store) People(ctx context.Context) ([]Person, error) {
-	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, provider, last_login_at FROM people ORDER BY `+s.pool.Dialect().Collate("lower(name)")+`, `+s.pool.Dialect().Collate("login"))
+	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, provider, subject, last_login_at, sessions_valid_since FROM people ORDER BY `+s.pool.Dialect().Collate("lower(name)")+`, `+s.pool.Dialect().Collate("login"))
 	if err != nil {
 		return nil, fmt.Errorf("listar personas: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (Person, error) {
 		var p Person
-		return p, r.Scan(&p.Login, &p.Name, &p.AvatarURL, &p.Provider, &p.LastLoginAt)
+		return p, r.Scan(&p.Login, &p.Name, &p.AvatarURL, &p.Provider, &p.Subject, &p.LastLoginAt, &p.SessionsValidSince)
 	})
 }
 

@@ -75,11 +75,35 @@ describe('LoginPage', () => {
     expect(el.querySelector('[role=alert]')?.textContent).toContain('no es miembro activo');
   });
 
-  it('en modo de desarrollo ofrece entrar como dev', async () => {
-    const el = await render({ user: null, methods: ['dev'] });
-    const a = el.querySelector<HTMLAnchorElement>('a.btn--primary');
-    expect(a?.getAttribute('href')).toBe('/auth/dev/login');
+  it('en modo de desarrollo pide la clave del log para entrar como dev', async () => {
+    const el = await render({ user: null, methods: ['dev'] }, { next: '/issues/7' });
+    const form = el.querySelector<HTMLFormElement>('form.login__dev');
+    expect(form?.getAttribute('action')).toBe('/auth/dev/login');
+    expect(form?.getAttribute('method')).toBe('get');
+    const key = form?.querySelector<HTMLInputElement>('input[name=key]');
+    expect(key?.type).toBe('password');
+    expect(key?.required).toBe(true);
+    expect(key?.getAttribute('autocomplete')).toBe('off');
+    expect(form?.querySelector<HTMLInputElement>('input[name=next]')?.value).toBe('/issues/7');
+    const submit = form?.querySelector<HTMLButtonElement>('button[type=submit]');
+    expect(submit?.classList).toContain('btn--primary');
+    expect(submit?.textContent?.trim()).toBe('Entrar como dev');
+    expect(el.querySelector('a[href^="/auth/dev/login"]')).toBeNull();
+    expect(el.querySelector('.login__label')?.textContent).toBe('Clave de desarrollo');
+    expect(el.querySelector('.login__note')?.textContent).toContain('escribe en su log un enlace');
     expect(el.textContent).toContain('modo de desarrollo');
+  });
+
+  it('sin next, el formulario de dev no lo manda', async () => {
+    const el = await render({ user: null, methods: ['dev'] });
+    expect(el.querySelector('form.login__dev input[name=next]')).toBeNull();
+  });
+
+  it('si la clave no es la del log, lo dice', async () => {
+    const el = await render({ user: null, methods: ['dev'] }, { error: 'dev_key' });
+    expect(el.querySelector('[role=alert]')?.textContent).toContain(
+      'no es la clave de este arranque',
+    );
   });
 
   it('solo con OIDC, un botón con el nombre del proveedor', async () => {
@@ -157,7 +181,20 @@ describe('LoginPage', () => {
       expect(el.querySelector('a.btn--primary')?.textContent?.trim()).toBe('Sign in with GitHub');
       expect(el.querySelector('[role=alert]')?.textContent).toContain('not an active member');
       expect(el.textContent).toContain('Sign in as dev');
-      expect(el.textContent).toContain('Development mode lets you in without GitHub');
+      expect(el.querySelector('.login__label')?.textContent).toBe('Development key');
+      expect(el.querySelector<HTMLInputElement>('input[name=key]')?.placeholder).toBe(
+        'From the link in the log',
+      );
+      expect(el.querySelector('form.login__dev button')?.classList).not.toContain('btn--primary');
+      expect(el.querySelector('.login__note')?.textContent).toContain(
+        'writes a sign-in link to its log',
+      );
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('la clave de desarrollo que no vale', async () => {
+      const el = await render({ user: null, methods: ['dev'] }, { error: 'dev_key' });
+      expect(el.querySelector('[role=alert]')?.textContent).toContain('isn’t the key for this run');
       expect(spanishLeft(el)).toEqual([]);
     });
 

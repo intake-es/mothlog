@@ -5,16 +5,22 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/intake-es/intake-errors/internal/store"
 )
 
-// Session es lo que lleva la cookie. No hay tabla: caduca sola a los 7 días.
+// Session es lo que lleva la cookie. Caduca sola a los 7 días, y antes si
+// IssuedAt no es posterior al sessions_valid_since de la persona.
 type Session struct {
-	Login   string `json:"l"`
-	Name    string `json:"n,omitempty"`
-	Expires int64  `json:"e"`
+	Login string `json:"l"`
+	Name  string `json:"n,omitempty"`
+	// IssuedAt es cuándo se emitió, en microsegundos desde 1970.
+	IssuedAt int64 `json:"i"`
+	Expires  int64 `json:"e"`
 }
 
 type oauthState struct {
@@ -53,28 +59,57 @@ func (a *Auth) verify(purpose, value string, v any) bool {
 	return err == nil && json.Unmarshal(b, v) == nil
 }
 
-func (a *Auth) session(r *http.Request) (Session, bool) {
-	if !a.enabled() {
-		return Session{}, false
+// sessionName lleva el prefijo __Host- con PUBLIC_URL https: así el
+// navegador solo la acepta con Secure, Path=/ y sin Domain.
+func (a *Auth) sessionName() string {
+	if a.secure {
+		return "__Host-" + sessionCookie
 	}
-	c, err := r.Cookie(sessionCookie)
+	return sessionCookie
+}
+
+// session devuelve la sesión de la petición si la firma es buena, no ha
+// caducado y no se ha revocado. Si no se puede consultar la revocación, no
+// hay sesión.
+func (a *Auth) session(r *http.Request) (Session, bool) {
+	s, ok, _ := a.checkSession(r)
+	return s, ok
+}
+
+// checkSession es session, con el error si no se pudo consultar la revocación.
+func (a *Auth) checkSession(r *http.Request) (Session, bool, error) {
+	if !a.enabled() || a.people == nil || !a.hostAllowed(r) {
+		return Session{}, false, nil
+	}
+	c, err := r.Cookie(a.sessionName())
 	if err != nil {
-		return Session{}, false
+		return Session{}, false, nil
 	}
 	var s Session
-	if !a.verify("session", c.Value, &s) || s.Login == "" || a.cfg.Now().Unix() >= s.Expires {
-		return Session{}, false
+	if !a.verify("session", c.Value, &s) || s.Login == "" || s.IssuedAt <= 0 || a.cfg.Now().Unix() >= s.Expires {
+		return Session{}, false, nil
 	}
-	return s, true
+	since, err := a.people.SessionsValidSince(r.Context(), s.Login)
+	if errors.Is(err, store.ErrNotFound) {
+		return Session{}, false, nil
+	}
+	if err != nil {
+		a.log.Error("sesión: leer si está revocada", "login", s.Login, "err", err)
+		return Session{}, false, err
+	}
+	if s.IssuedAt <= since.UnixMicro() {
+		return Session{}, false, nil
+	}
+	return s, true, nil
 }
 
 func (a *Auth) setSession(w http.ResponseWriter, login, name string) error {
-	exp := a.cfg.Now().Add(sessionTTL)
-	v, err := a.sign("session", Session{Login: login, Name: name, Expires: exp.Unix()})
+	now := a.cfg.Now()
+	v, err := a.sign("session", Session{Login: login, Name: name, IssuedAt: now.UnixMicro(), Expires: now.Add(sessionTTL).Unix()})
 	if err != nil {
 		return err
 	}
-	http.SetCookie(w, a.cookie(sessionCookie, v, "/", sessionTTL))
+	http.SetCookie(w, a.cookie(a.sessionName(), v, "/", sessionTTL))
 	return nil
 }
 

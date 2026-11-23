@@ -28,12 +28,14 @@ const usage = `uso:
   intake-errors tokens create <nombre>  crea un token de la API y lo imprime una sola vez
   intake-errors tokens list             lista los tokens
   intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre
+  intake-errors people list             lista quién ha entrado en la interfaz
+  intake-errors people revoke <login>   cierra todas las sesiones de esa persona (para darla de baja)
   intake-errors import sentry --url <servidor> --org <slug> [--project <slug>…] [--since <fecha>] [--events <N>] [--dry-run]
                                         importa de Sentry, con el token en SENTRY_IMPORT_TOKEN
   intake-errors version                 imprime la versión, el commit y la fecha del binario`
 
 func runCommand(args []string, out io.Writer) error {
-	if args[0] != "tokens" && args[0] != "releases" {
+	if args[0] != "tokens" && args[0] != "releases" && args[0] != "people" {
 		return fmt.Errorf("orden desconocida %q\n%s", args[0], usage)
 	}
 	cfg, err := loadConfig()
@@ -47,8 +49,11 @@ func runCommand(args []string, out io.Writer) error {
 		return err
 	}
 	defer db.Close()
-	if args[0] == "releases" {
+	switch args[0] {
+	case "releases":
 		return releasesCommand(ctx, db, args[1:], out)
+	case "people":
+		return peopleCommand(ctx, db, args[1:], out, time.Now)
 	}
 	return tokensCommand(ctx, db, args[1:], out)
 }

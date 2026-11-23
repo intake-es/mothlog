@@ -39,8 +39,10 @@ export const en: Record<Key, string> = {
   'login.lede.choose': 'Choose an account to sign in with.',
   'login.oidc': 'Sign in with {name}',
   'login.dev': 'Sign in as dev',
+  'login.devKey': 'Development key',
+  'login.devKeyPlaceholder': 'From the link in the log',
   'login.devNote':
-    'Development mode lets you in without GitHub and only works when listening on 127.0.0.1 or localhost.',
+    'On startup, the server writes a sign-in link to its log, with a new key on every start. Open it or paste its key here. Only works when listening on 127.0.0.1 or localhost.',
   'login.off.title': 'Sign-in is not configured',
   'login.off.text': 'The server is missing {vars}. The API and the MCP still work with tokens.',
   'login.off.oidc':
@@ -58,6 +60,8 @@ export const en: Record<Key, string> = {
   'login.error.oidc': '{name} didn’t respond as expected. Try again in a moment.',
   'login.error.oidcDenied': 'You cancelled access on {name}.',
   'login.error.save': 'Couldn’t save who you are. Try again in a moment.',
+  'login.error.devKey':
+    'That isn’t the key for this run. Copy it from the link the server writes to its log.',
   'login.error.oidcConfig': 'OIDC sign-in is not configured on this server.',
   'login.error.other': 'Couldn’t sign you in. Try again.',
 

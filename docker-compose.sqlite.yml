@@ -1,7 +1,9 @@
 # `docker compose -f docker-compose.sqlite.yml up` levanta intake-errors con
 # SQLite, sin Postgres, para probarlo en http://localhost:8000. La base es un
-# fichero en el volumen `intake`. Entra sin login (UI_DEV_LOGIN=1): NO es
-# para producción.
+# fichero en el volumen `intake`. Se entra como dev (UI_DEV_LOGIN=1) con el
+# enlace con clave que sale en el log al arrancar:
+#   docker compose -f docker-compose.sqlite.yml logs intake-errors | grep dev/login
+# NO es para producción.
 #
 # El volumen va en /home/nonroot, que en la imagen es del usuario con el que
 # corre el servicio, para que pueda escribir el fichero.
@@ -10,7 +12,9 @@ services:
   intake-errors:
     image: ${INTAKE_ERRORS_IMAGE:-ghcr.io/intake-es/intake-errors:latest}
     build: .
-    # UI_DEV_LOGIN solo vale escuchando en loopback: comparte la red del proxy.
+    # UI_DEV_LOGIN solo vale escuchando en loopback y pide la clave del log;
+    # con él, solo valen los Host de loopback y el de PUBLIC_URL, así que
+    # otro contenedor que llegue a proxy:8080 no entra. Comparte la red del proxy.
     network_mode: service:proxy
     environment:
       DATABASE_URL: sqlite:///home/nonroot/intake.db

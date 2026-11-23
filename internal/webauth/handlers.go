@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/intake-es/intake-errors/internal/store"
@@ -115,11 +116,12 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var user struct {
+		ID        int64  `json:"id"`
 		Login     string `json:"login"`
 		Name      string `json:"name"`
 		AvatarURL string `json:"avatar_url"`
 	}
-	if code, err := a.githubGet(ctx, token, "/user", &user); err != nil || code != http.StatusOK || user.Login == "" {
+	if code, err := a.githubGet(ctx, token, "/user", &user); err != nil || code != http.StatusOK || user.Login == "" || user.ID <= 0 {
 		a.log.Warn("login: GET /user", "status", code, "err", err)
 		toLogin(w, r, "github")
 		return
@@ -143,8 +145,10 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = user.Login
 	}
+	// El login de GitHub se puede cambiar y otro lo puede coger: la persona
+	// es el id. Si entró antes de guardarse por id, su fila se reconoce por el login.
 	login, ok := a.savePerson(ctx, store.Person{Login: user.Login, Name: name, AvatarURL: &user.AvatarURL,
-		Provider: store.LoginGitHub, Subject: user.Login})
+		Provider: store.LoginGitHub, Subject: strconv.FormatInt(user.ID, 10), LegacySubject: store.LegacyGitHubSubject(user.Login)})
 	if !ok {
 		toLogin(w, r, "save")
 		return
@@ -153,7 +157,7 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
-	a.log.Info("login", "provider", store.LoginGitHub, "login", login)
+	a.log.Info("login", "provider", store.LoginGitHub, "login", login, "github_id", user.ID)
 	http.Redirect(w, r, st.Next, http.StatusFound)
 }
 
@@ -215,6 +219,16 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !a.hostAllowed(r) {
+		a.log.Warn("login de desarrollo rechazado: Host ajeno", "host", r.Host)
+		http.Error(w, "Host no permitido con UI_DEV_LOGIN", http.StatusForbidden)
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("key")), []byte(a.devKey)) != 1 {
+		a.log.Warn("login de desarrollo rechazado: falta la clave o no es la del log")
+		toLogin(w, r, "dev_key")
+		return
+	}
 	login, ok := a.savePerson(r.Context(), store.Person{Login: devLogin, Name: devName, Provider: store.LoginDev, Subject: devLogin})
 	if !ok {
 		toLogin(w, r, "save")
@@ -227,11 +241,28 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusFound)
 }
 
+// handleLogout borra la cookie y revoca en el servidor todas las sesiones
+// de la persona emitidas hasta ahora, también las de otros navegadores.
 func (a *Auth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if a.enabled() && !a.sameOrigin(r) {
 		http.Error(w, "Origin no es el de PUBLIC_URL", http.StatusForbidden)
 		return
 	}
-	http.SetCookie(w, a.cookie(sessionCookie, "", "/", -1))
+	http.SetCookie(w, a.cookie(a.sessionName(), "", "/", -1))
+	s, ok, err := a.checkSession(r)
+	if err != nil {
+		// Sin poder comprobarla no se puede revocar: decirlo, para que no
+		// parezca cerrada mientras una copia de la cookie sigue valiendo.
+		http.Error(w, "no se ha podido cerrar la sesión en el servidor", http.StatusInternalServerError)
+		return
+	}
+	if ok {
+		if _, err := a.people.RevokeSessions(r.Context(), s.Login, a.cfg.Now()); err != nil {
+			a.log.Error("logout: revocar la sesión", "login", s.Login, "err", err)
+			http.Error(w, "error interno", http.StatusInternalServerError)
+			return
+		}
+		a.log.Info("logout", "login", s.Login)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

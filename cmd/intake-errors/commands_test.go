@@ -254,3 +254,45 @@ func TestReleasesCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestPeopleCommand(t *testing.T) {
+	db := storetest.NewDB(t)
+	ctx := context.Background()
+	at := time.Date(2026, 11, 23, 10, 30, 0, 0, time.UTC)
+	run := func(args ...string) (string, error) {
+		var out bytes.Buffer
+		err := peopleCommand(ctx, db.Store, args, &out, func() time.Time { return at })
+		return out.String(), err
+	}
+	if _, err := db.SaveIdentity(ctx, store.Person{Login: "ana", Name: "Ana", Provider: store.LoginGitHub, Subject: "101"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool().Exec(ctx, `INSERT INTO people (login, name, provider, subject) VALUES ('luis', 'Luis', 'github', 'login:luis')`); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := run("revoke", "Ana")
+	if err != nil || !strings.Contains(out, `"ana"`) {
+		t.Fatalf("revoke = %q, %v", out, err)
+	}
+	since, err := db.SessionsValidSince(ctx, "ana")
+	if err != nil || !since.Equal(at) {
+		t.Errorf("válidas desde = %v, %v", since, err)
+	}
+	if _, err := run("revoke", "nadie"); err == nil || !strings.Contains(err.Error(), "nadie") {
+		t.Errorf("revocar a quien no está = %v", err)
+	}
+
+	out, err = run("list")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 || !strings.Contains(lines[1], "101") || !strings.Contains(lines[1], "2026-11-23 10:30 UTC") ||
+		!strings.Contains(lines[2], "pendiente") || !strings.HasSuffix(strings.TrimSpace(lines[2]), "-") {
+		t.Errorf("list =\n%s", out)
+	}
+	if _, err := run("borrar", "ana"); err == nil {
+		t.Error("una orden desconocida no falla")
+	}
+}

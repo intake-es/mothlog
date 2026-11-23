@@ -15,6 +15,7 @@ const ERRORS: Record<string, Key> = {
   oidc: 'login.error.oidc',
   oidc_denied: 'login.error.oidcDenied',
   save: 'login.error.save',
+  dev_key: 'login.error.devKey',
 };
 
 const SERVER_VARS = ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_ORG', 'SESSION_SECRET'];

@@ -1,6 +1,8 @@
 # `docker compose up` levanta intake-errors y su Postgres para probarlo en
-# http://localhost:8000. Entra sin login (UI_DEV_LOGIN=1) y las claves son de
-# ejemplo: NO es para producción.
+# http://localhost:8000. Se entra como dev (UI_DEV_LOGIN=1) con el enlace con
+# clave que sale en el log al arrancar:
+#   docker compose logs intake-errors | grep dev/login
+# Las claves son de ejemplo: NO es para producción.
 #
 # El Postgres de desarrollo y de los tests es `db` (perfil dev), en 127.0.0.1:5433:
 # `docker compose up -d --wait db` o `make run`.
@@ -10,7 +12,9 @@ services:
     image: ${INTAKE_ERRORS_IMAGE:-ghcr.io/intake-es/intake-errors:latest}
     # Si no puede descargar la imagen, la construye desde el código (hace falta el repositorio).
     build: .
-    # UI_DEV_LOGIN solo vale escuchando en loopback: comparte la red del proxy,
+    # UI_DEV_LOGIN solo vale escuchando en loopback y pide la clave del log;
+    # con él, solo valen los Host de loopback y el de PUBLIC_URL, así que
+    # otro contenedor que llegue a proxy:8080 no entra. Comparte la red del proxy,
     # que lo publica solo en el 127.0.0.1 del anfitrión. Al revés, si se
     # reiniciara intake-errors, el proxy se quedaría en una red que ya no existe.
     network_mode: service:proxy

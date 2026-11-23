@@ -141,7 +141,7 @@ func run(args []string) error {
 		switch args[0] {
 		case "projects":
 			return projects(cfg, args[1:], os.Stdout)
-		case "tokens", "releases":
+		case "tokens", "releases", "people":
 			return runCommand(args, os.Stdout)
 		case "import":
 			return importCommand(cfg, args[1:], os.Stdout, os.Stderr)
@@ -151,6 +151,9 @@ func run(args []string) error {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
 	if addr := os.Getenv("PPROF_ADDR"); addr != "" {
+		if !webauth.Loopback(addr) {
+			return fmt.Errorf("PPROF_ADDR solo vale en loopback (127.0.0.1, [::1] o localhost), no en %q", addr)
+		}
 		go servePprof(addr, log)
 	}
 

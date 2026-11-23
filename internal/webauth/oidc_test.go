@@ -254,24 +254,29 @@ func TestOIDCLogin(t *testing.T) {
 		t.Error("el secreto no va por HTTP Basic, como anuncia el emisor")
 	}
 
-	// Sin correo, el preferred_username; el login de la sesión es el que da la base.
+	// Sin correo, el preferred_username con el prefijo oidc:; el login de la
+	// sesión es el que da la base.
 	people.login = func(p store.Person) string { return p.Login + "~2" }
 	h.auth.oidc.cfg.AllowedDomains = nil
 	h.auth.oidc.cfg.AllowAny = true
 	res = h.oidcLogin(t, f, fakeGrant{claims: map[string]any{"sub": "u-2", "preferred_username": "luis"}})
 	res = h.do(t, http.MethodGet, "/api/0/issues/", []*http.Cookie{cookieNamed(res, sessionCookie)}, nil)
-	if b, _ := io.ReadAll(res.Body); string(b) != "session:luis~2" {
+	if b, _ := io.ReadAll(res.Body); string(b) != "session:oidc:luis~2" {
 		t.Errorf("con preferred_username = %s", b)
 	}
 
-	// Un correo sin verificar no sirve de login: el preferred_username o, sin él, el sub.
+	// Un correo sin verificar no sirve de login: el preferred_username o, sin
+	// él, el sub, con el prefijo. Así nadie se queda con el correo o el login
+	// de GitHub de otra persona antes de que esta entre.
 	people.login = nil
 	for _, tc := range []struct {
 		claims map[string]any
 		want   string
 	}{
-		{map[string]any{"sub": "u-3", "email": "jefa@example.com", "email_verified": false, "preferred_username": "eve"}, "eve"},
-		{map[string]any{"sub": "u-4", "email": "jefa@example.com"}, "u-4"},
+		{map[string]any{"sub": "u-3", "email": "jefa@example.com", "email_verified": false, "preferred_username": "eve"}, "oidc:eve"},
+		{map[string]any{"sub": "u-4", "email": "jefa@example.com"}, "oidc:u-4"},
+		{map[string]any{"sub": "u-6", "email": "jefa@example.com", "email_verified": false, "preferred_username": "jefa@example.com"}, "oidc:jefa@example.com"},
+		{map[string]any{"sub": "u-7", "preferred_username": "ana"}, "oidc:ana"},
 		{map[string]any{"sub": "u-5", "email": "jefa@example.com", "email_verified": "true"}, "jefa@example.com"},
 	} {
 		res = h.oidcLogin(t, f, fakeGrant{claims: tc.claims})

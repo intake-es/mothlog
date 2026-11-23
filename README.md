@@ -11,7 +11,13 @@ curl -fsSLO https://raw.githubusercontent.com/intake-es/intake-errors/main/docke
 docker compose up
 ```
 
-Levanta intake-errors (la imagen `latest`) y su Postgres y aplica las migraciones al arrancar. En http://localhost:8000 se entra sin login, como `dev` (`UI_DEV_LOGIN=1`): **no es para producción**, y por eso solo escucha en el `127.0.0.1` de la máquina. Para mandarle errores, se crea un proyecto y su DSN se pone en el SDK:
+Levanta intake-errors (la imagen `latest`) y su Postgres y aplica las migraciones al arrancar. En http://localhost:8000 se entra como `dev`, sin GitHub (`UI_DEV_LOGIN=1`), con el enlace que el servicio escribe en el log al arrancar, que lleva una clave nueva en cada arranque: **no es para producción**, y por eso solo escucha en el `127.0.0.1` de la máquina. El enlace se saca con:
+
+```sh
+docker compose logs intake-errors | grep dev/login   # http://localhost:8000/auth/dev/login?key=…
+```
+
+Para mandarle errores, se crea un proyecto y su DSN se pone en el SDK:
 
 ```sh
 docker compose exec intake-errors /intake-errors projects create demo   # imprime http://<clave>@localhost:8000/1
@@ -21,7 +27,7 @@ docker compose exec intake-errors /intake-errors projects create demo   # imprim
 
 Si la imagen no se puede descargar (antes de la primera versión, o mientras el paquete de ghcr sea privado), compose la construye con el `Dockerfile`, así que hasta entonces hay que lanzarlo desde una copia del repositorio. La imagen construida queda en local con la etiqueta `latest`; `docker compose pull` la cambia por la publicada.
 
-`UI_DEV_LOGIN` solo vale escuchando en loopback, así que el servicio escucha en `127.0.0.1` dentro de la red de un proxy (Caddy), que lo publica en el `127.0.0.1:8000` de la máquina. La red es la del proxy y no la del servicio para que, si el servicio se reinicia, vuelva a entrar en ella.
+`UI_DEV_LOGIN` solo vale escuchando en loopback, así que el servicio escucha en `127.0.0.1` dentro de la red de un proxy (Caddy), que lo publica en el `127.0.0.1:8000` de la máquina. La red es la del proxy y no la del servicio para que, si el servicio se reinicia, vuelva a entrar en ella. Otro contenedor de la misma red de Docker llega al proxy, pero sin la clave no entra, y con un `Host` que no sea `localhost:8000` (el de `PUBLIC_URL`) tampoco le vale una sesión.
 
 ### Con el binario
 
@@ -133,9 +139,9 @@ Al arrancar aplica las migraciones de `migrations/` (con SQLite, las de `migrati
 | `OIDC_SCOPES`, `OIDC_NAME` | scopes que se piden y nombre del botón («Entrar con …») | `openid email profile`, `SSO` |
 | `UPTIME_ALLOW_PRIVATE` | `1` deja a los [monitores de disponibilidad](#monitores-de-disponibilidad) pedir a redes privadas y a loopback (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7, ::1); las de metadatos y link-local nunca | vacía: solo direcciones públicas |
 | `INGEST_BATCH_MAX`, `INGEST_BATCH_WAIT` | eventos por lote como mucho y lo más que espera un lote a los envíos que ya se están leyendo ([Lotes y rendimiento](#lotes-y-rendimiento)) | `100`, `2ms` |
-| `PPROF_ADDR` | dirección donde servir `net/http/pprof`, aparte del puerto público; solo para medir | vacía: sin pprof |
+| `PPROF_ADDR` | dirección donde servir `net/http/pprof`, aparte del puerto público; solo para medir, y solo en loopback (`127.0.0.1`, `[::1]` o `localhost`): con otra, el binario no arranca | vacía: sin pprof |
 | `METRICS_TOKEN` | token de `GET /metrics` ([Métricas](#métricas)); sin él, la ruta no existe y no se cuenta nada | vacío |
-| `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
+| `UI_DEV_LOGIN` | `1` deja entrar en la interfaz como `dev` sin GitHub, con el enlace con clave que sale en el log al arrancar; solo con `LISTEN_ADDR` en `127.0.0.1`, `[::1]` o `localhost` ([Para probar en local](#para-probar-en-local)) | vacía |
 
 `GET /healthz` responde `ok` si la base contesta.
 
@@ -153,9 +159,18 @@ npm start                           # ng serve en :4200, con /api y /auth contra
 
 Sin compilar la web, `go build` y `go test` funcionan y `/` es una página que explica cómo compilarla. El `Dockerfile` compila la web antes que Go. Los ficheros con hash van con un año de caché; `index.html`, sin caché y con CSP.
 
-Para entrar hace falta una OAuth App de GitHub con callback `<PUBLIC_URL>/auth/github/callback`. `/auth/github/login` pide el scope `read:org` con un `state` en una cookie firmada, y el callback deja entrar solo si `GET /user/memberships/orgs/<GITHUB_ORG>` dice `active`. La sesión es una cookie firmada con HMAC (`SESSION_SECRET`): `HttpOnly`, `SameSite=Lax`, `Secure` si `PUBLIC_URL` es https, de 7 días, sin tabla; `POST /auth/logout` la borra. Del usuario de GitHub solo se guarda en la cookie el login y el nombre; el token de GitHub no se guarda.
+Para entrar hace falta una OAuth App de GitHub con callback `<PUBLIC_URL>/auth/github/callback`. Con GitHub u OIDC, `PUBLIC_URL` tiene que ser https (http solo vale en `localhost`, `127.0.0.1` o `[::1]`). `/auth/github/login` pide el scope `read:org` con un `state` en una cookie firmada, y el callback deja entrar solo si `GET /user/memberships/orgs/<GITHUB_ORG>` dice `active`. A la persona se la reconoce por el id numérico de su cuenta de GitHub, no por el login, que se puede cambiar: si alguien se cambia el login sigue siendo quien era, y otra cuenta que coja el login que dejó libre entra como `login~2`, sin sus comentarios ni sus asignaciones. El token de GitHub no se guarda.
 
-La cookie vale para `/api/0/` y `/mcp` igual que un token (los tokens siguen igual), y en lo que cambia algo exige que `Origin` sea el de `PUBLIC_URL`; si no, 403. Sin las variables de GitHub, de OIDC ni `UI_DEV_LOGIN`, la interfaz dice que el login no está configurado.
+La sesión es una cookie firmada con HMAC (`SESSION_SECRET`) con el login, el nombre y cuándo se emitió: `HttpOnly`, `SameSite=Lax`, de 7 días y, con `PUBLIC_URL` https, `Secure` y con el prefijo `__Host-` (`__Host-ie_session`), para que no la pueda poner un subdominio. Cada persona tiene en `people` desde cuándo valen sus sesiones, y cada petición con cookie lo mira: si no se puede leer, no hay sesión. `POST /auth/logout` borra la cookie y lo pone a ahora, así que cierra la sesión en el servidor y en todos los navegadores de esa persona; una copia de la cookie guardada antes ya no vale. Si la base no responde, el logout responde 500 en vez de 204: la sesión no se ha cerrado en el servidor y hay que repetirlo.
+
+La pertenencia a la org de GitHub o al grupo del proveedor OIDC solo se mira al entrar. Para sacar a alguien:
+
+1. Quítalo de la org de GitHub o del grupo (o del dominio) del proveedor OIDC, para que no pueda volver a entrar.
+2. Cierra sus sesiones abiertas: `intake-errors people revoke <login>` (el login de `intake-errors people list`). Sin este paso, su cookie seguiría valiendo hasta los 7 días.
+
+La cookie vale para `/api/0/` y `/mcp` igual que un token (los tokens siguen igual), y en lo que cambia algo exige que `Origin` sea el de `PUBLIC_URL`; si no, 403. Las respuestas de `/api/0/` y `/mcp` van con `Cache-Control: no-store`. Sin las variables de GitHub, de OIDC ni `UI_DEV_LOGIN`, la interfaz dice que el login no está configurado.
+
+Al actualizar a esta versión, todo el mundo tiene que volver a entrar una vez: las cookies de antes no llevan la fecha de emisión ni el prefijo. Las personas de GitHub guardadas antes por su login pasan a su id la primera vez que entra una cuenta con ese login (`people list` las enseña como `pendiente` hasta entonces). Si alguien se cambió el login en GitHub antes de actualizar y otra cuenta cogió el que dejó libre, la primera que entre con ese login se queda con la persona de antes, con sus comentarios y asignaciones: si es tu caso, mira en `people list` quién sigue `pendiente` y pide a esas personas que entren cuanto antes, o revisa el registro (`login` con `github_id`) tras su primera entrada. Si había dos personas con el mismo login sin mirar mayúsculas, la que entró después pasa a `login~N` con lo que tenía; desde ahora la base no deja repetirlo.
 
 ### Entrar con OIDC
 
@@ -181,17 +196,21 @@ Quién entra:
 - Con los dos, hay que cumplir los dos.
 - Sin ninguno, el binario no arranca, salvo con `OIDC_ALLOW_ANY=1`, que deja entrar a cualquiera con cuenta en el emisor.
 
-De quien entra se guarda en `people` el proveedor, su `sub`, el login que se enseña (el correo si viene con `email_verified`; si no, el `preferred_username` o, sin él, el `sub`), el nombre y la foto; no se guarda ningún token del proveedor. A la siguiente vez se le reconoce por el `sub`, aunque cambie de correo. Si ese login ya es de otra persona (de GitHub o de OIDC, sin mirar mayúsculas), la nueva queda como `login~2`, para que los asignados, el historial y `assigned:me` no las mezclen. De quien no pasa, el registro apunta solo el motivo, el `sub` y el dominio del correo.
+De quien entra se guarda en `people` el proveedor, su `sub`, el login que se enseña (el correo si viene con `email_verified`; si no, `oidc:` y el `preferred_username` o, sin él, el `sub`), el nombre y la foto; no se guarda ningún token del proveedor. A la siguiente vez se le reconoce por el `sub`, aunque cambie de correo. Si ese login ya es de otra persona (de GitHub o de OIDC, sin mirar mayúsculas), la nueva queda como `login~2`, para que los asignados, el historial y `assigned:me` no las mezclen. De quien no pasa, el registro apunta solo el motivo, el `sub` y el dominio del correo.
 
-Con GitHub y OIDC configurados, la pantalla de entrada enseña los dos botones. El emisor se lee al primer intento de entrar, no al arrancar: si no responde, la pantalla lo dice y GitHub sigue funcionando. Con OIDC configurado, si no se puede guardar a la persona no se entra, tampoco con GitHub, porque su login podría ser el de otra.
+El prefijo `oidc:` hace que ese login no pueda ser un correo ni un login de GitHub: nadie se queda con el de un compañero poniéndolo como `preferred_username` antes de que este entre. Quien entró antes de esta versión sin correo verificado y se quedó con un login sin prefijo lo pierde al volver a entrar: pasa a `oidc:<su login>`, con sus asignaciones, comentarios e historial, y el login de antes queda libre.
 
-Para probar en local:
+Con GitHub y OIDC configurados, la pantalla de entrada enseña los dos botones. El emisor se lee al primer intento de entrar, no al arrancar: si no responde, la pantalla lo dice y GitHub sigue funcionando. Si no se puede guardar a la persona, no se entra, con GitHub, OIDC o en desarrollo: sin su fila no se podría cerrar su sesión.
+
+### Para probar en local
 
 ```sh
 UI_DEV_LOGIN=1 LISTEN_ADDR=127.0.0.1:8080 DATABASE_URL=... intake-errors
 ```
 
-Sin `PUBLIC_URL`, la interfaz se puede abrir por `http://127.0.0.1:8080` o por `http://localhost:8080`: en el modo de desarrollo valen las dos como `Origin`. Con `UI_DEV_LOGIN=1` y otra `LISTEN_ADDR` (por ejemplo `:8080`), el binario se niega a arrancar.
+Al arrancar, el log trae una vez el enlace para entrar como `dev`, con una clave aleatoria que cambia en cada arranque (`"url":"http://127.0.0.1:8080/auth/dev/login?key=…"`). En la pantalla de entrada también se puede pegar la clave. Sin ella, `/auth/dev/login` vuelve a la pantalla de entrada sin sesión.
+
+Sin `PUBLIC_URL`, la interfaz se puede abrir por `http://127.0.0.1:8080`, `http://localhost:8080` o `http://[::1]:8080`: en el modo de desarrollo valen las tres como `Origin`. Con `UI_DEV_LOGIN=1`, una petición cuyo `Host` no sea uno de esos (con el puerto de `LISTEN_ADDR`) o el de `PUBLIC_URL` no entra ni vale con sesión: así una página con DNS rebinding, que llega con su propio nombre, no puede leer nada. Con `UI_DEV_LOGIN=1` y otra `LISTEN_ADDR` (por ejemplo `:8080`), el binario se niega a arrancar.
 
 ## Proyectos
 
@@ -346,6 +365,8 @@ La API REST (`/api/0/`) y el servidor MCP (`/mcp`) piden un token en `Authorizat
 intake-errors tokens create claude   # imprime el token (ie_…) una sola vez; en la base solo queda su sha256
 intake-errors tokens list            # nombre, alta, último uso y revocación
 intake-errors tokens revoke claude
+intake-errors people list            # quién ha entrado: login, proveedor, id, último login y revocación
+intake-errors people revoke ana      # cierra todas sus sesiones: el paso para sacar a alguien
 ```
 
 Para conectarlo con Claude Code:
