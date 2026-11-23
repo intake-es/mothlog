@@ -15,13 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
 type fakeSource struct {
-	pool  *pgxpool.Pool
+	pool  db.DB
 	snap  store.MetricsSnapshot
 	err   error
 	calls int
@@ -32,12 +31,12 @@ func (f *fakeSource) MetricsSnapshot(ctx context.Context) (store.MetricsSnapshot
 	return f.snap, f.err
 }
 
-func (f *fakeSource) Pool() *pgxpool.Pool { return f.pool }
+func (f *fakeSource) Pool() db.DB { return f.pool }
 
 func newFake(t *testing.T) *fakeSource {
 	t.Helper()
-	// pgxpool no conecta hasta que se le pide una conexión.
-	pool, err := pgxpool.New(context.Background(), "postgres://x:x@127.0.0.1:1/x")
+	// OpenPostgres no conecta hasta que se le pide una conexión.
+	pool, err := db.OpenPostgres(context.Background(), "postgres://x:x@127.0.0.1:1/x")
 	if err != nil {
 		t.Fatal(err)
 	}

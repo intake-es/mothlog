@@ -8,8 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/search"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -94,7 +93,7 @@ func cut(s string, n int) string {
 // recordTags cuenta las etiquetas y el usuario del evento en el issue, en una
 // sola sentencia. Va dentro de la transacción del evento, tras saber que no
 // es un reenvío, para que un evento repetido no cuente dos veces.
-func (in *Ingester) recordTags(ctx context.Context, tx pgx.Tx, issueID int64, ev *event.Event) error {
+func (in *Ingester) recordTags(ctx context.Context, tx db.Tx, issueID int64, ev *event.Event) error {
 	tags := Tags(ev)
 	keys := make([]string, len(tags))
 	values := make([]string, len(tags))
@@ -112,10 +111,10 @@ func (in *Ingester) recordTags(ctx context.Context, tx pgx.Tx, issueID int64, ev
 	_, err := tx.Exec(ctx, `
 		WITH t AS (
 			INSERT INTO issue_tag_values (issue_id, key, value, count, last_seen)
-			SELECT $1, k, v, 1, $4 FROM unnest($2::text[], $3::text[]) AS x(k, v)
+			SELECT $1, k, v, 1, $4 FROM `+tx.Dialect().Unnest("x", 2, "k text", "v text")+`
 			ON CONFLICT (issue_id, key, value) DO UPDATE SET
 				count = issue_tag_values.count + 1,
-				last_seen = GREATEST(issue_tag_values.last_seen, EXCLUDED.last_seen)
+				last_seen = `+tx.Dialect().Greatest("issue_tag_values.last_seen", "EXCLUDED.last_seen")+`
 		), u AS (
 			INSERT INTO issue_users (issue_id, user_hash)
 			SELECT $1, $5::bytea WHERE $5::bytea IS NOT NULL
@@ -131,7 +130,7 @@ func (in *Ingester) recordTags(ctx context.Context, tx pgx.Tx, issueID int64, ev
 	return nil
 }
 
-func (in *Ingester) userHashKey(ctx context.Context, tx pgx.Tx) ([]byte, error) {
+func (in *Ingester) userHashKey(ctx context.Context, tx db.Tx) ([]byte, error) {
 	if k := in.hashKey.Load(); k != nil {
 		return *k, nil
 	}

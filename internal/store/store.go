@@ -3,25 +3,24 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/migrations"
 )
 
 var ErrNotFound = errors.New("no encontrado")
 
 type Store struct {
-	pool    *pgxpool.Pool
+	pool    db.DB
 	hashKey atomic.Pointer[[]byte]
 }
 
@@ -36,26 +35,25 @@ type Project struct {
 
 // Open conecta con Postgres y aplica las migraciones pendientes.
 func Open(ctx context.Context, url string, log *slog.Logger) (*Store, error) {
-	pool, err := pgxpool.New(ctx, url)
+	pool, err := db.OpenPostgres(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("conectar con postgres: %w", err)
 	}
-	if err := migrate(ctx, pool, log); err != nil {
+	if err := migrate(ctx, pool.SQLDB(), log); err != nil {
 		pool.Close()
 		return nil, err
 	}
 	return &Store{pool: pool}, nil
 }
 
-func migrate(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) error {
-	db := stdlib.OpenDBFromPool(pool)
-	defer func() { _ = db.Close() }()
+func migrate(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
+	defer func() { _ = sqlDB.Close() }()
 	// El cerrojo de sesión evita que dos réplicas migren a la vez.
 	locker, err := lock.NewPostgresSessionLocker()
 	if err != nil {
 		return err
 	}
-	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+	p, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.FS,
 		goose.WithSessionLocker(locker), goose.WithSlog(log),
 		// Las migraciones de ramas paralelas pueden llegar en otro orden que su número.
 		goose.WithAllowOutofOrder(true))
@@ -92,7 +90,7 @@ func (s *Store) ProjectByPublicKey(ctx context.Context, publicKey string) (Proje
 	err := s.pool.QueryRow(ctx,
 		`SELECT `+projectColumns+` FROM projects WHERE public_key = $1`,
 		publicKey).Scan(p.fields()...)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Project{}, ErrNotFound
 	}
 	if err != nil {

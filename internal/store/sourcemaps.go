@@ -9,8 +9,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // SourceMapFile es un .map subido para un release; File es el nombre del .js
@@ -28,12 +27,12 @@ type SourceMapFile struct {
 // con el mismo fichero (o el mismo debug ID). Si el proyecto no existe
 // devuelve ErrNotFound.
 func (s *Store) PutSourceMaps(ctx context.Context, projectID int64, release string, files []SourceMapFile) error {
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	return db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		return putSourceMaps(ctx, tx, projectID, release, files)
 	})
 }
 
-func putSourceMaps(ctx context.Context, tx pgx.Tx, projectID int64, release string, files []SourceMapFile) error {
+func putSourceMaps(ctx context.Context, tx db.Tx, projectID int64, release string, files []SourceMapFile) error {
 	for _, f := range files {
 		gz, err := gzipBytes(f.Map)
 		if err != nil {
@@ -55,8 +54,7 @@ func putSourceMaps(ctx context.Context, tx pgx.Tx, projectID int64, release stri
 			args = append(args, f.DebugID)
 		}
 		_, err = tx.Exec(ctx, q, args...)
-		var pe *pgconn.PgError
-		if errors.As(err, &pe) && pe.Code == "23503" {
+		if db.IsForeignKeyViolation(err) {
 			return ErrNotFound
 		}
 		if err != nil {
@@ -85,7 +83,7 @@ func (s *Store) SourceMapByDebugID(ctx context.Context, projectID int64, debugID
 func (s *Store) sourceMap(ctx context.Context, q string, args ...any) ([]byte, error) {
 	var gz []byte
 	err := s.pool.QueryRow(ctx, q, args...).Scan(&gz)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {

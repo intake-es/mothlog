@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // HealthSeriesHours es cuántas horas trae la serie del detalle de una release.
@@ -103,10 +103,10 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 	}
 
 	rows, err := s.pool.Query(ctx, `
-		SELECT r.id, s.environment, sum(s.total)::bigint, sum(s.errored)::bigint, sum(s.crashed)::bigint,
-			sum(s.abnormal)::bigint, COALESCE(sum(s.total) FILTER (WHERE s.hour >= $3), 0)::bigint
+		SELECT r.id, s.environment, CAST(sum(s.total) AS bigint), CAST(sum(s.errored) AS bigint), CAST(sum(s.crashed) AS bigint),
+			CAST(sum(s.abnormal) AS bigint), CAST(COALESCE(sum(s.total) FILTER (WHERE s.hour >= $3), 0) AS bigint)
 		FROM releases r JOIN release_sessions s ON s.project_id = r.project_id AND s.release = r.version
-		WHERE r.id = ANY($1) AND ($2 = '' OR s.environment = $2)
+		WHERE `+s.pool.Dialect().InList("r.id", "$1")+` AND ($2 = '' OR s.environment = $2)
 		GROUP BY r.id, s.environment`, ids, env, since)
 	if err != nil {
 		return fmt.Errorf("leer sesiones: %w", err)
@@ -114,7 +114,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 	var rid int64
 	var e string
 	var c [5]int64
-	_, err = pgx.ForEachRow(rows, []any{&rid, &e, &c[0], &c[1], &c[2], &c[3], &c[4]}, func() error {
+	err = db.ForEachRow(rows, []any{&rid, &e, &c[0], &c[1], &c[2], &c[3], &c[4]}, func() error {
 		i := at[rid]
 		for _, h := range []*ReleaseHealth{get(i, e), &rels[i].Health} {
 			h.Sessions += c[0]
@@ -134,13 +134,13 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		SELECT r.id, COALESCE(u.environment, ''), u.environment IS NULL,
 			count(DISTINCT u.user_hash), count(DISTINCT u.user_hash) FILTER (WHERE u.crashed)
 		FROM releases r JOIN release_users u ON u.project_id = r.project_id AND u.release = r.version
-		WHERE r.id = ANY($1) AND ($2 = '' OR u.environment = $2)
+		WHERE `+s.pool.Dialect().InList("r.id", "$1")+` AND ($2 = '' OR u.environment = $2)
 		GROUP BY GROUPING SETS ((r.id, u.environment), (r.id))`, ids, env)
 	if err != nil {
 		return fmt.Errorf("leer usuarios de las releases: %w", err)
 	}
 	var all bool
-	_, err = pgx.ForEachRow(rows, []any{&rid, &e, &all, &c[0], &c[1]}, func() error {
+	err = db.ForEachRow(rows, []any{&rid, &e, &all, &c[0], &c[1]}, func() error {
 		h := &rels[at[rid]].Health
 		if !all {
 			h = get(at[rid], e)
@@ -154,8 +154,8 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 
 	// Las sesiones de cada proyecto y entorno en las últimas 24 horas.
 	rows, err = s.pool.Query(ctx, `
-		SELECT project_id, environment, sum(total)::bigint FROM release_sessions
-		WHERE project_id = ANY($1) AND hour >= $2 AND ($3 = '' OR environment = $3)
+		SELECT project_id, environment, CAST(sum(total) AS bigint) FROM release_sessions
+		WHERE `+s.pool.Dialect().InList("project_id", "$1")+` AND hour >= $2 AND ($3 = '' OR environment = $3)
 		GROUP BY project_id, environment`, projects, since, env)
 	if err != nil {
 		return fmt.Errorf("leer la adopción: %w", err)
@@ -166,7 +166,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 	}
 	recent := map[key]int64{}
 	var pid, n int64
-	_, err = pgx.ForEachRow(rows, []any{&pid, &e, &n}, func() error {
+	err = db.ForEachRow(rows, []any{&pid, &e, &n}, func() error {
 		recent[key{pid, e}] += n
 		recent[key{pid, ""}] += n
 		return nil
@@ -198,7 +198,7 @@ func (s *Store) healthSeries(ctx context.Context, projectID int64, version, env 
 	end := now.UTC().Truncate(time.Hour)
 	start := end.Add(-(HealthSeriesHours - 1) * time.Hour)
 	rows, err := s.pool.Query(ctx, `
-		SELECT hour, sum(total)::bigint, sum(errored)::bigint, sum(crashed)::bigint, sum(abnormal)::bigint
+		SELECT hour, CAST(sum(total) AS bigint), CAST(sum(errored) AS bigint), CAST(sum(crashed) AS bigint), CAST(sum(abnormal) AS bigint)
 		FROM release_sessions
 		WHERE project_id = $1 AND release = $2 AND ($3 = '' OR environment = $3) AND hour >= $4
 		GROUP BY hour`, projectID, version, env, start)
@@ -207,7 +207,7 @@ func (s *Store) healthSeries(ctx context.Context, projectID int64, version, env 
 	}
 	got := map[time.Time]HealthHour{}
 	var h HealthHour
-	_, err = pgx.ForEachRow(rows, []any{&h.Hour, &h.Sessions, &h.SessionsErrored, &h.SessionsCrashed, &h.SessionsAbnormal}, func() error {
+	err = db.ForEachRow(rows, []any{&h.Hour, &h.Sessions, &h.SessionsErrored, &h.SessionsCrashed, &h.SessionsAbnormal}, func() error {
 		got[h.Hour.UTC()] = h
 		return nil
 	})

@@ -13,8 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/markdown"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -87,7 +86,7 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 	return []byte(m.String()), nil
 }
 
-func (e *email) send(ctx context.Context, _ pgx.Tx, p *pending) error {
+func (e *email) send(ctx context.Context, _ db.Tx, p *pending) error {
 	var msg []byte
 	var err error
 	if p.digest != nil {

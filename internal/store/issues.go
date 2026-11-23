@@ -11,9 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/search"
 )
@@ -33,16 +31,6 @@ const (
 	DailyDays = 14
 	topValues = 5
 )
-
-func isUniqueViolation(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23505"
-}
-
-func isForeignKeyViolation(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23503"
-}
 
 type Issue struct {
 	ID                int64      `json:"id"`
@@ -93,7 +81,7 @@ func issueSQL(envArg string) (cols, from string) {
 	  ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1),
 	i.resolved_in_release, i.last_regressed_at, i.first_release, i.fixed_in_release`
 	from = issueFrom + ` CROSS JOIN LATERAL (
-		SELECT COALESCE(sum(s.event_count), 0)::bigint AS n,
+		SELECT CAST(COALESCE(sum(s.event_count), 0) AS bigint) AS n,
 			COALESCE(min(s.first_seen), i.first_seen) AS first_seen,
 			COALESCE(max(s.last_seen), i.last_seen) AS last_seen
 		FROM issue_stats s WHERE s.issue_id = i.id AND s.environment = ` + envArg + `) es`
@@ -208,7 +196,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		return "$" + strconv.Itoa(len(args))
 	}
 	if f.Project != "" {
-		where = append(where, fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(f.Project)))
+		where = append(where, fmt.Sprintf("(CAST(p.id AS text) = %s OR p.name = %[1]s)", arg(f.Project)))
 	}
 	envArg := ""
 	if f.Environment != "" {
@@ -253,7 +241,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 	if err != nil {
 		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
 	}
-	issues, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Issue, error) { return scanIssueWithAssignee(r) })
+	issues, err := db.CollectRows(rows, func(r db.CollectableRow) (Issue, error) { return scanIssueWithAssignee(r) })
 	if err != nil {
 		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
 	}
@@ -282,7 +270,8 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 func (s *Store) termSQL(ctx context.Context, t search.Term, viewer *Actor, arg func(any) string) (string, error) {
 	switch t.Key {
 	case "":
-		return fmt.Sprintf("(i.title ILIKE %s OR i.culprit ILIKE %[1]s)", arg(likePattern(t.Value))), nil
+		d, p := s.pool.Dialect(), arg(likePattern(t.Value))
+		return "(" + d.ILike("i.title", p) + " OR " + d.ILike("i.culprit", p) + ")", nil
 	case "is":
 		switch t.Value {
 		case "regressed":
@@ -308,7 +297,7 @@ func (s *Store) termSQL(ctx context.Context, t search.Term, viewer *Actor, arg f
 		}
 		return fmt.Sprintf("(i.assignee IS NOT NULL AND lower(i.assignee) = lower(%s))", arg(t.Value)), nil
 	case "project":
-		return fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(t.Value)), nil
+		return fmt.Sprintf("(CAST(p.id AS text) = %s OR p.name = %[1]s)", arg(t.Value)), nil
 	case "user":
 		key, err := s.userHashKey(ctx)
 		if err != nil {
@@ -318,7 +307,7 @@ func (s *Store) termSQL(ctx context.Context, t search.Term, viewer *Actor, arg f
 		for _, id := range userIdents(t.Value) {
 			hashes = append(hashes, UserHash(key, id))
 		}
-		return "EXISTS (SELECT 1 FROM issue_users u WHERE u.issue_id = i.id AND u.user_hash = ANY(" + arg(hashes) + "))", nil
+		return "EXISTS (SELECT 1 FROM issue_users u WHERE u.issue_id = i.id AND " + s.pool.Dialect().InList("u.user_hash", arg(hashes)) + ")", nil
 	}
 	return fmt.Sprintf("EXISTS (SELECT 1 FROM issue_tag_values t WHERE t.issue_id = i.id AND t.key = %s AND t.value = %s)",
 		arg(t.Key), arg(t.Value)), nil
@@ -336,7 +325,7 @@ func (s *Store) IssueIn(ctx context.Context, id int64, env string) (Issue, error
 	}
 	cols, from := issueWithAssigneeSQL(envArg)
 	i, err := scanIssueWithAssignee(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM `+from+` WHERE i.id = $1`, args...))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Issue{}, ErrNotFound
 	}
 	if err != nil {
@@ -356,9 +345,9 @@ type StoredEvent struct {
 	Event      event.Event `json:"event"`
 }
 
-const storedEventColumns = `id, issue_id, project_id, replace(event_id::text, '-', ''), occurred_at, received_at, data_zstd, data`
+const storedEventColumns = `id, issue_id, project_id, replace(CAST(event_id AS text), '-', ''), occurred_at, received_at, data_zstd, data`
 
-func scanStoredEvent(r pgx.Row) (StoredEvent, error) {
+func scanStoredEvent(r db.Row) (StoredEvent, error) {
 	var e StoredEvent
 	var compressed, legacy []byte
 	if err := r.Scan(&e.ID, &e.IssueID, &e.ProjectID, &e.EventID, &e.OccurredAt, &e.ReceivedAt, &compressed, &legacy); err != nil {
@@ -384,7 +373,7 @@ const (
 
 // Event busca por el id interno o por el event_id del SDK (32 hex o UUID).
 func (s *Store) Event(ctx context.Context, ref string) (StoredEvent, error) {
-	var row pgx.Row
+	var row db.Row
 	if id, err := strconv.ParseInt(ref, 10, 64); err == nil {
 		row = s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+` FROM events WHERE id = $1`, id)
 	} else if isUUID(ref) {
@@ -393,7 +382,7 @@ func (s *Store) Event(ctx context.Context, ref string) (StoredEvent, error) {
 		return StoredEvent{}, ErrNotFound
 	}
 	e, err := scanStoredEvent(row)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return StoredEvent{}, ErrNotFound
 	}
 	if err != nil {
@@ -423,7 +412,7 @@ func (s *Store) latestEventIn(ctx context.Context, issueID int64, env string) (*
 	e, err := scanStoredEvent(s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+`
 		FROM events WHERE issue_id = $1 AND ($2 = '' OR environment = $2)
 		ORDER BY occurred_at DESC, id DESC LIMIT 1`, issueID, env))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -494,7 +483,7 @@ func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now tim
 	d.TopValues = map[string][]ValueCount{"environment": {}, "release": {}, "user": {}, "organization_id": {}}
 	var key string
 	var vc ValueCount
-	_, err = pgx.ForEachRow(rows, []any{&key, &vc.Value, &vc.Count}, func() error {
+	err = db.ForEachRow(rows, []any{&key, &vc.Value, &vc.Count}, func() error {
 		if len(d.TopValues[key]) < topValues {
 			d.TopValues[key] = append(d.TopValues[key], vc)
 		}
@@ -520,8 +509,8 @@ func (s *Store) DailyCountsIn(ctx context.Context, ids []int64, env string, now 
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT i.id, to_char(d, 'YYYY-MM-DD'), count(e.id)
-		FROM unnest($1::bigint[]) AS i(id)
-		CROSS JOIN generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - $3::int + 1)::timestamp,
+		FROM `+s.pool.Dialect().Unnest("i", 1, "id bigint")+`
+		CROSS JOIN generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - CAST($3 AS integer) + 1)::timestamp,
 		                     ($2::timestamptz AT TIME ZONE 'UTC')::date::timestamp, interval '1 day') d
 		LEFT JOIN events e ON e.issue_id = i.id
 			AND e.occurred_at >= d AT TIME ZONE 'UTC'
@@ -533,7 +522,7 @@ func (s *Store) DailyCountsIn(ctx context.Context, ids []int64, env string, now 
 	}
 	var id int64
 	var c DayCount
-	_, err = pgx.ForEachRow(rows, []any{&id, &c.Date, &c.Count}, func() error {
+	err = db.ForEachRow(rows, []any{&id, &c.Date, &c.Count}, func() error {
 		out[id] = append(out[id], c)
 		return nil
 	})
@@ -587,7 +576,7 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 		afterID = c.ID
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT e.id, replace(e.event_id::text, '-', ''), e.occurred_at, e.received_at,
+		SELECT e.id, replace(CAST(e.event_id AS text), '-', ''), e.occurred_at, e.received_at,
 			COALESCE(e.release, ''), COALESCE(e.environment, ''),
 			COALESCE(e.user_label, `+legacyUserLabel+`, ''),
 			COALESCE(e.summary, `+legacySummary+`, '')
@@ -597,7 +586,7 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 	if err != nil {
 		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
 	}
-	events, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (EventSummary, error) {
+	events, err := db.CollectRows(rows, func(r db.CollectableRow) (EventSummary, error) {
 		var e EventSummary
 		err := r.Scan(&e.ID, &e.EventID, &e.OccurredAt, &e.ReceivedAt, &e.Release, &e.Environment, &e.User, &e.Message)
 		return e, err

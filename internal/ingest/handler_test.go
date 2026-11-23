@@ -19,8 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -169,7 +168,7 @@ type recorder struct {
 	calls []call
 }
 
-func (r *recorder) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res Result) error {
+func (r *recorder) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, res Result) error {
 	issueID := res.IssueID
 	// Comprueba que el aviso ve el issue de su propia transacción.
 	var n int
@@ -268,7 +267,7 @@ func (e *testEnv) issues(t *testing.T) []issueRow {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (issueRow, error) {
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (issueRow, error) {
 		var i issueRow
 		err := r.Scan(&i.id, &i.title, &i.culprit, &i.status, &i.count, &i.regressed, &i.resolvedInRelease, &i.firstSeen, &i.lastSeen)
 		return i, err
@@ -439,7 +438,7 @@ func TestNotifierErrorRollsBack(t *testing.T) {
 
 type failingNotifier struct{}
 
-func (failingNotifier) IssueChanged(context.Context, pgx.Tx, *event.Event, Result) error {
+func (failingNotifier) IssueChanged(context.Context, db.Tx, *event.Event, Result) error {
 	return io.ErrUnexpectedEOF
 }
 
@@ -700,7 +699,7 @@ func TestStoredEventKeepsDebugMeta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	ids, err := db.CollectRows(rows, db.RowTo[string])
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 const TokenPrefix = "ie_"
@@ -46,7 +46,7 @@ func (s *Store) CreateToken(ctx context.Context, name string) (Token, string, er
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO api_tokens (name, token_sha256) VALUES ($1, $2) RETURNING id, created_at`,
 		name, hashToken(secret)).Scan(&t.ID, &t.CreatedAt)
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return Token{}, "", ErrNameTaken
 	}
 	if err != nil {
@@ -62,7 +62,7 @@ func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listar tokens: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Token, error) {
+	return db.CollectRows(rows, func(r db.CollectableRow) (Token, error) {
 		var t Token
 		err := r.Scan(&t.ID, &t.Name, &t.CreatedAt, &t.LastUsedAt, &t.RevokedAt)
 		return t, err
@@ -92,7 +92,7 @@ func (s *Store) Authenticate(ctx context.Context, secret string) (Token, error) 
 		SELECT id, name, created_at, last_used_at, revoked_at
 		FROM api_tokens WHERE token_sha256 = $1 AND revoked_at IS NULL`,
 		hashToken(secret)).Scan(&t.ID, &t.Name, &t.CreatedAt, &t.LastUsedAt, &t.RevokedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Token{}, ErrNotFound
 	}
 	if err != nil {

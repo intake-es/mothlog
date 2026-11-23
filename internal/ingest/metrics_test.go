@@ -3,6 +3,7 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,9 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/metrics"
 	"github.com/intake-es/intake-errors/internal/monitor"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -209,22 +208,88 @@ func TestMetricsMatchFixtures(t *testing.T) {
 	}
 }
 
-type queryCounter struct{ n atomic.Int64 }
-
-func (q *queryCounter) TraceQueryStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceQueryStartData) context.Context {
-	q.n.Add(1)
-	return ctx
+// countingDB cuenta las idas a la base: cada consulta, cada lote y abrir,
+// confirmar o deshacer una transacción.
+type countingDB struct {
+	db.DB
+	n *atomic.Int64
 }
 
-func (q *queryCounter) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
-
-func (q *queryCounter) TraceBatchStart(ctx context.Context, _ *pgx.Conn, _ pgx.TraceBatchStartData) context.Context {
-	q.n.Add(1)
-	return ctx
+func (c countingDB) Exec(ctx context.Context, sql string, args ...any) (db.Result, error) {
+	c.n.Add(1)
+	return c.DB.Exec(ctx, sql, args...)
 }
 
-func (q *queryCounter) TraceBatchQuery(context.Context, *pgx.Conn, pgx.TraceBatchQueryData) {}
-func (q *queryCounter) TraceBatchEnd(context.Context, *pgx.Conn, pgx.TraceBatchEndData)     {}
+func (c countingDB) Query(ctx context.Context, sql string, args ...any) (db.Rows, error) {
+	c.n.Add(1)
+	return c.DB.Query(ctx, sql, args...)
+}
+
+func (c countingDB) QueryRow(ctx context.Context, sql string, args ...any) db.Row {
+	c.n.Add(1)
+	return c.DB.QueryRow(ctx, sql, args...)
+}
+
+func (c countingDB) SendBatch(ctx context.Context, b *db.Batch) error {
+	c.n.Add(1)
+	return c.DB.SendBatch(ctx, b)
+}
+
+func (c countingDB) Begin(ctx context.Context) (db.Tx, error) {
+	c.n.Add(1)
+	tx, err := c.DB.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return countingTx{Tx: tx, n: c.n}, nil
+}
+
+type countingTx struct {
+	db.Tx
+	n *atomic.Int64
+}
+
+func (c countingTx) Exec(ctx context.Context, sql string, args ...any) (db.Result, error) {
+	c.n.Add(1)
+	return c.Tx.Exec(ctx, sql, args...)
+}
+
+func (c countingTx) Query(ctx context.Context, sql string, args ...any) (db.Rows, error) {
+	c.n.Add(1)
+	return c.Tx.Query(ctx, sql, args...)
+}
+
+func (c countingTx) QueryRow(ctx context.Context, sql string, args ...any) db.Row {
+	c.n.Add(1)
+	return c.Tx.QueryRow(ctx, sql, args...)
+}
+
+func (c countingTx) SendBatch(ctx context.Context, b *db.Batch) error {
+	c.n.Add(1)
+	return c.Tx.SendBatch(ctx, b)
+}
+
+func (c countingTx) Begin(ctx context.Context) (db.Tx, error) {
+	c.n.Add(1)
+	tx, err := c.Tx.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return countingTx{Tx: tx, n: c.n}, nil
+}
+
+func (c countingTx) Commit(ctx context.Context) error {
+	c.n.Add(1)
+	return c.Tx.Commit(ctx)
+}
+
+func (c countingTx) Rollback(ctx context.Context) error {
+	err := c.Tx.Rollback(ctx)
+	if !errors.Is(err, db.ErrTxClosed) {
+		c.n.Add(1)
+	}
+	return err
+}
 
 // countingCalls cuenta las llamadas que van a la base fuera del pool del ingester.
 type countingCalls struct {
@@ -253,21 +318,14 @@ func (c countingCalls) CheckIn(ctx context.Context, id int64, in store.CheckInIn
 func queries(t *testing.T, withMetrics bool) (int64, *metrics.Metrics) {
 	t.Helper()
 	e := newTestEnv(t, 1000)
-	ctx := context.Background()
-	qc := &queryCounter{}
-	cfg := e.s.Pool().Config()
-	cfg.ConnConfig.Tracer = qc
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	var n atomic.Int64
+	pool := countingDB{DB: e.s.Pool(), n: &n}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	var m *metrics.Metrics
 	if withMetrics {
 		m = metrics.New(e.s, log)
 	}
-	calls := countingCalls{Projects: e.s, checkIns: monitor.New(e.s, nil, log), n: &qc.n}
+	calls := countingCalls{Projects: e.s, checkIns: monitor.New(e.s, nil, log), n: &n}
 	mux := http.NewServeMux()
 	mux.Handle(Pattern, NewHandler(calls, NewIngester(pool, nil, &recorder{}, log), NewRateLimiter(1000), e.drops, log).
 		WithCheckIns(calls).WithMetrics(m))
@@ -283,7 +341,7 @@ func queries(t *testing.T, withMetrics bool) (int64, *metrics.Metrics) {
 			mux.ServeHTTP(httptest.NewRecorder(), r)
 		}
 	}
-	return qc.n.Load(), m
+	return n.Load(), m
 }
 
 func TestCountingDoesNotQueryTheDatabase(t *testing.T) {

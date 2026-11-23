@@ -10,9 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -213,7 +211,7 @@ var errConflict = errors.New("evento guardado a la vez por otro")
 func (in *Ingester) writeBatch(items []*pending) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(items[0].ctx), batchTimeout)
 	defer cancel()
-	err := pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error { return in.saveBatch(ctx, tx, items) })
+	err := db.BeginFunc(ctx, in.pool, func(tx db.Tx) error { return in.saveBatch(ctx, tx, items) })
 	if err == nil {
 		return
 	}
@@ -284,7 +282,7 @@ type userKey struct {
 // saveBatch hace con el lote lo mismo que save evento a evento y en su orden,
 // pero bloquea cada issue una vez y escribe los contadores, los eventos, las
 // etiquetas y los usuarios de todo el lote de una vez.
-func (in *Ingester) saveBatch(ctx context.Context, tx pgx.Tx, items []*pending) error {
+func (in *Ingester) saveBatch(ctx context.Context, tx db.Tx, items []*pending) error {
 	for _, it := range items {
 		it.res, it.err = Result{}, nil
 	}
@@ -429,17 +427,17 @@ func (in *Ingester) saveBatch(ctx context.Context, tx pgx.Tx, items []*pending) 
 	}
 
 	// Las escrituras van juntas en una sola ida y vuelta a la base.
-	writes := &pgx.Batch{}
+	writes := &db.Batch{}
 	if len(inserts) > 0 {
-		sql, args := store.InsertEventsQuery(inserts)
-		writes.Queue(sql, args...).Exec(func(tag pgconn.CommandTag) error {
+		sql, args := store.InsertEventsQuery(tx.Dialect(), inserts)
+		writes.Queue(sql, args...).Exec(func(tag db.Result) error {
 			if tag.RowsAffected() != int64(len(inserts)) {
 				return errConflict
 			}
 			return nil
 		})
 	}
-	if sql, args, ok := updateIssuesQuery(order, byID); ok {
+	if sql, args, ok := updateIssuesQuery(tx.Dialect(), order, byID); ok {
 		writes.Queue(sql, args...)
 	}
 	tracked := make([]store.TrackedEvents, len(statOrder))
@@ -447,13 +445,13 @@ func (in *Ingester) saveBatch(ctx context.Context, tx pgx.Tx, items []*pending) 
 		tracked[i] = *stats[k]
 	}
 	if len(tracked) > 0 {
-		sql, args := store.TrackEventsQuery(tracked)
+		sql, args := store.TrackEventsQuery(tx.Dialect(), tracked)
 		writes.Queue(sql, args...)
 	}
-	if sql, args, ok := tagsQuery(tags, users); ok {
+	if sql, args, ok := tagsQuery(tx.Dialect(), tags, users); ok {
 		writes.Queue(sql, args...)
 	}
-	if err := tx.SendBatch(ctx, writes).Close(); err != nil {
+	if err := tx.SendBatch(ctx, writes); err != nil {
 		if errors.Is(err, errConflict) {
 			return err
 		}
@@ -478,7 +476,7 @@ func (in *Ingester) saveBatch(ctx context.Context, tx pgx.Tx, items []*pending) 
 // readBatch lee en una sola ida y vuelta lo que el lote necesita saber
 // antes de decidir: qué event_id ya están guardados, los issues que ya
 // existen, que bloquea por orden de id, y qué releases existen ya.
-func readBatch(ctx context.Context, tx pgx.Tx, items []*pending) (map[eventKey]bool, map[issueKey]*batchIssue, map[releaseKey]bool, error) {
+func readBatch(ctx context.Context, tx db.Tx, items []*pending) (map[eventKey]bool, map[issueKey]*batchIssue, map[releaseKey]bool, error) {
 	var (
 		evProjects, isProjects, relProjects []int64
 		evIDs, fps, versions                []string
@@ -501,17 +499,17 @@ func readBatch(ctx context.Context, tx pgx.Tx, items []*pending) (map[eventKey]b
 	// Una release que ya estaba no es nueva para ningún evento del lote.
 	releases := map[releaseKey]bool{}
 
-	reads := &pgx.Batch{}
+	d := tx.Dialect()
+	reads := &db.Batch{}
 	var ek eventKey
 	reads.Queue(`
-		SELECT k.project_id, k.event_id FROM unnest($1::bigint[], $2::text[]) AS k(project_id, event_id)
+		SELECT k.project_id, k.event_id FROM `+d.Unnest("k", 1, "project_id bigint", "event_id text")+`
 		JOIN events e ON e.project_id = k.project_id AND e.event_id = k.event_id::uuid`, evProjects, evIDs).
-		Query(func(rows pgx.Rows) error {
-			_, err := pgx.ForEachRow(rows, []any{&ek.projectID, &ek.id}, func() error {
+		Query(func(rows db.Rows) error {
+			return db.ForEachRow(rows, []any{&ek.projectID, &ek.id}, func() error {
 				seen[ek] = true
 				return nil
 			})
-			return err
 		})
 	var ik issueKey
 	var li lockedIssue
@@ -519,33 +517,30 @@ func readBatch(ctx context.Context, tx pgx.Tx, items []*pending) (map[eventKey]b
 		SELECT i.id, i.project_id, i.fingerprint, i.status, COALESCE(i.resolved_in_release, ''), COALESCE(i.fixed_in_release, ''),
 			i.resolved_at, i.stored_hour, i.stored_in_hour, i.last_stored_at
 		FROM issues i
-		JOIN unnest($1::bigint[], $2::text[]) AS k(project_id, fingerprint)
+		JOIN `+d.Unnest("k", 1, "project_id bigint", "fingerprint text")+`
 			ON i.project_id = k.project_id AND i.fingerprint = k.fingerprint
-		ORDER BY i.id
-		FOR UPDATE OF i`, isProjects, fps).
-		Query(func(rows pgx.Rows) error {
-			_, err := pgx.ForEachRow(rows, []any{&li.id, &ik.projectID, &ik.fingerprint, &li.status, &li.resolvedIn, &li.fixedIn,
+		ORDER BY i.id`+d.ForUpdate("i"), isProjects, fps).
+		Query(func(rows db.Rows) error {
+			return db.ForEachRow(rows, []any{&li.id, &ik.projectID, &ik.fingerprint, &li.status, &li.resolvedIn, &li.fixedIn,
 				&li.resolvedAt, &li.storedHour, &li.storedInHour, &li.lastStoredAt}, func() error {
 				issues[ik] = &batchIssue{lockedIssue: li}
 				return nil
 			})
-			return err
 		})
 	if len(versions) > 0 {
 		var rk releaseKey
 		reads.Queue(`
 			SELECT r.project_id, r.version FROM releases r
-			JOIN unnest($1::bigint[], $2::text[]) AS k(project_id, version)
+			JOIN `+d.Unnest("k", 1, "project_id bigint", "version text")+`
 				ON r.project_id = k.project_id AND r.version = k.version`, relProjects, versions).
-			Query(func(rows pgx.Rows) error {
-				_, err := pgx.ForEachRow(rows, []any{&rk.projectID, &rk.version}, func() error {
+			Query(func(rows db.Rows) error {
+				return db.ForEachRow(rows, []any{&rk.projectID, &rk.version}, func() error {
 					releases[rk] = false
 					return nil
 				})
-				return err
 			})
 	}
-	if err := tx.SendBatch(ctx, reads).Close(); err != nil {
+	if err := tx.SendBatch(ctx, reads); err != nil {
 		return nil, nil, nil, fmt.Errorf("leer el lote: %w", err)
 	}
 	return seen, issues, releases, nil
@@ -553,7 +548,7 @@ func readBatch(ctx context.Context, tx pgx.Tx, items []*pending) (map[eventKey]b
 
 // createIssue abre el issue con el evento; devuelve 0 si otro lo ha abierto
 // a la vez.
-func createIssue(ctx context.Context, tx pgx.Tx, it *pending, hour time.Time) (int64, error) {
+func createIssue(ctx context.Context, tx db.Tx, it *pending, hour time.Time) (int64, error) {
 	var id int64
 	g, ev := it.g, it.ev
 	err := tx.QueryRow(ctx, `
@@ -563,7 +558,7 @@ func createIssue(ctx context.Context, tx pgx.Tx, it *pending, hour time.Time) (i
 		ON CONFLICT (project_id, fingerprint) DO NOTHING
 		RETURNING id`,
 		it.projectID, g.Fingerprint, g.Title, g.Culprit, g.Type, ev.Level, ev.Timestamp, hour, it.now, nullable(ev.Release)).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return 0, nil
 	}
 	if err != nil {
@@ -574,7 +569,7 @@ func createIssue(ctx context.Context, tx pgx.Tx, it *pending, hour time.Time) (i
 
 // updateIssuesQuery suma a cada issue sus eventos del lote y deja su estado
 // como lo ha dejado el último.
-func updateIssuesQuery(order []int64, byID map[int64]*batchIssue) (string, []any, bool) {
+func updateIssuesQuery(d db.Dialect, order []int64, byID map[int64]*batchIssue) (string, []any, bool) {
 	var (
 		ids, counts, storedIn []int64
 		first, last, hours    []time.Time
@@ -604,8 +599,8 @@ func updateIssuesQuery(order []int64, byID map[int64]*batchIssue) (string, []any
 	return `
 		UPDATE issues i SET
 			event_count = i.event_count + u.n,
-			first_seen = LEAST(i.first_seen, u.first_seen),
-			last_seen = GREATEST(i.last_seen, u.last_seen),
+			first_seen = ` + d.Least("i.first_seen", "u.first_seen") + `,
+			last_seen = ` + d.Greatest("i.last_seen", "u.last_seen") + `,
 			status = u.status,
 			resolved_in_release = CASE WHEN u.regressed THEN NULL ELSE i.resolved_in_release END,
 			fixed_in_release = CASE WHEN u.regressed THEN NULL ELSE i.fixed_in_release END,
@@ -614,16 +609,16 @@ func updateIssuesQuery(order []int64, byID map[int64]*batchIssue) (string, []any
 			stored_hour = u.stored_hour,
 			stored_in_hour = u.stored_in_hour,
 			last_stored_at = CASE WHEN u.stored THEN u.stored_at ELSE i.last_stored_at END
-		FROM unnest($1::bigint[], $2::bigint[], $3::timestamptz[], $4::timestamptz[], $5::text[], $6::boolean[],
-			$7::timestamptz[], $8::timestamptz[], $9::bigint[], $10::boolean[], $11::timestamptz[])
-			AS u(id, n, first_seen, last_seen, status, regressed, regressed_at, stored_hour, stored_in_hour, stored, stored_at)
+		FROM ` + d.Unnest("u", 1, "id bigint", "n bigint", "first_seen timestamptz", "last_seen timestamptz", "status text",
+			"regressed boolean", "regressed_at timestamptz", "stored_hour timestamptz", "stored_in_hour bigint", "stored boolean",
+			"stored_at timestamptz") + `
 		WHERE i.id = u.id`,
 		[]any{ids, counts, first, last, statuses, regressed, regressedAt, hours, storedIn, stored, storedAt}, true
 }
 
 // tagsQuery es recordTags para todo el lote: suma cada valor de etiqueta una
 // vez con lo que suma en el lote y cuenta los usuarios nuevos.
-func tagsQuery(tags map[tagKey]*tagCount, users map[userKey]bool) (string, []any, bool) {
+func tagsQuery(d db.Dialect, tags map[tagKey]*tagCount, users map[userKey]bool) (string, []any, bool) {
 	tkeys := slices.SortedFunc(func(yield func(tagKey) bool) {
 		for k := range tags {
 			if !yield(k) {
@@ -651,13 +646,13 @@ func tagsQuery(tags map[tagKey]*tagCount, users map[userKey]bool) (string, []any
 	return `
 		WITH t AS (
 			INSERT INTO issue_tag_values (issue_id, key, value, count, last_seen)
-			SELECT * FROM unnest($1::bigint[], $2::text[], $3::text[], $4::bigint[], $5::timestamptz[])
+			SELECT * FROM ` + d.Unnest("x", 1, "issue_id bigint", "key text", "value text", "count bigint", "last_seen timestamptz") + `
 			ON CONFLICT (issue_id, key, value) DO UPDATE SET
 				count = issue_tag_values.count + EXCLUDED.count,
-				last_seen = GREATEST(issue_tag_values.last_seen, EXCLUDED.last_seen)
+				last_seen = ` + d.Greatest("issue_tag_values.last_seen", "EXCLUDED.last_seen") + `
 		), u AS (
 			INSERT INTO issue_users (issue_id, user_hash)
-			SELECT * FROM unnest($6::bigint[], $7::bytea[])
+			SELECT * FROM ` + d.Unnest("h", 6, "issue_id bigint", "user_hash bytea") + `
 			ON CONFLICT DO NOTHING
 			RETURNING issue_id
 		)

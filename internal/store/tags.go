@@ -8,8 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/search"
 )
@@ -48,7 +47,7 @@ func UserHash(key []byte, ident string) []byte {
 }
 
 type queryRower interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	QueryRow(ctx context.Context, sql string, args ...any) db.Row
 }
 
 func LoadUserHashKey(ctx context.Context, q queryRower) ([]byte, error) {
@@ -103,7 +102,7 @@ func (s *Store) IssueTags(ctx context.Context, issueID int64) (IssueTags, error)
 	out := IssueTags{IssueID: issueID, Tags: []TagDistribution{}}
 	err := s.pool.QueryRow(ctx, `SELECT event_count, user_count FROM issues WHERE id = $1`, issueID).
 		Scan(&out.Events, &out.UserCount)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return out, ErrNotFound
 	}
 	if err != nil {
@@ -119,7 +118,7 @@ func (s *Store) IssueTags(ctx context.Context, issueID int64) (IssueTags, error)
 	var key string
 	var v TagValue
 	var total int64
-	_, err = pgx.ForEachRow(rows, []any{&key, &v.Value, &v.Count, &v.LastSeen, &total}, func() error {
+	err = db.ForEachRow(rows, []any{&key, &v.Value, &v.Count, &v.LastSeen, &total}, func() error {
 		if n := len(out.Tags); n == 0 || out.Tags[n-1].Key != key {
 			out.Tags = append(out.Tags, TagDistribution{Key: key, Total: total, Values: []TagValue{}})
 		}
@@ -157,12 +156,12 @@ func (s *Store) TagKeys(ctx context.Context, project string) ([]TagKey, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT t.key, count(DISTINCT t.issue_id) AS n
 		FROM issue_tag_values t JOIN issues i ON i.id = t.issue_id JOIN projects p ON p.id = i.project_id
-		WHERE $1 = '' OR p.id::text = $1 OR p.name = $1
+		WHERE $1 = '' OR CAST(p.id AS text) = $1 OR p.name = $1
 		GROUP BY t.key ORDER BY n DESC, t.key LIMIT 100`, project)
 	if err != nil {
 		return nil, fmt.Errorf("claves de etiqueta: %w", err)
 	}
-	keys, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (TagKey, error) {
+	keys, err := db.CollectRows(rows, func(r db.CollectableRow) (TagKey, error) {
 		var k TagKey
 		return k, r.Scan(&k.Key, &k.Issues)
 	})
@@ -184,14 +183,14 @@ func (s *Store) TagValues(ctx context.Context, project, key, prefix string) ([]T
 	rows, err := s.pool.Query(ctx, `
 		SELECT t.value, count(*) AS issues, sum(t.count)
 		FROM issue_tag_values t JOIN issues i ON i.id = t.issue_id JOIN projects p ON p.id = i.project_id
-		WHERE t.key = $1 AND ($2 = '' OR p.id::text = $2 OR p.name = $2)
-		  AND t.value ILIKE $3
+		WHERE t.key = $1 AND ($2 = '' OR CAST(p.id AS text) = $2 OR p.name = $2)
+		  AND `+s.pool.Dialect().ILike("t.value", "$3")+`
 		GROUP BY t.value ORDER BY 3 DESC, t.value LIMIT $4`,
 		key, project, prefixPattern(prefix), maxSuggestions)
 	if err != nil {
 		return nil, fmt.Errorf("valores de etiqueta: %w", err)
 	}
-	vals, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (TagValueCount, error) {
+	vals, err := db.CollectRows(rows, func(r db.CollectableRow) (TagValueCount, error) {
 		var v TagValueCount
 		return v, r.Scan(&v.Value, &v.Issues, &v.Count)
 	})

@@ -8,8 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/metrics"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/ui"
@@ -124,13 +123,13 @@ func TestDevLoginOnlyLocal(t *testing.T) {
 	}
 }
 
-type metricsSource struct{ pool *pgxpool.Pool }
+type metricsSource struct{ pool db.DB }
 
 func (m metricsSource) MetricsSnapshot(context.Context) (store.MetricsSnapshot, error) {
 	return store.MetricsSnapshot{}, nil
 }
 
-func (m metricsSource) Pool() *pgxpool.Pool { return m.pool }
+func (m metricsSource) Pool() db.DB { return m.pool }
 
 func TestMetricsRoute(t *testing.T) {
 	get := func(h http.Handler, auth string) int {
@@ -145,7 +144,7 @@ func TestMetricsRoute(t *testing.T) {
 	if code := get(routes(fakeDB{}, http.NotFoundHandler()), ""); code != http.StatusNotFound {
 		t.Errorf("sin METRICS_TOKEN, /metrics da %d; quiero 404", code)
 	}
-	pool, err := pgxpool.New(context.Background(), "postgres://x:x@127.0.0.1:1/x")
+	pool, err := db.OpenPostgres(context.Background(), "postgres://x:x@127.0.0.1:1/x")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Pool da acceso al pool para quien necesita sus propias transacciones.
-func (s *Store) Pool() *pgxpool.Pool { return s.pool }
+func (s *Store) Pool() db.DB { return s.pool }
 
 const projectColumns = `id, name, public_key, created_at, linear_label_ids`
 
@@ -23,7 +22,7 @@ func (s *Store) ProjectByID(ctx context.Context, id int64) (Project, error) {
 	err := s.pool.QueryRow(ctx,
 		`SELECT `+projectColumns+` FROM projects WHERE id = $1`,
 		id).Scan(p.fields()...)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Project{}, ErrNotFound
 	}
 	if err != nil {
@@ -37,7 +36,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listar proyectos: %w", err)
 	}
-	ps, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Project, error) {
+	ps, err := db.CollectRows(rows, func(r db.CollectableRow) (Project, error) {
 		var p Project
 		err := r.Scan(p.fields()...)
 		return p, err
@@ -55,7 +54,7 @@ func (s *Store) ProjectByName(ctx context.Context, name string) (Project, error)
 	if err != nil {
 		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
 	}
-	ps, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Project, error) {
+	ps, err := db.CollectRows(rows, func(r db.CollectableRow) (Project, error) {
 		var p Project
 		err := r.Scan(p.fields()...)
 		return p, err

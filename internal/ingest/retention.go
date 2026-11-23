@@ -6,13 +6,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Purge borra los eventos recibidos antes de cutoff y los issues que se quedan
 // sin eventos.
-func Purge(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time) (events, issues int64, err error) {
+func Purge(ctx context.Context, pool db.DB, cutoff time.Time) (events, issues int64, err error) {
 	tag, err := pool.Exec(ctx, `DELETE FROM events WHERE received_at < $1`, cutoff)
 	if err != nil {
 		return 0, 0, fmt.Errorf("borrar eventos: %w", err)
@@ -28,23 +27,22 @@ func Purge(ctx context.Context, pool *pgxpool.Pool, cutoff time.Time) (events, i
 // purgeEmptyIssues salta los issues que una ingesta tiene bloqueados y vuelve a
 // mirar sus eventos ya con el cerrojo, en una sentencia nueva, para ver los de
 // cualquier ingesta que haya terminado justo antes.
-func purgeEmptyIssues(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+func purgeEmptyIssues(ctx context.Context, pool db.DB) (int64, error) {
 	var n int64
-	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, pool, func(tx db.Tx) error {
 		rows, err := tx.Query(ctx, `
 			SELECT id FROM issues i
-			WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id)
-			FOR UPDATE SKIP LOCKED`)
+			WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id)`+tx.Dialect().ForUpdateSkipLocked())
 		if err != nil {
 			return err
 		}
-		ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+		ids, err := db.CollectRows(rows, db.RowTo[int64])
 		if err != nil || len(ids) == 0 {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `
 			DELETE FROM issues i
-			WHERE i.id = ANY($1)
+			WHERE `+tx.Dialect().InList("i.id", "$1")+`
 			  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id)`, ids)
 		n = tag.RowsAffected()
 		return err
@@ -56,7 +54,7 @@ func purgeEmptyIssues(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
 }
 
 // RunRetention purga eventos y sesiones al arrancar y luego cada hora hasta que se cancela ctx.
-func RunRetention(ctx context.Context, pool *pgxpool.Pool, days int, log *slog.Logger) {
+func RunRetention(ctx context.Context, pool db.DB, days int, log *slog.Logger) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {

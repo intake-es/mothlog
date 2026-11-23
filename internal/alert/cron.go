@@ -9,9 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/intake-es/intake-errors/internal/cron"
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -38,7 +37,7 @@ func isCronKind(kind string) bool { return strings.HasPrefix(kind, "cron_") }
 // las reglas del proyecto con condiciones de cron o, si no tiene ninguna, uno
 // por canal si falla, no llega o se pasa de tiempo. Si falla, lo registra y
 // deja seguir.
-func (a *Alerter) MonitorChanged(ctx context.Context, tx pgx.Tx, ch store.MonitorChange) error {
+func (a *Alerter) MonitorChanged(ctx context.Context, tx db.Tx, ch store.MonitorChange) error {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		a.log.ErrorContext(ctx, "encolar aviso de cron", "monitor", ch.Monitor.ID, "err", err)
@@ -55,7 +54,7 @@ func (a *Alerter) MonitorChanged(ctx context.Context, tx pgx.Tx, ch store.Monito
 	return nil
 }
 
-func (a *Alerter) enqueueCron(ctx context.Context, tx pgx.Tx, ch store.MonitorChange) error {
+func (a *Alerter) enqueueCron(ctx context.Context, tx db.Tx, ch store.MonitorChange) error {
 	rules, err := store.RulesOfProject(ctx, tx, ch.Monitor.ProjectID)
 	if err != nil {
 		return err
@@ -120,7 +119,7 @@ func cronMatches(c store.RuleConditions, ch store.MonitorChange) bool {
 }
 
 // loadCron lee el monitor y el check-in de un aviso de cron.
-func (a *Alerter) loadCron(ctx context.Context, tx pgx.Tx, p *pending, monitorID int64, checkinID *int64) error {
+func (a *Alerter) loadCron(ctx context.Context, tx db.Tx, p *pending, monitorID int64, checkinID *int64) error {
 	c := &cronInfo{monitorID: monitorID}
 	err := tx.QueryRow(ctx, `
 		SELECT p.id, p.name, p.linear_label_ids, m.slug, m.name, m.schedule_type, m.schedule,
@@ -128,7 +127,7 @@ func (a *Alerter) loadCron(ctx context.Context, tx pgx.Tx, p *pending, monitorID
 		FROM monitors m JOIN projects p ON p.id = m.project_id WHERE m.id = $1`, monitorID).
 		Scan(&c.projectID, &p.project, &p.labels, &c.slug, &c.name, &c.schedule.Type, &c.schedule.Crontab,
 			&c.schedule.Every, &c.schedule.Unit, &c.timezone, &c.checkinMargin, &c.maxRuntime)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return errGone
 	}
 	if err != nil {
@@ -136,9 +135,9 @@ func (a *Alerter) loadCron(ctx context.Context, tx pgx.Tx, p *pending, monitorID
 	}
 	if checkinID != nil {
 		err = tx.QueryRow(ctx, `
-			SELECT replace(check_in_id::text, '-', ''), status, duration_ms, expected_at, started_at FROM monitor_checkins WHERE id = $1`,
+			SELECT replace(CAST(check_in_id AS text), '-', ''), status, duration_ms, expected_at, started_at FROM monitor_checkins WHERE id = $1`,
 			*checkinID).Scan(&c.checkInID, &c.status, &c.durationMs, &c.expectedAt, &c.startedAt)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return fmt.Errorf("leer check-in %d: %w", *checkinID, err)
 		}
 	}

@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // MaxReleaseIssues es cuántos issues de cada grupo trae el detalle de una release.
@@ -17,11 +16,7 @@ const MaxReleaseIssues = 100
 const maxNameLen = 200
 
 // Querier es lo que comparten el pool y una transacción.
-type Querier interface {
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
+type Querier = db.Querier
 
 type Deploy struct {
 	ID          int64     `json:"id"`
@@ -71,19 +66,18 @@ func EnsureRelease(ctx context.Context, q Querier, projectID int64, version stri
 	if err == nil {
 		return id, false, nil
 	}
-	if !errors.Is(err, pgx.ErrNoRows) {
+	if !errors.Is(err, db.ErrNoRows) {
 		return 0, false, fmt.Errorf("buscar release: %w", err)
 	}
 	err = q.QueryRow(ctx, `
 		INSERT INTO releases (project_id, version, first_seen) VALUES ($1, $2, $3)
 		ON CONFLICT (project_id, version) DO NOTHING RETURNING id`, projectID, version, now).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		err = q.QueryRow(ctx, `SELECT id FROM releases WHERE project_id = $1 AND version = $2`, projectID, version).Scan(&id)
 		return id, false, err
 	}
 	if err != nil {
-		var pe *pgconn.PgError
-		if errors.As(err, &pe) && pe.Code == "23503" {
+		if db.IsForeignKeyViolation(err) {
 			return 0, false, ErrNotFound
 		}
 		return 0, false, fmt.Errorf("crear release: %w", err)
@@ -107,7 +101,7 @@ func CompareReleases(ctx context.Context, q Querier, projectID int64, a, b strin
 		FROM releases ra, releases rb
 		WHERE ra.project_id = $1 AND ra.version = $2 AND rb.project_id = $1 AND rb.version = $3`,
 		projectID, a, b).Scan(&cmp)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return 0, false, false, nil
 	}
 	if err != nil {
@@ -124,8 +118,8 @@ func TrackEvent(ctx context.Context, q Querier, projectID, issueID int64, releas
 		VALUES ($1, $2, $3, $4, $5, $5, 1, CASE WHEN $6 THEN now() END)
 		ON CONFLICT (issue_id, release, environment) DO UPDATE SET
 			event_count = issue_stats.event_count + 1,
-			first_seen = LEAST(issue_stats.first_seen, EXCLUDED.first_seen),
-			last_seen = GREATEST(issue_stats.last_seen, EXCLUDED.last_seen),
+			first_seen = `+q.Dialect().Least("issue_stats.first_seen", "EXCLUDED.first_seen")+`,
+			last_seen = `+q.Dialect().Greatest("issue_stats.last_seen", "EXCLUDED.last_seen")+`,
 			regressed_at = COALESCE(EXCLUDED.regressed_at, issue_stats.regressed_at)`,
 		issueID, projectID, release, environment, at, regressed)
 	if err != nil {
@@ -181,7 +175,7 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 	}
 	d := Deploy{Environment: environment}
 	var resolved []int64
-	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err = db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		id, _, err := EnsureRelease(ctx, tx, projectID, version, time.Now())
 		if err != nil {
 			return err
@@ -193,7 +187,7 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 		}
 		rows, err := tx.Query(ctx, `
 			SELECT id, COALESCE(resolved_in_release, '') FROM issues
-			WHERE project_id = $1 AND status = 'resolved_next' FOR UPDATE`, projectID)
+			WHERE project_id = $1 AND status = 'resolved_next'`+tx.Dialect().ForUpdate(), projectID)
 		if err != nil {
 			return fmt.Errorf("resolver issues: %w", err)
 		}
@@ -201,7 +195,7 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 			id      int64
 			release string
 		}
-		next, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (pending, error) {
+		next, err := db.CollectRows(rows, func(r db.CollectableRow) (pending, error) {
 			var p pending
 			err := r.Scan(&p.id, &p.release)
 			return p, err
@@ -225,7 +219,7 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 		_, err = tx.Exec(ctx, `
 			UPDATE issues SET status = 'resolved', fixed_in_release = $2,
 				resolved_at = COALESCE(resolved_at, now())
-			WHERE id = ANY($1)`, resolved, version)
+			WHERE `+tx.Dialect().InList("id", "$1"), resolved, version)
 		if err != nil {
 			return fmt.Errorf("resolver issues: %w", err)
 		}
@@ -271,12 +265,12 @@ const releaseFrom = `releases r JOIN projects p ON p.id = r.project_id
 	CROSS JOIN LATERAL (
 		SELECT count(DISTINCT s.issue_id) AS issues,
 			count(DISTINCT s.issue_id) FILTER (WHERE s.regressed_at IS NOT NULL) AS regressions,
-			COALESCE(sum(s.event_count), 0)::bigint AS events,
+			CAST(COALESCE(sum(s.event_count), 0) AS bigint) AS events,
 			max(s.last_seen) AS last_event
 		FROM issue_stats s
 		WHERE s.project_id = r.project_id AND s.release = r.version AND ($1 = '' OR s.environment = $1)) st`
 
-func scanRelease(r pgx.Row) (Release, error) {
+func scanRelease(r db.Row) (Release, error) {
 	var rel Release
 	err := r.Scan(&rel.ID, &rel.ProjectID, &rel.Project, &rel.Version, &rel.FirstSeen, &rel.FinalizedAt,
 		&rel.NewIssues, &rel.Issues, &rel.Regressions, &rel.Events, &rel.LastEvent)
@@ -296,7 +290,7 @@ func (s *Store) ListReleases(ctx context.Context, f ReleaseFilter) (ReleasePage,
 		return fmt.Sprintf("$%d", len(args))
 	}
 	if f.Project != "" {
-		where = append(where, fmt.Sprintf("(p.id::text = %s OR p.name = %[1]s)", arg(f.Project)))
+		where = append(where, fmt.Sprintf("(CAST(p.id AS text) = %s OR p.name = %[1]s)", arg(f.Project)))
 	}
 	if f.Environment != "" {
 		where = append(where, `(st.events > 0 OR EXISTS (SELECT 1 FROM deploys d WHERE d.release_id = r.id AND d.environment = $1)
@@ -318,7 +312,7 @@ func (s *Store) ListReleases(ctx context.Context, f ReleaseFilter) (ReleasePage,
 	if err != nil {
 		return ReleasePage{}, fmt.Errorf("listar releases: %w", err)
 	}
-	rels, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Release, error) { return scanRelease(r) })
+	rels, err := db.CollectRows(rows, func(r db.CollectableRow) (Release, error) { return scanRelease(r) })
 	if err != nil {
 		return ReleasePage{}, fmt.Errorf("listar releases: %w", err)
 	}
@@ -353,14 +347,14 @@ func (s *Store) loadDeploys(ctx context.Context, rels []Release, env string) err
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT release_id, id, environment, deployed_at FROM deploys
-		WHERE release_id = ANY($1) AND ($2 = '' OR environment = $2)
+		WHERE `+s.pool.Dialect().InList("release_id", "$1")+` AND ($2 = '' OR environment = $2)
 		ORDER BY deployed_at DESC, id DESC`, ids, env)
 	if err != nil {
 		return fmt.Errorf("leer despliegues: %w", err)
 	}
 	var rid int64
 	var d Deploy
-	_, err = pgx.ForEachRow(rows, []any{&rid, &d.ID, &d.Environment, &d.DeployedAt}, func() error {
+	err = db.ForEachRow(rows, []any{&rid, &d.ID, &d.Environment, &d.DeployedAt}, func() error {
 		rels[at[rid]].Deploys = append(rels[at[rid]].Deploys, d)
 		return nil
 	})
@@ -375,7 +369,7 @@ func (s *Store) loadDeploys(ctx context.Context, rels []Release, env string) err
 func (s *Store) Release(ctx context.Context, projectID int64, version, env string) (Release, error) {
 	r, err := scanRelease(s.pool.QueryRow(ctx, `SELECT `+releaseColumns+` FROM `+releaseFrom+`
 		WHERE r.project_id = $2 AND r.version = $3`, env, projectID, version))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Release{}, ErrNotFound
 	}
 	if err != nil {
@@ -441,7 +435,7 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 	cols, from := issueSQL("")
 	// $1 proyecto, $2 versión, $3 entorno; st son los recuentos del issue en la release.
 	inRelease := `JOIN LATERAL (
-			SELECT sum(s.event_count)::bigint AS n, max(s.last_seen) AS last_seen,
+			SELECT CAST(sum(s.event_count) AS bigint) AS n, max(s.last_seen) AS last_seen,
 				bool_or(s.regressed_at IS NOT NULL) AS regressed
 			FROM issue_stats s WHERE s.issue_id = i.id AND s.release = $2 AND ($3 = '' OR s.environment = $3)
 			HAVING count(*) > 0) st ON true`
@@ -453,7 +447,7 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 		if err != nil {
 			return nil, fmt.Errorf("issues de la release: %w", err)
 		}
-		out, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ReleaseIssue, error) {
+		out, err := db.CollectRows(rows, func(row db.CollectableRow) (ReleaseIssue, error) {
 			var ri ReleaseIssue
 			i := &ri.Issue
 			err := row.Scan(&i.ID, &i.ProjectID, &i.Project, &i.Title, &i.Culprit, &i.Type, &i.Level, &i.Status,
@@ -486,13 +480,13 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 		prev = *d.Previous
 	}
 	stoppedJoin := `JOIN LATERAL (
-			SELECT COALESCE(sum(s.event_count), 0)::bigint AS n, COALESCE(max(s.last_seen), i.last_seen) AS last_seen
+			SELECT CAST(COALESCE(sum(s.event_count), 0) AS bigint) AS n, COALESCE(max(s.last_seen), i.last_seen) AS last_seen
 			FROM issue_stats s
 			WHERE s.issue_id = i.id AND $4 <> '' AND s.release = $4 AND ($3 = '' OR s.environment = $3)) st ON true`
 	d.Stopped, err = list(stoppedJoin, `
 		((i.fixed_in_release = $2 AND ($3 = '' OR EXISTS (SELECT 1 FROM issue_stats s
 			WHERE s.issue_id = i.id AND s.environment = $3)))
-		  OR (st.n > 0 AND $5::bigint > 0))
+		  OR (st.n > 0 AND CAST($5 AS bigint) > 0))
 		AND NOT EXISTS (SELECT 1 FROM issue_stats s WHERE s.issue_id = i.id AND s.release = $2
 			AND ($3 = '' OR s.environment = $3))`, projectID, version, env, prev, d.Events)
 	if err != nil {
@@ -513,14 +507,14 @@ type Environment struct {
 // vacío, de todos), del visto más recientemente al que menos.
 func (s *Store) Environments(ctx context.Context, project string) ([]Environment, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT s.environment, count(DISTINCT s.issue_id), sum(s.event_count)::bigint, max(s.last_seen)
+		SELECT s.environment, count(DISTINCT s.issue_id), CAST(sum(s.event_count) AS bigint), max(s.last_seen)
 		FROM issue_stats s JOIN projects p ON p.id = s.project_id
-		WHERE s.environment <> '' AND ($1 = '' OR p.id::text = $1 OR p.name = $1)
+		WHERE s.environment <> '' AND ($1 = '' OR CAST(p.id AS text) = $1 OR p.name = $1)
 		GROUP BY s.environment ORDER BY max(s.last_seen) DESC, s.environment`, project)
 	if err != nil {
 		return nil, fmt.Errorf("listar entornos: %w", err)
 	}
-	envs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Environment, error) {
+	envs, err := db.CollectRows(rows, func(r db.CollectableRow) (Environment, error) {
 		var e Environment
 		err := r.Scan(&e.Name, &e.Issues, &e.Events, &e.LastSeen)
 		return e, err
@@ -541,7 +535,7 @@ func (s *Store) ReleaseProjects(ctx context.Context, version string) ([]Project,
 	if err != nil {
 		return nil, fmt.Errorf("proyectos de la release: %w", err)
 	}
-	ps, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Project, error) {
+	ps, err := db.CollectRows(rows, func(r db.CollectableRow) (Project, error) {
 		var p Project
 		err := r.Scan(p.fields()...)
 		return p, err
@@ -563,9 +557,9 @@ type TrackedEvents struct {
 }
 
 // TrackEventsQuery es TrackEvent para muchos eventos en una sola sentencia,
-// para mandarla en un pgx.Batch. No puede haber dos con el mismo issue,
+// para mandarla en un db.Batch. No puede haber dos con el mismo issue,
 // release y entorno.
-func TrackEventsQuery(ts []TrackedEvents) (string, []any) {
+func TrackEventsQuery(d db.Dialect, ts []TrackedEvents) (string, []any) {
 	n := len(ts)
 	issues, projects, counts := make([]int64, n), make([]int64, n), make([]int64, n)
 	releases, envs := make([]string, n), make([]string, n)
@@ -579,12 +573,12 @@ func TrackEventsQuery(ts []TrackedEvents) (string, []any) {
 	return `
 		INSERT INTO issue_stats (issue_id, project_id, release, environment, first_seen, last_seen, event_count, regressed_at)
 		SELECT issue_id, project_id, release, environment, first_seen, last_seen, n, CASE WHEN regressed THEN now() END
-		FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::timestamptz[], $6::timestamptz[], $7::bigint[], $8::boolean[])
-			AS t(issue_id, project_id, release, environment, first_seen, last_seen, n, regressed)
+		FROM ` + d.Unnest("t", 1, "issue_id bigint", "project_id bigint", "release text", "environment text",
+			"first_seen timestamptz", "last_seen timestamptz", "n bigint", "regressed boolean") + `
 		ON CONFLICT (issue_id, release, environment) DO UPDATE SET
 			event_count = issue_stats.event_count + EXCLUDED.event_count,
-			first_seen = LEAST(issue_stats.first_seen, EXCLUDED.first_seen),
-			last_seen = GREATEST(issue_stats.last_seen, EXCLUDED.last_seen),
+			first_seen = ` + d.Least("issue_stats.first_seen", "EXCLUDED.first_seen") + `,
+			last_seen = ` + d.Greatest("issue_stats.last_seen", "EXCLUDED.last_seen") + `,
 			regressed_at = COALESCE(EXCLUDED.regressed_at, issue_stats.regressed_at)`,
 		[]any{issues, projects, releases, envs, first, last, counts, regressed}
 }

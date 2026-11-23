@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Cada cuánto va el resumen de un proyecto.
@@ -173,7 +173,7 @@ func (c *DigestConfig) Normalize() ([]string, error) {
 const digestColumns = `project_id, enabled, frequency, weekday, hour, timezone, language, send_empty, destinations,
 	last_period_end, last_sent_at, updated_at`
 
-func scanDigest(r pgx.Row, now time.Time) (DigestConfig, error) {
+func scanDigest(r db.Row, now time.Time) (DigestConfig, error) {
 	var c DigestConfig
 	err := r.Scan(&c.ProjectID, &c.Enabled, &c.Frequency, &c.Weekday, &c.Hour, &c.Timezone, &c.Language,
 		&c.SendEmpty, &c.Destinations, &c.LastPeriodEnd, &c.LastSentAt, &c.UpdatedAt)
@@ -187,7 +187,7 @@ func scanDigest(r pgx.Row, now time.Time) (DigestConfig, error) {
 // Digest da la configuración del resumen del proyecto, con los secretos enteros.
 func (s *Store) Digest(ctx context.Context, projectID int64, now time.Time) (DigestConfig, error) {
 	c, err := scanDigest(s.pool.QueryRow(ctx, `SELECT `+digestColumns+` FROM project_digests WHERE project_id = $1`, projectID), now)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		if _, err := s.ProjectByID(ctx, projectID); err != nil {
 			return DigestConfig{}, err
 		}
@@ -241,7 +241,7 @@ func (s *Store) DigestsDue(ctx context.Context, now time.Time) ([]DigestConfig, 
 	if err != nil {
 		return nil, fmt.Errorf("leer los resúmenes: %w", err)
 	}
-	all, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (DigestConfig, error) { return scanDigest(r, now) })
+	all, err := db.CollectRows(rows, func(r db.CollectableRow) (DigestConfig, error) { return scanDigest(r, now) })
 	if err != nil {
 		return nil, fmt.Errorf("leer los resúmenes: %w", err)
 	}
@@ -268,9 +268,8 @@ func (s *Store) EnqueueDigest(ctx context.Context, projectID int64, start, end t
 	var enabled bool
 	var last *time.Time
 	var dests []RuleAction
-	err = tx.QueryRow(ctx, `SELECT enabled, last_period_end, destinations FROM project_digests WHERE project_id = $1
-		FOR UPDATE SKIP LOCKED`, projectID).Scan(&enabled, &last, &dests)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err = tx.QueryRow(ctx, `SELECT enabled, last_period_end, destinations FROM project_digests WHERE project_id = $1`+tx.Dialect().ForUpdateSkipLocked(), projectID).Scan(&enabled, &last, &dests)
+	if errors.Is(err, db.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {

@@ -7,8 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/search"
 )
 
@@ -64,7 +63,7 @@ func issueWithAssigneeSQL(envArg string) (cols, from string) {
 	return cols + assigneeCols, from + assigneeJoins
 }
 
-func scanIssueWithAssignee(r pgx.Row) (Issue, error) {
+func scanIssueWithAssignee(r db.Row) (Issue, error) {
 	var i Issue
 	var name, kind, display, avatar *string
 	var active bool
@@ -116,7 +115,7 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 		if err == nil {
 			return login, nil
 		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		if !errors.Is(err, db.ErrNoRows) {
 			return "", fmt.Errorf("guardar persona: %w", err)
 		}
 		candidate := p.Login
@@ -131,7 +130,7 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 		if err == nil {
 			return login, nil
 		}
-		if !errors.Is(err, pgx.ErrNoRows) {
+		if !errors.Is(err, db.ErrNoRows) {
 			return "", fmt.Errorf("guardar persona: %w", err)
 		}
 	}
@@ -159,7 +158,7 @@ func (s *Store) People(ctx context.Context) ([]Person, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listar personas: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Person, error) {
+	return db.CollectRows(rows, func(r db.CollectableRow) (Person, error) {
 		var p Person
 		return p, r.Scan(&p.Login, &p.Name, &p.AvatarURL, &p.Provider, &p.LastLoginAt)
 	})
@@ -176,7 +175,7 @@ func (s *Store) Assignees(ctx context.Context) ([]Assignee, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listar asignables: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Assignee, error) {
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (Assignee, error) {
 		a := Assignee{Active: true}
 		return a, r.Scan(&a.Name, &a.Kind, &a.DisplayName, &a.AvatarURL)
 	})
@@ -202,14 +201,14 @@ func resolveAssignee(ctx context.Context, q Querier, name, kind string) (Actor, 
 	var login *string
 	if kind != ActorToken {
 		err := q.QueryRow(ctx, `SELECT login FROM people WHERE lower(login) = lower($1)`, name).Scan(&login)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return Actor{}, nil, fmt.Errorf("buscar persona: %w", err)
 		}
 	}
 	var tokenID *int64
 	if kind != ActorUser {
 		err := q.QueryRow(ctx, `SELECT id FROM api_tokens WHERE name = $1 AND revoked_at IS NULL`, name).Scan(&tokenID)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return Actor{}, nil, fmt.Errorf("buscar token: %w", err)
 		}
 	}
@@ -238,12 +237,12 @@ func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignC
 			return Issue{}, err
 		}
 	}
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		var fromName, fromKind *string
 		var fromToken *int64
-		err := tx.QueryRow(ctx, `SELECT assignee, assignee_kind, assignee_token_id FROM issues WHERE id = $1 FOR UPDATE`, id).
+		err := tx.QueryRow(ctx, `SELECT assignee, assignee_kind, assignee_token_id FROM issues WHERE id = $1`+tx.Dialect().ForUpdate(), id).
 			Scan(&fromName, &fromKind, &fromToken)
-		if errors.Is(err, pgx.ErrNoRows) {
+		if errors.Is(err, db.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
@@ -276,7 +275,7 @@ func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignC
 		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE issues SET assignee = $2, assignee_kind = $3, assignee_token_id = $4,
-				assigned_at = CASE WHEN $2::text IS NULL THEN NULL ELSE now() END
+				assigned_at = CASE WHEN CAST($2 AS text) IS NULL THEN NULL ELSE now() END
 			WHERE id = $1`, id, toName, toKind, tokenID); err != nil {
 			return fmt.Errorf("asignar issue: %w", err)
 		}
@@ -316,7 +315,7 @@ func (s *Store) assignmentHistory(ctx context.Context, issueID int64) ([]History
 		}
 		return &Actor{Name: *name, Kind: *kind}
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (HistoryEntry, error) {
+	return db.CollectRows(rows, func(r db.CollectableRow) (HistoryEntry, error) {
 		e := HistoryEntry{Type: "assignment"}
 		var author, kind, fromName, fromKind, toName, toKind *string
 		err := r.Scan(&e.ID, &e.At, &author, &kind, &e.Source, &fromName, &fromKind, &toName, &toKind)

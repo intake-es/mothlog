@@ -7,8 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 )
 
@@ -69,12 +68,11 @@ func (s *Store) ConvertLegacyEvents(ctx context.Context, o ConvertOptions) (int6
 // convertBatch convierte los siguientes eventos sin convertir con id mayor
 // que after. last es el id del último que ha visto; 0 si no quedaba ninguno.
 func (s *Store) convertBatch(ctx context.Context, after int64, o ConvertOptions) (n int, last int64, err error) {
-	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err = db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		rows, err := tx.Query(ctx, `
-			SELECT id, data::text FROM events
+			SELECT id, CAST(data AS text) FROM events
 			WHERE id > $1 AND data_zstd IS NULL
-			ORDER BY id LIMIT $2
-			FOR UPDATE SKIP LOCKED`, after, o.Batch)
+			ORDER BY id LIMIT $2`+tx.Dialect().ForUpdateSkipLocked(), after, o.Batch)
 		if err != nil {
 			return err
 		}
@@ -115,8 +113,7 @@ func (s *Store) convertBatch(ctx context.Context, after int64, o ConvertOptions)
 		_, err = tx.Exec(ctx, `
 			UPDATE events e SET data_zstd = v.data, user_label = NULLIF(v.label, ''), user_ident = NULLIF(v.ident, ''),
 				organization_id = NULLIF(v.org, ''), summary = NULLIF(v.summary, ''), data = NULL
-			FROM unnest($1::bigint[], $2::bytea[], $3::text[], $4::text[], $5::text[], $6::text[])
-				AS v(id, data, label, ident, org, summary)
+			FROM `+tx.Dialect().Unnest("v", 1, "id bigint", "data bytea", "label text", "ident text", "org text", "summary text")+`
 			WHERE e.id = v.id`, ids, blobs, labels, idents, orgs, lines)
 		n = len(ids)
 		return err

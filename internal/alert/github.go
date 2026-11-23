@@ -12,8 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/markdown"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -163,7 +162,7 @@ type github struct {
 
 // send crea la issue del error en el repositorio o, si ya la tiene, la
 // comenta (y la reabre en una regresión). tx es nil en los avisos de prueba.
-func (g *github) send(ctx context.Context, tx pgx.Tx, p *pending) error {
+func (g *github) send(ctx context.Context, tx db.Tx, p *pending) error {
 	if p.cron != nil {
 		if p.kind == store.KindCronRecovered {
 			return nil
@@ -181,7 +180,7 @@ func (g *github) send(ctx context.Context, tx pgx.Tx, p *pending) error {
 	err := tx.QueryRow(ctx, `SELECT id, external_id FROM issue_links
 		WHERE issue_id = $1 AND provider = 'github' AND kind = 'issue' AND external_id LIKE $2 || '#%'
 		ORDER BY id DESC LIMIT 1`, p.issueID, g.repo).Scan(&linkID, &ref)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil && !errors.Is(err, db.ErrNoRows) {
 		return err
 	}
 	if ref != "" {
@@ -210,7 +209,7 @@ func (g *github) send(ctx context.Context, tx pgx.Tx, p *pending) error {
 	return err
 }
 
-func (g *github) update(ctx context.Context, tx pgx.Tx, p *pending, linkID int64, ref string) error {
+func (g *github) update(ctx context.Context, tx db.Tx, p *pending, linkID int64, ref string) error {
 	if p.kind == "regressed" {
 		is, err := g.api.issue(ctx, ref)
 		if err != nil {

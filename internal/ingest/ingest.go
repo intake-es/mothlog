@@ -13,9 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -44,7 +42,7 @@ func (o Outcome) String() string {
 }
 
 type Notifier interface {
-	IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res Result) error
+	IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, res Result) error
 }
 
 type NopEnricher struct{}
@@ -53,12 +51,12 @@ func (NopEnricher) Enrich(context.Context, int64, *event.Event) error { return n
 
 type NopNotifier struct{}
 
-func (NopNotifier) IssueChanged(context.Context, pgx.Tx, *event.Event, Result) error {
+func (NopNotifier) IssueChanged(context.Context, db.Tx, *event.Event, Result) error {
 	return nil
 }
 
 type Ingester struct {
-	pool     *pgxpool.Pool
+	pool     db.DB
 	enricher Enricher
 	notifier Notifier
 	log      *slog.Logger
@@ -69,7 +67,7 @@ type Ingester struct {
 }
 
 // NewIngester acepta enricher y notifier nil: entonces no hacen nada.
-func NewIngester(pool *pgxpool.Pool, enricher Enricher, notifier Notifier, log *slog.Logger) *Ingester {
+func NewIngester(pool db.DB, enricher Enricher, notifier Notifier, log *slog.Logger) *Ingester {
 	if enricher == nil {
 		enricher = NopEnricher{}
 	}
@@ -184,7 +182,7 @@ func (in *Ingester) prepare(ctx context.Context, projectID int64, ev *event.Even
 // los de un lote que ha fallado.
 func (in *Ingester) ingestOne(ctx context.Context, it *pending) (Result, error) {
 	var res Result
-	err := pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, in.pool, func(tx db.Tx) error {
 		var err error
 		res, err = in.save(ctx, tx, it.projectID, it.ev, it.g, it.data, it.now, it.lim)
 		if err != nil {
@@ -205,7 +203,7 @@ func (in *Ingester) ingestOne(ctx context.Context, it *pending) (Result, error) 
 	return res, nil
 }
 
-func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *event.Event, g Grouping, data store.EncodedEvent, now time.Time, lim Limits) (Result, error) {
+func (in *Ingester) save(ctx context.Context, tx db.Tx, projectID int64, ev *event.Event, g Grouping, data store.EncodedEvent, now time.Time, lim Limits) (Result, error) {
 	res := Result{}
 	hour := now.Truncate(time.Hour)
 	// newRelease: la release la crea este evento, así que no se sabe si es
@@ -234,7 +232,7 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		switch {
 		case err == nil:
 			res.Outcome = New
-		case errors.Is(err, pgx.ErrNoRows):
+		case errors.Is(err, db.ErrNoRows):
 			if found, err = lockIssue(ctx, tx, projectID, g.Fingerprint); err != nil {
 				return res, err
 			}
@@ -288,8 +286,8 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		_, err = tx.Exec(ctx, `
 			UPDATE issues SET
 				event_count = event_count + 1,
-				first_seen = LEAST(first_seen, $2),
-				last_seen = GREATEST(last_seen, $2),
+				first_seen = `+tx.Dialect().Least("first_seen", "$2")+`,
+				last_seen = `+tx.Dialect().Greatest("last_seen", "$2")+`,
 				status = $3,
 				resolved_in_release = CASE WHEN $4 THEN NULL ELSE resolved_in_release END,
 				fixed_in_release = CASE WHEN $4 THEN NULL ELSE fixed_in_release END,
@@ -337,15 +335,14 @@ type lockedIssue struct {
 	lastStoredAt *time.Time
 }
 
-func lockIssue(ctx context.Context, tx pgx.Tx, projectID int64, fp string) (*lockedIssue, error) {
+func lockIssue(ctx context.Context, tx db.Tx, projectID int64, fp string) (*lockedIssue, error) {
 	var li lockedIssue
 	err := tx.QueryRow(ctx, `
 		SELECT id, status, COALESCE(resolved_in_release, ''), COALESCE(fixed_in_release, ''), resolved_at,
 			stored_hour, stored_in_hour, last_stored_at FROM issues
-		WHERE project_id = $1 AND fingerprint = $2
-		FOR UPDATE`, projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.fixedIn, &li.resolvedAt,
+		WHERE project_id = $1 AND fingerprint = $2`+tx.Dialect().ForUpdate(), projectID, fp).Scan(&li.id, &li.status, &li.resolvedIn, &li.fixedIn, &li.resolvedAt,
 		&li.storedHour, &li.storedInHour, &li.lastStoredAt)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

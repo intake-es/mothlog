@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/netguard"
 )
 
@@ -290,7 +289,7 @@ const uptimeColumns = `m.id, m.project_id, p.name, m.slug, m.name, m.url, m.meth
 
 const uptimeFrom = ` FROM uptime_monitors m JOIN projects p ON p.id = m.project_id`
 
-func scanUptime(r pgx.Row) (UptimeMonitor, error) {
+func scanUptime(r db.Row) (UptimeMonitor, error) {
 	var m UptimeMonitor
 	err := r.Scan(&m.ID, &m.ProjectID, &m.Project, &m.Slug, &m.Name, &m.URL, &m.Method, &m.IntervalSeconds,
 		&m.TimeoutSeconds, &m.ExpectedStatus, &m.FailureThreshold, &m.Paused, &m.Status, &m.ConsecutiveFailures,
@@ -336,7 +335,7 @@ func (s *Store) ListUptimeMonitors(ctx context.Context, f UptimeFilter, now time
 	if err != nil {
 		return nil, fmt.Errorf("leer monitores de disponibilidad: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (UptimeMonitor, error) { return scanUptime(r) })
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (UptimeMonitor, error) { return scanUptime(r) })
 	if err != nil {
 		return nil, fmt.Errorf("leer monitores de disponibilidad: %w", err)
 	}
@@ -355,7 +354,7 @@ func (s *Store) ListUptimeMonitors(ctx context.Context, f UptimeFilter, now time
 	}
 	rows, err = s.pool.Query(ctx, `
 		SELECT c.monitor_id, c.checked_at, c.ok, c.status_code, c.duration_ms, c.error
-		FROM unnest($1::bigint[]) AS m(id)
+		FROM `+s.pool.Dialect().Unnest("m", 1, "id bigint")+`
 		CROSS JOIN LATERAL (SELECT monitor_id, checked_at, ok, status_code, duration_ms, error FROM uptime_checks
 			WHERE monitor_id = m.id ORDER BY checked_at DESC, id DESC LIMIT $2) c`, ids, RecentUptimeChecks)
 	if err != nil {
@@ -380,7 +379,7 @@ type span struct{ from, to time.Time }
 func (s *Store) fillAvailability(ctx context.Context, list []UptimeMonitor, idx map[int64]int, ids []int64, now time.Time) error {
 	rows, err := s.pool.Query(ctx, `
 		SELECT monitor_id, started_at, ended_at FROM uptime_incidents
-		WHERE monitor_id = ANY($1) AND (ended_at IS NULL OR ended_at > $2)`, ids, now.Add(-uptimeAvailabilityWindow))
+		WHERE `+s.pool.Dialect().InList("monitor_id", "$1")+` AND (ended_at IS NULL OR ended_at > $2)`, ids, now.Add(-uptimeAvailabilityWindow))
 	if err != nil {
 		return fmt.Errorf("leer incidentes: %w", err)
 	}
@@ -448,7 +447,7 @@ func availability(created time.Time, incidents []span, now time.Time, window tim
 func (s *Store) UptimeMonitor(ctx context.Context, projectID int64, slug string) (UptimeMonitor, error) {
 	m, err := scanUptime(s.pool.QueryRow(ctx, `SELECT `+uptimeColumns+uptimeFrom+`
 		WHERE m.project_id = $1 AND m.slug = $2`, projectID, slug))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return UptimeMonitor{}, ErrNotFound
 	}
 	if err != nil {
@@ -480,7 +479,7 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 	if err != nil {
 		return d, fmt.Errorf("leer incidentes: %w", err)
 	}
-	if d.Incidents, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (UptimeIncident, error) {
+	if d.Incidents, err = db.CollectRows(rows, func(r db.CollectableRow) (UptimeIncident, error) {
 		var i UptimeIncident
 		err := r.Scan(&i.ID, &i.MonitorID, &i.StartedAt, &i.EndedAt, &i.DurationMs, &i.FirstError)
 		return i, err
@@ -493,7 +492,7 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 	if err != nil {
 		return d, fmt.Errorf("leer comprobaciones: %w", err)
 	}
-	if d.Checks, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (UptimeCheck, error) {
+	if d.Checks, err = db.CollectRows(rows, func(r db.CollectableRow) (UptimeCheck, error) {
 		var c UptimeCheck
 		err := r.Scan(&c.CheckedAt, &c.OK, &c.StatusCode, &c.DurationMs, &c.Error)
 		return c, err
@@ -502,14 +501,14 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 	}
 	since := now.Add(-ResponseTimeWindow).Truncate(ResponseTimeBucket)
 	rows, err = s.pool.Query(ctx, `
-		SELECT date_bin($3::interval, checked_at, $2) AS at, round(avg(duration_ms) FILTER (WHERE ok))::int,
+		SELECT date_bin($3::interval, checked_at, $2) AS at, CAST(round(avg(duration_ms) FILTER (WHERE ok)) AS integer),
 			max(duration_ms), count(*), count(*) FILTER (WHERE NOT ok)
 		FROM uptime_checks WHERE monitor_id = $1 AND checked_at >= $2 AND checked_at <= $4
 		GROUP BY at ORDER BY at`, m.ID, since, ResponseTimeBucket, now)
 	if err != nil {
 		return d, fmt.Errorf("leer tiempos de respuesta: %w", err)
 	}
-	if d.ResponseTimes, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (ResponseTimes, error) {
+	if d.ResponseTimes, err = db.CollectRows(rows, func(r db.CollectableRow) (ResponseTimes, error) {
 		var b ResponseTimes
 		err := r.Scan(&b.At, &b.AvgMs, &b.MaxMs, &b.Checks, &b.Failures)
 		return b, err
@@ -551,7 +550,7 @@ func (s *Store) CreateUptimeMonitor(ctx context.Context, projectID int64, in Upt
 		SELECT id, $2, $3, $4, $5, $6, $7, $8, $9, $10 FROM projects WHERE id = $1
 		RETURNING id`, projectID, m.Slug, m.Name, m.URL, m.Method, m.IntervalSeconds, m.TimeoutSeconds,
 		m.ExpectedStatus, m.FailureThreshold, m.Paused).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return UptimeMonitor{}, ErrNotFound
 	}
 	if uniqueViolation(err) {
@@ -568,10 +567,10 @@ func (s *Store) CreateUptimeMonitor(ctx context.Context, projectID int64, in Upt
 // pausar uno caído, su incidente se cierra y vuelve a pending.
 func (s *Store) UpdateUptimeMonitor(ctx context.Context, projectID int64, slug string, in UptimeInput, now time.Time) (UptimeMonitor, error) {
 	var out UptimeMonitor
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		m, err := scanUptime(tx.QueryRow(ctx, `SELECT `+uptimeColumns+uptimeFrom+`
-			WHERE m.project_id = $1 AND m.slug = $2 FOR UPDATE OF m`, projectID, slug))
-		if errors.Is(err, pgx.ErrNoRows) {
+			WHERE m.project_id = $1 AND m.slug = $2`+tx.Dialect().ForUpdate("m"), projectID, slug))
+		if errors.Is(err, db.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
@@ -596,9 +595,10 @@ func (s *Store) UpdateUptimeMonitor(ctx context.Context, projectID int64, slug s
 		if m.Paused && !old.Paused {
 			failures, firstAt, firstErr = 0, nil, nil
 			if m.Status == UptimeDown {
+				end := tx.Dialect().Greatest("$2::timestamptz", "started_at")
 				if _, err := tx.Exec(ctx, `
-					UPDATE uptime_incidents SET ended_at = greatest($2::timestamptz, started_at),
-						duration_ms = (extract(epoch FROM greatest($2::timestamptz, started_at) - started_at) * 1000)::bigint
+					UPDATE uptime_incidents SET ended_at = `+end+`,
+						duration_ms = CAST((`+tx.Dialect().SecondsBetween(end, "started_at")+` * 1000) AS bigint)
 					WHERE monitor_id = $1 AND ended_at IS NULL`, m.ID, now.UTC()); err != nil {
 					return fmt.Errorf("cerrar incidente: %w", err)
 				}
@@ -656,16 +656,17 @@ type UptimeTarget struct {
 // pone la siguiente comprobación un intervalo después. Con FOR UPDATE SKIP
 // LOCKED, dos réplicas a la vez nunca reservan el mismo.
 func (s *Store) ClaimUptimeChecks(ctx context.Context, now time.Time, limit int) ([]UptimeTarget, error) {
+	d := s.pool.Dialect()
 	rows, err := s.pool.Query(ctx, `
-		UPDATE uptime_monitors m SET next_check_at = $1 + make_interval(secs => m.interval_seconds)
+		UPDATE uptime_monitors m SET next_check_at = `+d.AddSeconds("$1", "m.interval_seconds")+`
 		FROM (SELECT id FROM uptime_monitors WHERE NOT paused AND next_check_at <= $1
-			ORDER BY next_check_at, id LIMIT $2 FOR UPDATE SKIP LOCKED) due
+			ORDER BY next_check_at, id LIMIT $2`+d.ForUpdateSkipLocked()+`) due
 		WHERE m.id = due.id
 		RETURNING m.id, m.url, m.method, m.timeout_seconds, m.expected_status`, now.UTC(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("reservar comprobaciones: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (UptimeTarget, error) {
+	return db.CollectRows(rows, func(r db.CollectableRow) (UptimeTarget, error) {
 		var t UptimeTarget
 		var secs int
 		err := r.Scan(&t.ID, &t.URL, &t.Method, &secs, &t.ExpectedStatus)
@@ -683,7 +684,7 @@ type UptimeChange struct {
 
 // UptimeNotifier encola los avisos de una caída o una vuelta en la transacción que la guarda.
 type UptimeNotifier interface {
-	UptimeChanged(ctx context.Context, tx pgx.Tx, ch UptimeChange) error
+	UptimeChanged(ctx context.Context, tx db.Tx, ch UptimeChange) error
 }
 
 // RecordUptimeCheck guarda la comprobación y, con ella, abre el incidente al
@@ -695,10 +696,10 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 		c.Error = string(r[:maxUptimeError])
 	}
 	kind := ""
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		kind = ""
-		m, err := scanUptime(tx.QueryRow(ctx, `SELECT `+uptimeColumns+uptimeFrom+` WHERE m.id = $1 FOR UPDATE OF m`, monitorID))
-		if errors.Is(err, pgx.ErrNoRows) {
+		m, err := scanUptime(tx.QueryRow(ctx, `SELECT `+uptimeColumns+uptimeFrom+` WHERE m.id = $1`+tx.Dialect().ForUpdate("m"), monitorID))
+		if errors.Is(err, db.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
@@ -715,15 +716,16 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 		var inc UptimeIncident
 		if c.OK {
 			if m.Status == UptimeDown {
+				end := tx.Dialect().Greatest("$2", "started_at")
 				err := tx.QueryRow(ctx, `
-					UPDATE uptime_incidents SET ended_at = greatest($2, started_at),
-						duration_ms = (extract(epoch FROM greatest($2, started_at) - started_at) * 1000)::bigint
+					UPDATE uptime_incidents SET ended_at = `+end+`,
+						duration_ms = CAST((`+tx.Dialect().SecondsBetween(end, "started_at")+` * 1000) AS bigint)
 					WHERE monitor_id = $1 AND ended_at IS NULL
 					RETURNING id, monitor_id, started_at, ended_at, duration_ms, first_error`, m.ID, c.CheckedAt).
 					Scan(&inc.ID, &inc.MonitorID, &inc.StartedAt, &inc.EndedAt, &inc.DurationMs, &inc.FirstError)
 				if err == nil {
 					kind = KindUptimeUp
-				} else if !errors.Is(err, pgx.ErrNoRows) {
+				} else if !errors.Is(err, db.ErrNoRows) {
 					return fmt.Errorf("cerrar incidente: %w", err)
 				}
 			}

@@ -14,13 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
 // pgStore abre un Store en un esquema propio de la base de pruebas.
-func pgStore(t *testing.T) (*store.Store, *pgx.Conn, string) {
+func pgStore(t *testing.T) (*store.Store, db.DB, string) {
 	t.Helper()
 	base := os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL")
 	if base == "" {
@@ -31,7 +30,7 @@ func pgStore(t *testing.T) (*store.Store, *pgx.Conn, string) {
 	_, _ = rand.Read(b)
 	schema := "test_" + hex.EncodeToString(b)
 
-	admin, err := pgx.Connect(ctx, base)
+	admin, err := db.OpenPostgres(ctx, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +39,7 @@ func pgStore(t *testing.T) (*store.Store, *pgx.Conn, string) {
 	}
 	t.Cleanup(func() {
 		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-		_ = admin.Close(context.Background())
+		admin.Close()
 	})
 	u, err := url.Parse(base)
 	if err != nil {

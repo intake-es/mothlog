@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 )
 
@@ -265,7 +264,7 @@ func spanishDate(t, ref time.Time) string {
 	return s
 }
 
-func (s *slack) send(ctx context.Context, _ pgx.Tx, p *pending) error {
+func (s *slack) send(ctx context.Context, _ db.Tx, p *pending) error {
 	if p.digest != nil {
 		return postJSON(ctx, s.client, "slack", s.url, p.digest.Slack(), nil)
 	}

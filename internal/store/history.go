@@ -9,7 +9,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // ErrNotOwner: el comentario es de otro.
@@ -104,7 +104,7 @@ func insertComment(ctx context.Context, q Querier, issueID int64, a Actor, body 
 	err := q.QueryRow(ctx, `
 		INSERT INTO issue_comments (issue_id, author, author_kind, body) VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at`, issueID, a.Name, a.Kind, body).Scan(&c.ID, &c.CreatedAt)
-	if isForeignKeyViolation(err) {
+	if db.IsForeignKeyViolation(err) {
 		return Comment{}, ErrNotFound
 	}
 	if err != nil {
@@ -130,7 +130,7 @@ func (s *Store) DeleteComment(ctx context.Context, issueID, commentID int64, a A
 	var author, kind string
 	err := s.pool.QueryRow(ctx, `SELECT author, author_kind FROM issue_comments WHERE id = $1 AND issue_id = $2`,
 		commentID, issueID).Scan(&author, &kind)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
@@ -167,7 +167,7 @@ func (s *Store) History(ctx context.Context, issueID int64, viewer *Actor) ([]Hi
 		return nil, fmt.Errorf("leer historial: %w", err)
 	}
 	mine := func(a *Actor) bool { return viewer != nil && a != nil && *a == *viewer }
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (HistoryEntry, error) {
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (HistoryEntry, error) {
 		var e HistoryEntry
 		var author, kind *string
 		var cID *int64
@@ -258,7 +258,7 @@ func (s *Store) ChangeIssueStatus(ctx context.Context, id int64, status string, 
 			return Issue{}, err
 		}
 	}
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		_, err := changeStatusTx(ctx, tx, id, status, by, comment, false, by.Source)
 		return err
 	})
@@ -272,12 +272,12 @@ func (s *Store) ChangeIssueStatus(ctx context.Context, id int64, status string, 
 // resolved_next sin release en el último evento se queda en resolved. Si el
 // estado cambia de categoría, lo deja para enviar a los enlaces del issue,
 // salvo a los del sitio skip.
-func changeStatusTx(ctx context.Context, tx pgx.Tx, id int64, status string, by StatusChange, comment string,
+func changeStatusTx(ctx context.Context, tx db.Tx, id int64, status string, by StatusChange, comment string,
 	fallbackResolved bool, skip string) (bool, error) {
 	var from string
 	var prevRelease *string
-	err := tx.QueryRow(ctx, `SELECT status, resolved_in_release FROM issues WHERE id = $1 FOR UPDATE`, id).Scan(&from, &prevRelease)
-	if errors.Is(err, pgx.ErrNoRows) {
+	err := tx.QueryRow(ctx, `SELECT status, resolved_in_release FROM issues WHERE id = $1`+tx.Dialect().ForUpdate(), id).Scan(&from, &prevRelease)
+	if errors.Is(err, db.ErrNoRows) {
 		return false, ErrNotFound
 	}
 	if err != nil {
@@ -287,7 +287,7 @@ func changeStatusTx(ctx context.Context, tx pgx.Tx, id int64, status string, by 
 	if status == "resolved_next" {
 		err := tx.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
 			WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&release)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return false, fmt.Errorf("release del último evento: %w", err)
 		}
 		if release == nil {

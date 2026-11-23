@@ -6,19 +6,18 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // PutUploadChunks guarda trozos de una subida por trozos, por su sha1 en hexadecimal.
 func (s *Store) PutUploadChunks(ctx context.Context, chunks map[string][]byte) error {
-	b := &pgx.Batch{}
+	b := &db.Batch{}
 	for sum, data := range chunks {
 		b.Queue(`
 			INSERT INTO upload_chunks (sha1, data) VALUES ($1, $2)
 			ON CONFLICT (sha1) DO UPDATE SET uploaded_at = now()`, sum, data)
 	}
-	if err := s.pool.SendBatch(ctx, b).Close(); err != nil {
+	if err := s.pool.SendBatch(ctx, b); err != nil {
 		return fmt.Errorf("guardar trozos: %w", err)
 	}
 	return nil
@@ -26,11 +25,11 @@ func (s *Store) PutUploadChunks(ctx context.Context, chunks map[string][]byte) e
 
 // MissingUploadChunks devuelve, en su orden, los sha1 de sums que no están guardados.
 func (s *Store) MissingUploadChunks(ctx context.Context, sums []string) ([]string, error) {
-	rows, err := s.pool.Query(ctx, `SELECT sha1 FROM upload_chunks WHERE sha1 = ANY($1)`, sums)
+	rows, err := s.pool.Query(ctx, `SELECT sha1 FROM upload_chunks WHERE `+s.pool.Dialect().InList("sha1", "$1"), sums)
 	if err != nil {
 		return nil, fmt.Errorf("buscar trozos: %w", err)
 	}
-	have, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	have, err := db.CollectRows(rows, db.RowTo[string])
 	if err != nil {
 		return nil, fmt.Errorf("buscar trozos: %w", err)
 	}
@@ -52,7 +51,7 @@ func (s *Store) MissingUploadChunks(ctx context.Context, sums []string) ([]strin
 func (s *Store) UploadChunk(ctx context.Context, sum string) ([]byte, error) {
 	var data []byte
 	err := s.pool.QueryRow(ctx, `SELECT data FROM upload_chunks WHERE sha1 = $1`, sum).Scan(&data)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
@@ -83,7 +82,7 @@ type Bundle struct {
 func (s *Store) BundleAssembled(ctx context.Context, checksum string, projectIDs []int64) (bool, error) {
 	var n int
 	err := s.pool.QueryRow(ctx,
-		`SELECT count(*) FROM artifact_bundles WHERE checksum = $1 AND project_id = ANY($2)`,
+		`SELECT count(*) FROM artifact_bundles WHERE checksum = $1 AND `+s.pool.Dialect().InList("project_id", "$2"),
 		checksum, projectIDs).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("buscar bundle: %w", err)
@@ -94,7 +93,7 @@ func (s *Store) BundleAssembled(ctx context.Context, checksum string, projectIDs
 // PutBundle guarda los mapas del bundle en cada proyecto y lo apunta como
 // ensamblado, todo o nada. Si un proyecto no existe devuelve ErrNotFound.
 func (s *Store) PutBundle(ctx context.Context, b Bundle) error {
-	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	return db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		for _, p := range b.ProjectIDs {
 			if err := putSourceMaps(ctx, tx, p, b.Release, b.Files); err != nil {
 				return err
@@ -104,8 +103,7 @@ func (s *Store) PutBundle(ctx context.Context, b Bundle) error {
 				VALUES ($1, $2, $3, $4, $5)
 				ON CONFLICT (project_id, checksum) DO UPDATE SET assembled_at = now()`,
 				p, b.Checksum, b.Release, b.Dist, len(b.Files))
-			var pe *pgconn.PgError
-			if errors.As(err, &pe) && pe.Code == "23503" {
+			if db.IsForeignKeyViolation(err) {
 				return ErrNotFound
 			}
 			if err != nil {

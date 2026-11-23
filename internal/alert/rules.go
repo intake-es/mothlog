@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -35,7 +34,7 @@ type candidate struct {
 
 // applyRules encola, de cada regla activa que salta con este evento, un aviso
 // por acción. Un issue silenciado no avisa.
-func (a *Alerter) applyRules(ctx context.Context, tx pgx.Tx, rules []store.Rule, ev *event.Event, res ingest.Result) error {
+func (a *Alerter) applyRules(ctx context.Context, tx db.Tx, rules []store.Rule, ev *event.Event, res ingest.Result) error {
 	var status string
 	if err := tx.QueryRow(ctx, `SELECT status FROM issues WHERE id = $1`, res.IssueID).Scan(&status); err != nil {
 		return err
@@ -60,7 +59,7 @@ func (a *Alerter) applyRules(ctx context.Context, tx pgx.Tx, rules []store.Rule,
 // filtros, y saltan mientras estén por encima del umbral y la regla no haya
 // avisado aún de ese cruce: un evento que llega durante el límite de la regla
 // o con el que salta antes otra condición no hace que se pierda el aviso.
-func (a *Alerter) applyRule(ctx context.Context, tx pgx.Tx, r store.Rule, ev *event.Event, res ingest.Result, now time.Time) error {
+func (a *Alerter) applyRule(ctx context.Context, tx db.Tx, r store.Rule, ev *event.Event, res ingest.Result, now time.Time) error {
 	st, err := loadRuleState(ctx, tx, r.ID, res.IssueID)
 	if err != nil {
 		return err
@@ -122,12 +121,12 @@ func (a *Alerter) applyRule(ctx context.Context, tx pgx.Tx, r store.Rule, ev *ev
 	return err
 }
 
-func loadRuleState(ctx context.Context, tx pgx.Tx, ruleID, issueID int64) (ruleState, error) {
+func loadRuleState(ctx context.Context, tx db.Tx, ruleID, issueID int64) (ruleState, error) {
 	var st ruleState
 	err := tx.QueryRow(ctx, `
 		SELECT last_alert_at, frequency_alerted, users_alerted FROM alert_rule_issues WHERE rule_id = $1 AND issue_id = $2`,
 		ruleID, issueID).Scan(&st.lastAlert, &st.frequencyAlerted, &st.usersAlerted)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return st, nil
 	}
 	return st, err
@@ -135,7 +134,7 @@ func loadRuleState(ctx context.Context, tx pgx.Tx, ruleID, issueID int64) (ruleS
 
 // countEvent suma el evento a la cuenta por minuto de la regla y el issue y
 // devuelve cuántos lleva en la ventana.
-func countEvent(ctx context.Context, tx pgx.Tx, ruleID, issueID int64, window int, now time.Time) (int, error) {
+func countEvent(ctx context.Context, tx db.Tx, ruleID, issueID int64, window int, now time.Time) (int, error) {
 	minute := now.Truncate(time.Minute)
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO alert_rule_minutes (rule_id, issue_id, minute, events) VALUES ($1, $2, $3, 1)
@@ -172,7 +171,7 @@ func userKey(u *event.User) string {
 // Con filtros, apunta el usuario del evento entre los de la regla y el issue,
 // así que cuenta desde que existe la regla; guarda como mucho limit+1: basta
 // para saber que se ha pasado.
-func countUser(ctx context.Context, tx pgx.Tx, r store.Rule, issueID int64, ev *event.Event, limit int) (int, error) {
+func countUser(ctx context.Context, tx db.Tx, r store.Rule, issueID int64, ev *event.Event, limit int) (int, error) {
 	var n int
 	if !r.Conditions.Filtered() {
 		err := tx.QueryRow(ctx, `SELECT user_count FROM issues WHERE id = $1`, issueID).Scan(&n)
@@ -195,7 +194,7 @@ func countUser(ctx context.Context, tx pgx.Tx, r store.Rule, issueID int64, ev *
 	return n + int(tag.RowsAffected()), nil
 }
 
-func (a *Alerter) enqueueRule(ctx context.Context, tx pgx.Tx, r store.Rule, kind string, detail *ruleDetail,
+func (a *Alerter) enqueueRule(ctx context.Context, tx db.Tx, r store.Rule, kind string, detail *ruleDetail,
 	ev *event.Event, res ingest.Result, now time.Time) error {
 	var raw []byte
 	if detail != nil {
@@ -222,7 +221,7 @@ func (a *Alerter) enqueueRule(ctx context.Context, tx pgx.Tx, r store.Rule, kind
 		}
 	}
 	if linearID != 0 && len(slackIDs) > 0 {
-		_, err := tx.Exec(ctx, `UPDATE alert_outbox SET waits_for = $2 WHERE id = ANY($1)`, slackIDs, linearID)
+		_, err := tx.Exec(ctx, `UPDATE alert_outbox SET waits_for = $2 WHERE `+tx.Dialect().InList("id", "$1"), slackIDs, linearID)
 		return err
 	}
 	return nil
@@ -247,10 +246,10 @@ func matches(c store.RuleConditions, ev *event.Event) bool {
 
 // ruleSender prepara el envío de un aviso de una regla con la acción como
 // está ahora en la regla.
-func (a *Alerter) ruleSender(ctx context.Context, tx pgx.Tx, p *pending) (sender, error) {
+func (a *Alerter) ruleSender(ctx context.Context, tx db.Tx, p *pending) (sender, error) {
 	var actions []store.RuleAction
 	err := tx.QueryRow(ctx, `SELECT name, actions FROM alert_rules WHERE id = $1`, p.ruleID).Scan(&p.ruleName, &actions)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, errGone
 	}
 	if err != nil {

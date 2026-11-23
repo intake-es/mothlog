@@ -14,12 +14,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // sembrar crea los proyectos de los fixtures con sus claves y sube los
 // source maps del envío del navegador.
-func sembrar(ctx context.Context, pool *pgxpool.Pool, base, dir string) error {
+func sembrar(ctx context.Context, pool db.DB, base, dir string) error {
 	for _, p := range proyectos {
 		if _, err := pool.Exec(ctx,
 			`INSERT INTO projects (id, name, public_key) OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3)`,

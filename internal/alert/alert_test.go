@@ -18,8 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -371,7 +370,7 @@ func (e *env) outbox(t *testing.T) []outboxRow {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (outboxRow, error) {
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (outboxRow, error) {
 		var o outboxRow
 		err := r.Scan(&o.Channel, &o.Kind, &o.Attempts, &o.Next, &o.Sent, &o.Failed, &o.LastError)
 		return o, err
@@ -569,7 +568,7 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 
 type failAfter struct{ n ingest.Notifier }
 
-func (f failAfter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
+func (f failAfter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, res ingest.Result) error {
 	if err := f.n.IssueChanged(ctx, tx, ev, res); err != nil {
 		return err
 	}

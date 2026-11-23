@@ -18,8 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/digest"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
@@ -103,7 +102,7 @@ type rulesSeen struct {
 const RulesCacheTTL = 30 * time.Second
 
 type sender interface {
-	send(ctx context.Context, tx pgx.Tx, a *pending) error
+	send(ctx context.Context, tx db.Tx, a *pending) error
 }
 
 type pending struct {
@@ -194,7 +193,7 @@ func (a *Alerter) Channels() []string { return append([]string(nil), a.order...)
 // IssueChanged encola los avisos del evento: los de las reglas del proyecto o,
 // si no tiene ninguna, uno por canal si el issue es nuevo o ha vuelto. Si
 // falla, lo registra y deja seguir a la ingesta.
-func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
+func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, res ingest.Result) error {
 	issueID := res.IssueID
 	if issueID == 0 {
 		return nil
@@ -238,7 +237,7 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx pgx.Tx, ev *event.Event, 
 // por proyecto. Va por la transacción de la ingesta, en un savepoint para que
 // un fallo no la tumbe: pedir otra conexión al pool con ella abierta puede
 // dejar la ingesta esperando cuando todas las conexiones están en uso.
-func (a *Alerter) projectHasRules(ctx context.Context, tx pgx.Tx, projectID int64) (bool, error) {
+func (a *Alerter) projectHasRules(ctx context.Context, tx db.Tx, projectID int64) (bool, error) {
 	now := time.Now()
 	a.rulesMu.Lock()
 	seen, ok := a.hasRules[projectID]
@@ -251,7 +250,7 @@ func (a *Alerter) projectHasRules(ctx context.Context, tx pgx.Tx, projectID int6
 		return false, err
 	}
 	var has bool
-	if err := sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1 AND `+store.IssueRulesSQL+`)`,
+	if err := sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1 AND `+store.IssueRulesSQL(sp.Dialect())+`)`,
 		projectID).Scan(&has); err != nil {
 		_ = sp.Rollback(ctx)
 		return false, err
@@ -274,7 +273,7 @@ func (a *Alerter) RulesChanged(projectID int64) {
 }
 
 // enqueueDefault es el aviso de un proyecto sin reglas.
-func (a *Alerter) enqueueDefault(ctx context.Context, tx pgx.Tx, ev *event.Event, res ingest.Result) error {
+func (a *Alerter) enqueueDefault(ctx context.Context, tx db.Tx, ev *event.Event, res ingest.Result) error {
 	if res.Outcome == ingest.Unchanged || len(a.order) == 0 {
 		return nil
 	}
@@ -352,11 +351,11 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	// los canales configurados.
 	err = tx.QueryRow(ctx, `
 		SELECT o.id, o.issue_id, o.monitor_id, o.checkin_id, o.uptime_monitor_id, o.incident_id, o.channel, o.kind, COALESCE(o.release, ''), COALESCE(o.environment, ''),
-			o.event_at, o.resolved_at, o.linear_create_id::text, o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail,
+			o.event_at, o.resolved_at, CAST(o.linear_create_id AS text), o.attempts, o.rule_id, COALESCE(o.action_id, ''), o.detail,
 			o.digest_project_id
 		FROM alert_outbox o
 		WHERE o.sent_at IS NULL AND o.failed_at IS NULL AND o.next_attempt_at <= $1
-			AND (o.rule_id IS NOT NULL OR o.digest_project_id IS NOT NULL OR o.channel = ANY($2))
+			AND (o.rule_id IS NOT NULL OR o.digest_project_id IS NOT NULL OR `+tx.Dialect().InList("o.channel", "$2")+`)
 			AND NOT EXISTS (SELECT 1 FROM alert_outbox b
 				WHERE b.issue_id IS NOT DISTINCT FROM o.issue_id AND b.monitor_id IS NOT DISTINCT FROM o.monitor_id
 					AND b.uptime_monitor_id IS NOT DISTINCT FROM o.uptime_monitor_id
@@ -367,11 +366,10 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 			AND NOT (o.created_at > $3 AND EXISTS (SELECT 1 FROM alert_outbox w
 				WHERE w.id = o.waits_for AND w.sent_at IS NULL AND w.failed_at IS NULL))
 		ORDER BY o.next_attempt_at, o.id
-		LIMIT 1
-		FOR UPDATE SKIP LOCKED`, now, a.order, now.Add(-SlackWaitsForLinear)).
+		LIMIT 1`+tx.Dialect().ForUpdateSkipLocked(), now, a.order, now.Add(-SlackWaitsForLinear)).
 		Scan(&p.id, &issueID, &monitorID, &checkinID, &uptimeID, &incidentID, &channel, &p.kind, &p.release, &p.environment, &p.eventAt, &p.resolvedAt, &p.createID,
 			&attempts, &ruleID, &p.actionID, &detail, &digestID)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
@@ -429,7 +427,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	return a.finish(ctx, tx, &p, channel, attempts, now, sendErr)
 }
 
-func (a *Alerter) loadIssue(ctx context.Context, tx pgx.Tx, p *pending) error {
+func (a *Alerter) loadIssue(ctx context.Context, tx db.Tx, p *pending) error {
 	err := tx.QueryRow(ctx, `
 		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(l.external_id, ''),
 			COALESCE(l.identifier, ''), COALESCE(l.url, '')
@@ -446,7 +444,7 @@ func (a *Alerter) loadIssue(ctx context.Context, tx pgx.Tx, p *pending) error {
 }
 
 // finish apunta el resultado del envío: enviado, para reintentar o abandonado.
-func (a *Alerter) finish(ctx context.Context, tx pgx.Tx, p *pending, channel string, attempts int, now time.Time, sendErr error) (bool, error) {
+func (a *Alerter) finish(ctx context.Context, tx db.Tx, p *pending, channel string, attempts int, now time.Time, sendErr error) (bool, error) {
 	var err error
 	attempts++
 	switch {

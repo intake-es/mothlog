@@ -6,20 +6,20 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // IssueEnvironments son los entornos del issue con sus eventos, también los
 // que no se guardaron por el tope o el muestreo, del de más eventos al de menos.
 func (s *Store) IssueEnvironments(ctx context.Context, issueID int64) ([]ValueCount, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT environment, sum(event_count)::bigint AS n FROM issue_stats
+		SELECT environment, CAST(sum(event_count) AS bigint) AS n FROM issue_stats
 		WHERE issue_id = $1 AND environment <> ''
 		GROUP BY environment ORDER BY n DESC, environment`, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("entornos del issue: %w", err)
 	}
-	envs, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (ValueCount, error) {
+	envs, err := db.CollectRows(rows, func(r db.CollectableRow) (ValueCount, error) {
 		var v ValueCount
 		return v, r.Scan(&v.Value, &v.Count)
 	})

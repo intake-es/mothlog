@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 type opciones struct {
@@ -286,10 +286,10 @@ func guardarLogs(contenedor, fichero string) {
 	_ = cmd.Run()
 }
 
-func esperarPostgres(ctx context.Context, url string) (*pgxpool.Pool, error) {
+func esperarPostgres(ctx context.Context, url string) (db.DB, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
-		pool, err := pgxpool.New(ctx, url)
+		pool, err := db.OpenPostgres(ctx, url)
 		if err == nil {
 			if err = pool.Ping(ctx); err == nil {
 				return pool, nil

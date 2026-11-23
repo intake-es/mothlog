@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // DigestIssue es un issue en un resumen, con sus eventos en el periodo y en el anterior.
@@ -27,11 +27,11 @@ type DigestIssue struct {
 
 const digestIssueCols = `i.id, i.title, i.culprit, i.level, i.status, i.user_count, i.first_seen`
 
-func scanDigestIssues(rows pgx.Rows, extra ...any) ([]DigestIssue, error) {
+func scanDigestIssues(rows db.Rows, extra ...any) ([]DigestIssue, error) {
 	out := []DigestIssue{}
 	var d DigestIssue
 	dest := append([]any{&d.ID, &d.Title, &d.Culprit, &d.Level, &d.Status, &d.Users, &d.FirstSeen, &d.Events, &d.Previous}, extra...)
-	_, err := pgx.ForEachRow(rows, dest, func() error {
+	err := db.ForEachRow(rows, dest, func() error {
 		out = append(out, d)
 		return nil
 	})
@@ -45,7 +45,7 @@ const eventsIn = `(SELECT count(*) FROM events e WHERE e.issue_id = i.id AND e.o
 // eventos tienen primero, hasta limit, y cuántos son en total.
 func (s *Store) DigestNewIssues(ctx context.Context, projectID int64, start, end time.Time, limit int) ([]DigestIssue, int, error) {
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
-		SELECT `+digestIssueCols+`, `+eventsIn+` AS n, 0::bigint, count(*) OVER ()
+		SELECT `+digestIssueCols+`, `+eventsIn+` AS n, CAST(0 AS bigint), count(*) OVER ()
 		FROM issues i
 		WHERE i.project_id = $1 AND i.first_seen >= $2 AND i.first_seen < $3
 		ORDER BY n DESC, i.first_seen, i.id LIMIT $4`, "$2", "$3"), projectID, start, end, limit)
@@ -64,7 +64,7 @@ func (s *Store) DigestNewIssues(ctx context.Context, projectID int64, start, end
 // resolverse, con la release con la que volvieron la última vez.
 func (s *Store) DigestRegressions(ctx context.Context, projectID int64, start, end time.Time, limit int) ([]DigestIssue, int, error) {
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
-		SELECT `+digestIssueCols+`, `+eventsIn+` AS n, 0::bigint, count(*) OVER (), COALESCE(r.release, '')
+		SELECT `+digestIssueCols+`, `+eventsIn+` AS n, CAST(0 AS bigint), count(*) OVER (), COALESCE(r.release, '')
 		FROM issues i
 		CROSS JOIN LATERAL (
 			SELECT c.release FROM issue_status_changes c
@@ -79,7 +79,7 @@ func (s *Store) DigestRegressions(ctx context.Context, projectID int64, start, e
 	var release string
 	var out []DigestIssue
 	var d DigestIssue
-	_, err = pgx.ForEachRow(rows, []any{&d.ID, &d.Title, &d.Culprit, &d.Level, &d.Status, &d.Users, &d.FirstSeen,
+	err = db.ForEachRow(rows, []any{&d.ID, &d.Title, &d.Culprit, &d.Level, &d.Status, &d.Users, &d.FirstSeen,
 		&d.Events, &d.Previous, &total, &release}, func() error {
 		d.Release = release
 		out = append(out, d)
@@ -206,7 +206,7 @@ func (s *Store) DigestCrons(ctx context.Context, projectID int64, start, end tim
 	}
 	out := []DigestCron{}
 	var c DigestCron
-	_, err = pgx.ForEachRow(rows, []any{&c.Slug, &c.Name, &c.Failed, &c.Missed, &c.Timeouts, &c.Status}, func() error {
+	err = db.ForEachRow(rows, []any{&c.Slug, &c.Name, &c.Failed, &c.Missed, &c.Timeouts, &c.Status}, func() error {
 		out = append(out, c)
 		return nil
 	})
@@ -230,9 +230,10 @@ type DigestUptime struct {
 // DigestUptime son los monitores de disponibilidad con incidentes que tocan
 // [start, end), los que más tiempo estuvieron caídos primero.
 func (s *Store) DigestUptime(ctx context.Context, projectID int64, start, end time.Time) ([]DigestUptime, error) {
+	d := s.pool.Dialect()
 	rows, err := s.pool.Query(ctx, `
 		SELECT m.slug, m.name, count(*),
-			sum(EXTRACT(EPOCH FROM (LEAST(COALESCE(i.ended_at, $3), $3) - GREATEST(i.started_at, $2))) * 1000)::bigint,
+			CAST(sum(`+d.SecondsBetween(d.Least("COALESCE(i.ended_at, $3)", "$3"), d.Greatest("i.started_at", "$2"))+` * 1000) AS bigint),
 			m.status
 		FROM uptime_incidents i JOIN uptime_monitors m ON m.id = i.monitor_id
 		WHERE m.project_id = $1 AND i.started_at < $3 AND (i.ended_at IS NULL OR i.ended_at > $2)
@@ -243,7 +244,7 @@ func (s *Store) DigestUptime(ctx context.Context, projectID int64, start, end ti
 	}
 	out := []DigestUptime{}
 	var u DigestUptime
-	_, err = pgx.ForEachRow(rows, []any{&u.Slug, &u.Name, &u.Incidents, &u.DownMs, &u.Status}, func() error {
+	err = db.ForEachRow(rows, []any{&u.Slug, &u.Name, &u.Incidents, &u.DownMs, &u.Status}, func() error {
 		out = append(out, u)
 		return nil
 	})
@@ -258,7 +259,7 @@ func (s *Store) LatestRelease(ctx context.Context, projectID int64, end time.Tim
 	var version string
 	err := s.pool.QueryRow(ctx, `SELECT version FROM releases WHERE project_id = $1 AND first_seen < $2
 		ORDER BY first_seen DESC, id DESC LIMIT 1`, projectID, end).Scan(&version)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {

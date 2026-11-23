@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Tipos de acción de una regla de aviso.
@@ -143,8 +143,11 @@ func (c RuleConditions) Filtered() bool {
 }
 
 // IssueRulesSQL es la condición de ForIssues sobre alert_rules.
-const IssueRulesSQL = `(COALESCE((conditions->>'new')::boolean, false) OR COALESCE((conditions->>'regressed')::boolean, false)
-	OR jsonb_typeof(conditions->'frequency') = 'object' OR jsonb_typeof(conditions->'users') = 'object')`
+func IssueRulesSQL(d db.Dialect) string {
+	return `(COALESCE(CAST(` + d.JSONText("conditions", "new") + ` AS boolean), false)
+	OR COALESCE(CAST(` + d.JSONText("conditions", "regressed") + ` AS boolean), false)
+	OR ` + d.JSONType("conditions", "frequency") + ` = 'object' OR ` + d.JSONType("conditions", "users") + ` = 'object')`
+}
 
 // TagFilter pide la etiqueta Key con el valor Value; sin valor, basta con que esté.
 type TagFilter struct {
@@ -463,7 +466,7 @@ var githubRepo = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
 
 const ruleColumns = `id, project_id, name, enabled, conditions, actions, throttle_minutes, created_at, updated_at`
 
-func scanRule(r pgx.Row) (Rule, error) {
+func scanRule(r db.Row) (Rule, error) {
 	var ru Rule
 	err := r.Scan(&ru.ID, &ru.ProjectID, &ru.Name, &ru.Enabled, &ru.Conditions, &ru.Actions,
 		&ru.ThrottleMinutes, &ru.CreatedAt, &ru.UpdatedAt)
@@ -479,8 +482,8 @@ func (s *Store) Rules(ctx context.Context, projectID int64) ([]Rule, error) {
 }
 
 type querier interface {
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Query(ctx context.Context, sql string, args ...any) (db.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) db.Row
 }
 
 func (s *Store) rules(ctx context.Context, q querier, projectID int64) ([]Rule, error) {
@@ -488,7 +491,7 @@ func (s *Store) rules(ctx context.Context, q querier, projectID int64) ([]Rule, 
 	if err != nil {
 		return nil, fmt.Errorf("leer reglas: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Rule, error) { return scanRule(r) })
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (Rule, error) { return scanRule(r) })
 	if err != nil {
 		return nil, fmt.Errorf("leer reglas: %w", err)
 	}
@@ -496,27 +499,27 @@ func (s *Store) rules(ctx context.Context, q querier, projectID int64) ([]Rule, 
 }
 
 // RulesOfProject son las reglas del proyecto, para evaluarlas dentro de una transacción.
-func RulesOfProject(ctx context.Context, tx pgx.Tx, projectID int64) ([]Rule, error) {
+func RulesOfProject(ctx context.Context, tx db.Tx, projectID int64) ([]Rule, error) {
 	rows, err := tx.Query(ctx, `SELECT `+ruleColumns+` FROM alert_rules WHERE project_id = $1 ORDER BY id`, projectID)
 	if err != nil {
 		return nil, fmt.Errorf("leer reglas: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Rule, error) { return scanRule(r) })
+	return db.CollectRows(rows, func(r db.CollectableRow) (Rule, error) { return scanRule(r) })
 }
 
 // RulesOfIssue son las reglas del proyecto del issue, para evaluarlas dentro de la transacción de la ingesta.
-func RulesOfIssue(ctx context.Context, tx pgx.Tx, issueID int64) ([]Rule, error) {
+func RulesOfIssue(ctx context.Context, tx db.Tx, issueID int64) ([]Rule, error) {
 	rows, err := tx.Query(ctx, `SELECT `+ruleColumns+` FROM alert_rules
 		WHERE project_id = (SELECT project_id FROM issues WHERE id = $1) ORDER BY id`, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("leer reglas: %w", err)
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Rule, error) { return scanRule(r) })
+	return db.CollectRows(rows, func(r db.CollectableRow) (Rule, error) { return scanRule(r) })
 }
 
 func (s *Store) Rule(ctx context.Context, projectID, id int64) (Rule, error) {
 	r, err := scanRule(s.pool.QueryRow(ctx, `SELECT `+ruleColumns+` FROM alert_rules WHERE project_id = $1 AND id = $2`, projectID, id))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Rule{}, ErrNotFound
 	}
 	if err != nil {
@@ -528,7 +531,7 @@ func (s *Store) Rule(ctx context.Context, projectID, id int64) (Rule, error) {
 // RuleByID busca una regla sin saber su proyecto.
 func (s *Store) RuleByID(ctx context.Context, id int64) (Rule, error) {
 	r, err := scanRule(s.pool.QueryRow(ctx, `SELECT `+ruleColumns+` FROM alert_rules WHERE id = $1`, id))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Rule{}, ErrNotFound
 	}
 	if err != nil {
@@ -548,7 +551,7 @@ func (s *Store) CreateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 		INSERT INTO alert_rules (project_id, name, enabled, conditions, actions, throttle_minutes)
 		SELECT id, $2, $3, $4, $5, $6 FROM projects WHERE id = $1
 		RETURNING `+ruleColumns, projectID, r.Name, r.Enabled, r.Conditions, r.Actions, r.ThrottleMinutes))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Rule{}, nil, ErrNotFound
 	}
 	if err != nil {
@@ -577,7 +580,7 @@ func (s *Store) UpdateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 		UPDATE alert_rules SET name = $3, enabled = $4, conditions = $5, actions = $6, throttle_minutes = $7, updated_at = now()
 		WHERE project_id = $1 AND id = $2
 		RETURNING `+ruleColumns, projectID, r.ID, r.Name, r.Enabled, r.Conditions, r.Actions, r.ThrottleMinutes))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Rule{}, nil, ErrNotFound
 	}
 	if err != nil {

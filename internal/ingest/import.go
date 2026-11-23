@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -28,7 +27,7 @@ func (in *Ingester) ImportEvent(ctx context.Context, projectID, issueID int64, e
 	}
 	now := in.now().UTC()
 	created := false
-	err = pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
+	err = db.BeginFunc(ctx, in.pool, func(tx db.Tx) error {
 		if ev.Release != "" {
 			if _, _, err := store.EnsureRelease(ctx, tx, projectID, ev.Release, ev.Timestamp); err != nil {
 				return err

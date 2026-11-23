@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/intake-es/intake-errors/internal/cron"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 type changes struct {
@@ -20,7 +19,7 @@ type changes struct {
 	list []MonitorChange
 }
 
-func (c *changes) MonitorChanged(_ context.Context, _ pgx.Tx, ch MonitorChange) error {
+func (c *changes) MonitorChanged(_ context.Context, _ db.Tx, ch MonitorChange) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.list = append(c.list, ch)

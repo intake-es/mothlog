@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -50,7 +48,7 @@ func clampTime(t, now time.Time) time.Time {
 	return t.UTC()
 }
 
-func (in *Ingester) didHash(ctx context.Context, tx pgx.Tx, did string) ([]byte, error) {
+func (in *Ingester) didHash(ctx context.Context, tx db.Tx, did string) ([]byte, error) {
 	if did == "" {
 		return nil, nil
 	}
@@ -69,7 +67,7 @@ func (in *Ingester) IngestSession(ctx context.Context, projectID int64, s *envel
 	started := clampTime(s.Started, now)
 	sentAt := clampTime(s.Timestamp, now)
 	sid := sha256.Sum256([]byte(s.SID))
-	return pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
+	return db.BeginFunc(ctx, in.pool, func(tx db.Tx) error {
 		user, err := in.didHash(ctx, tx, s.DID)
 		if err != nil {
 			return err
@@ -89,11 +87,11 @@ func (in *Ingester) IngestSession(ctx context.Context, projectID int64, s *envel
 			if _, _, err := store.EnsureRelease(ctx, tx, projectID, release, now); err != nil {
 				return err
 			}
-		case errors.Is(err, pgx.ErrNoRows):
+		case errors.Is(err, db.ErrNoRows):
 			// La release, el entorno y la hora son los de la primera vez que llegó.
 			if err := tx.QueryRow(ctx, `
 				SELECT release, environment, hour, init_seen, status, errors, sent_at, user_hash
-				FROM session_states WHERE project_id = $1 AND sid = $2 FOR UPDATE`, projectID, sid[:16]).
+				FROM session_states WHERE project_id = $1 AND sid = $2`+tx.Dialect().ForUpdate(), projectID, sid[:16]).
 				Scan(&release, &env, &hour, &old.initSeen, &old.status, &old.errors, &old.sentAt, &old.userHash); err != nil {
 				return fmt.Errorf("leer la sesión: %w", err)
 			}
@@ -143,7 +141,7 @@ func merge(old, upd sessionState) sessionState {
 	return next
 }
 
-func addSessions(ctx context.Context, tx pgx.Tx, projectID int64, release, env string, hour time.Time, d [4]int64) error {
+func addSessions(ctx context.Context, tx db.Tx, projectID int64, release, env string, hour time.Time, d [4]int64) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO release_sessions (project_id, release, environment, hour, total, errored, crashed, abnormal)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -159,13 +157,13 @@ func addSessions(ctx context.Context, tx pgx.Tx, projectID int64, release, env s
 	return nil
 }
 
-func addUser(ctx context.Context, tx pgx.Tx, projectID int64, release, env string, user []byte, crashed bool, now time.Time) error {
+func addUser(ctx context.Context, tx db.Tx, projectID int64, release, env string, user []byte, crashed bool, now time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO release_users (project_id, release, environment, user_hash, crashed, last_seen)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (project_id, release, environment, user_hash) DO UPDATE SET
 			crashed = release_users.crashed OR EXCLUDED.crashed,
-			last_seen = GREATEST(release_users.last_seen, EXCLUDED.last_seen)`,
+			last_seen = `+tx.Dialect().Greatest("release_users.last_seen", "EXCLUDED.last_seen"),
 		projectID, release, env, user, crashed, now)
 	if err != nil {
 		return fmt.Errorf("contar usuarios de la release: %w", err)
@@ -178,7 +176,7 @@ func addUser(ctx context.Context, tx pgx.Tx, projectID int64, release, env strin
 func (in *Ingester) IngestSessionAggregates(ctx context.Context, projectID int64, s *envelope.SessionAggregates) error {
 	now := in.now().UTC()
 	release, env := s.Attrs.Release, s.Attrs.Environment
-	return pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
+	return db.BeginFunc(ctx, in.pool, func(tx db.Tx) error {
 		if _, _, err := store.EnsureRelease(ctx, tx, projectID, release, now); err != nil {
 			return err
 		}
@@ -217,7 +215,7 @@ func (in *Ingester) IngestSessionAggregates(ctx context.Context, projectID int64
 
 // PurgeSessions borra las horas y los usuarios de antes de cutoff, y lo que se
 // recordaba de las sesiones sin noticias desde hace SessionStateTTL.
-func PurgeSessions(ctx context.Context, pool *pgxpool.Pool, cutoff, now time.Time) (int64, error) {
+func PurgeSessions(ctx context.Context, pool db.DB, cutoff, now time.Time) (int64, error) {
 	var n int64
 	for _, q := range []struct {
 		sql string

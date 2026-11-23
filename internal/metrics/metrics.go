@@ -19,8 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -40,7 +39,7 @@ var IngestBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 
 // Source es de donde salen las métricas que viven en la base.
 type Source interface {
 	MetricsSnapshot(ctx context.Context) (store.MetricsSnapshot, error)
-	Pool() *pgxpool.Pool
+	Pool() db.DB
 }
 
 // Metrics es nil-safe: con un *Metrics nil, contar no hace nada.
@@ -206,17 +205,17 @@ func (m *Metrics) writeSnapshot(ctx context.Context, w *bufio.Writer) {
 		}
 	}
 
-	st := m.src.Pool().Stat()
+	st := m.src.Pool().Stats()
 	family(w, "intake_db_pool_connections", "Conexiones del pool de la base, por estado.", "gauge")
-	sample(w, "intake_db_pool_connections", []string{"state", "in_use"}, float64(st.AcquiredConns()))
-	sample(w, "intake_db_pool_connections", []string{"state", "idle"}, float64(st.IdleConns()))
-	sample(w, "intake_db_pool_connections", []string{"state", "constructing"}, float64(st.ConstructingConns()))
+	sample(w, "intake_db_pool_connections", []string{"state", "in_use"}, float64(st.InUse))
+	sample(w, "intake_db_pool_connections", []string{"state", "idle"}, float64(st.Idle))
+	sample(w, "intake_db_pool_connections", []string{"state", "constructing"}, float64(st.Constructing))
 	family(w, "intake_db_pool_max_connections", "Tope de conexiones del pool.", "gauge")
-	sample(w, "intake_db_pool_max_connections", nil, float64(st.MaxConns()))
+	sample(w, "intake_db_pool_max_connections", nil, float64(st.Max))
 	family(w, "intake_db_pool_waits_total", "Veces que pedir una conexión tuvo que esperar porque no había libre.", "counter")
-	sample(w, "intake_db_pool_waits_total", nil, float64(st.EmptyAcquireCount()))
+	sample(w, "intake_db_pool_waits_total", nil, float64(st.Waits))
 	family(w, "intake_db_pool_wait_seconds_total", "Tiempo total esperando una conexión libre.", "counter")
-	sample(w, "intake_db_pool_wait_seconds_total", nil, st.EmptyAcquireWaitTime().Seconds())
+	sample(w, "intake_db_pool_wait_seconds_total", nil, st.WaitTime.Seconds())
 }
 
 func statuses(w *bufio.Writer, name, help string, known []string, got map[string]int64) {

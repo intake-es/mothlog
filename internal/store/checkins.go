@@ -7,9 +7,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/intake-es/intake-errors/internal/cron"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // MonitorConfig es el monitor_config de un check-in: crea el monitor o lo
@@ -43,7 +42,7 @@ type MonitorChange struct {
 
 // MonitorNotifier encola los avisos de un cambio de estado en la transacción que lo guarda.
 type MonitorNotifier interface {
-	MonitorChanged(ctx context.Context, tx pgx.Tx, ch MonitorChange) error
+	MonitorChanged(ctx context.Context, tx db.Tx, ch MonitorChange) error
 }
 
 // Qué pasó con un check-in.
@@ -134,7 +133,7 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 	}
 	now = now.UTC()
 	var res CheckInResult
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		res = CheckInResult{}
 		var cfg *MonitorInput
 		if in.Config != nil {
@@ -185,7 +184,7 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 	return res, err
 }
 
-func createMonitorTx(ctx context.Context, tx pgx.Tx, projectID int64, in MonitorInput) (Monitor, error) {
+func createMonitorTx(ctx context.Context, tx db.Tx, projectID int64, in MonitorInput) (Monitor, error) {
 	m := Monitor{}
 	if err := in.apply(&m); err != nil {
 		return Monitor{}, err
@@ -205,7 +204,7 @@ func createMonitorTx(ctx context.Context, tx pgx.Tx, projectID int64, in Monitor
 
 // configureMonitor cambia el horario, los márgenes y la zona del monitor si
 // el monitor_config dice otra cosa.
-func configureMonitor(ctx context.Context, tx pgx.Tx, m Monitor, in MonitorInput) (Monitor, error) {
+func configureMonitor(ctx context.Context, tx db.Tx, m Monitor, in MonitorInput) (Monitor, error) {
 	old := m
 	in.Slug = nil
 	if err := in.apply(&m); err != nil {
@@ -239,14 +238,14 @@ func durationMs(d *float64) *int64 {
 	return &ms
 }
 
-func (s *Store) saveCheckIn(ctx context.Context, tx pgx.Tx, res *CheckInResult, in CheckInInput, now time.Time,
+func (s *Store) saveCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, in CheckInInput, now time.Time,
 	notify MonitorNotifier) error {
 	m := &res.Monitor
 	dur := durationMs(in.Duration)
 	old, err := scanCheckIn(tx.QueryRow(ctx, `SELECT `+checkInColumns+` FROM monitor_checkins
-		WHERE monitor_id = $1 AND check_in_id = $2 FOR UPDATE`, m.ID, in.CheckInID))
+		WHERE monitor_id = $1 AND check_in_id = $2`+tx.Dialect().ForUpdate(), m.ID, in.CheckInID))
 	switch {
-	case errors.Is(err, pgx.ErrNoRows):
+	case errors.Is(err, db.ErrNoRows):
 	case err != nil:
 		return fmt.Errorf("leer check-in: %w", err)
 	default:
@@ -296,7 +295,7 @@ func (s *Store) saveCheckIn(ctx context.Context, tx pgx.Tx, res *CheckInResult, 
 // closeCheckIn cierra un check-in in_progress con el ok o el error que lo
 // acaba. Uno que ya se dio por timeout guarda la duración y sigue en timeout;
 // el resto de repeticiones se ignoran.
-func (s *Store) closeCheckIn(ctx context.Context, tx pgx.Tx, res *CheckInResult, c CheckIn, in CheckInInput,
+func (s *Store) closeCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, c CheckIn, in CheckInInput,
 	dur *int64, now time.Time, notify MonitorNotifier) error {
 	res.CheckIn = c
 	if in.Status == CheckInInProgress || (c.Status != CheckInInProgress && c.Status != CheckInTimeout) ||
@@ -326,7 +325,7 @@ func (s *Store) closeCheckIn(ctx context.Context, tx pgx.Tx, res *CheckInResult,
 	return setMonitorStatus(ctx, tx, &res.Monitor, c, notify)
 }
 
-func setMonitorStatus(ctx context.Context, tx pgx.Tx, m *Monitor, c CheckIn, notify MonitorNotifier) error {
+func setMonitorStatus(ctx context.Context, tx db.Tx, m *Monitor, c CheckIn, notify MonitorNotifier) error {
 	prev := m.Status
 	if prev == c.Status {
 		return nil
@@ -373,15 +372,14 @@ func (s *Store) SweepMonitors(ctx context.Context, now time.Time, notify Monitor
 
 func (s *Store) sweepTimeout(ctx context.Context, now time.Time, notify MonitorNotifier) (bool, error) {
 	found := false
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		var checkinID, monitorID int64
 		err := tx.QueryRow(ctx, `
 			SELECT c.id, c.monitor_id FROM monitor_checkins c JOIN monitors m ON m.id = c.monitor_id
 			WHERE c.status = 'in_progress' AND c.timeout_at < $1
 			ORDER BY c.timeout_at, c.id
-			LIMIT 1
-			FOR UPDATE OF c, m SKIP LOCKED`, now).Scan(&checkinID, &monitorID)
-		if errors.Is(err, pgx.ErrNoRows) {
+			LIMIT 1`+tx.Dialect().ForUpdateSkipLocked("c", "m"), now).Scan(&checkinID, &monitorID)
+		if errors.Is(err, db.ErrNoRows) {
 			return nil
 		}
 		if err != nil {
@@ -404,13 +402,12 @@ func (s *Store) sweepTimeout(ctx context.Context, now time.Time, notify MonitorN
 
 func (s *Store) sweepMissed(ctx context.Context, now time.Time, notify MonitorNotifier) (bool, error) {
 	found := false
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		m, err := scanMonitor(tx.QueryRow(ctx, `SELECT `+monitorColumns+monitorFrom+`
-			WHERE m.next_checkin_at <= $1 AND m.next_checkin_at + make_interval(mins => m.checkin_margin) <= $1
+			WHERE m.next_checkin_at <= $1 AND `+tx.Dialect().AddMinutes("m.next_checkin_at", "m.checkin_margin")+` <= $1
 			ORDER BY m.next_checkin_at, m.id
-			LIMIT 1
-			FOR UPDATE OF m SKIP LOCKED`, now))
-		if errors.Is(err, pgx.ErrNoRows) {
+			LIMIT 1`+tx.Dialect().ForUpdateSkipLocked("m"), now))
+		if errors.Is(err, db.ErrNoRows) {
 			return nil
 		}
 		if err != nil {

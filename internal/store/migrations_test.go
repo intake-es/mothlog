@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/pressly/goose/v3"
 
 	"github.com/intake-es/intake-errors/migrations"
@@ -667,7 +669,7 @@ func TestMigrationOIDC(t *testing.T) {
 
 	// Lo de antes sigue: la persona de GitHub vuelve con su login, su
 	// asignación, su historial y assigned:me.
-	s := &Store{pool: pool}
+	s := storeOn(pool)
 	if login, err := s.SaveIdentity(ctx, Person{Login: "ana", Name: "Ana", Provider: LoginGitHub, Subject: "ana"}); err != nil || login != "ana" {
 		t.Fatalf("ana de GitHub vuelve como %q, %v", login, err)
 	}
@@ -821,7 +823,7 @@ func TestMigrationCompressedEvents(t *testing.T) {
 	if _, err := p.ApplyVersion(ctx, 22, true); err != nil {
 		t.Fatal(err)
 	}
-	s := &Store{pool: pool}
+	s := storeOn(pool)
 	check := func() {
 		t.Helper()
 		e, err := s.LatestEvent(ctx, issue)
@@ -855,3 +857,5 @@ func TestMigrationCompressedEvents(t *testing.T) {
 	}
 	check()
 }
+
+func storeOn(pool *pgxpool.Pool) *Store { return &Store{pool: db.NewPostgres(pool)} }

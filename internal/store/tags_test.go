@@ -61,7 +61,7 @@ func TestMigrationTagsBackfill(t *testing.T) {
 	if _, err := p.UpTo(ctx, 11); err != nil {
 		t.Fatal(err)
 	}
-	s := &Store{pool: pool}
+	s := storeOn(pool)
 	tags, err := s.IssueTags(ctx, issue)
 	if err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestMigrationTagsBackfill(t *testing.T) {
 	if tags.UserCount != 2 {
 		t.Errorf("usuarios = %d", tags.UserCount)
 	}
-	key, err := LoadUserHashKey(ctx, pool)
+	key, err := LoadUserHashKey(ctx, s.pool)
 	if err != nil || len(key) != 32 {
 		t.Fatalf("clave = %x, %v", key, err)
 	}

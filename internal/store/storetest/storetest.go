@@ -19,8 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -50,7 +49,7 @@ func New(t testing.TB) *store.Store {
 	ctx := context.Background()
 	schema := "test_" + RandomHex(t, 6)
 
-	admin, err := pgx.Connect(ctx, base)
+	admin, err := db.OpenPostgres(ctx, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +58,7 @@ func New(t testing.TB) *store.Store {
 	}
 	t.Cleanup(func() {
 		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-		_ = admin.Close(context.Background())
+		admin.Close()
 	})
 
 	u, err := url.Parse(base)

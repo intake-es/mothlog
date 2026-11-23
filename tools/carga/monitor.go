@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // proceso lee la memoria y la CPU del servicio desde el anfitrión: el /proc
@@ -97,7 +97,7 @@ func (p *proceso) cpu() (uso, frenado float64, ok bool) {
 // monitor muestrea el servicio y la base mientras dura un paso.
 type monitor struct {
 	proc *proceso
-	pool *pgxpool.Pool
+	pool db.DB
 	base string
 	cl   *http.Client
 

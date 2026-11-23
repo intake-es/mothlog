@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // DefaultEventsPerIssuePerHour es el tope de eventos guardados por issue y
@@ -133,7 +133,7 @@ func (s *Store) Filters(ctx context.Context, projectID int64) (Filters, error) {
 		FROM projects p LEFT JOIN project_filters f ON f.project_id = p.id
 		WHERE p.id = $1`, projectID).Scan(&f.Messages, &f.ExceptionTypes, &f.BrowserExtensions, &f.WebCrawlers,
 		&f.Localhost, &f.Environments, &f.Releases, &f.EventsPerIssuePerHour, &f.SampleRate, &f.RateLimitPerMinute)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Filters{}, ErrNotFound
 	}
 	if err != nil {
@@ -192,7 +192,7 @@ func (s *Store) AddDropped(ctx context.Context, ds []Dropped) error {
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO dropped_events (project_id, reason, day, count)
 		SELECT d.project_id, d.reason, (d.day AT TIME ZONE 'UTC')::date, sum(d.count)
-		FROM unnest($1::bigint[], $2::text[], $3::timestamptz[], $4::bigint[]) AS d(project_id, reason, day, count)
+		FROM `+s.pool.Dialect().Unnest("d", 1, "project_id bigint", "reason text", "day timestamptz", "count bigint")+`
 		JOIN projects p ON p.id = d.project_id
 		GROUP BY 1, 2, 3
 		ON CONFLICT (project_id, day, reason) DO UPDATE SET count = dropped_events.count + EXCLUDED.count`,
@@ -240,7 +240,7 @@ func (s *Store) DroppedSince(ctx context.Context, projectID int64, days int, now
 		return DroppedStats{}, fmt.Errorf("leer descartados: %w", err)
 	}
 	var d DroppedDay
-	_, err = pgx.ForEachRow(rows, []any{&d.Date, &d.Reason, &d.Count}, func() error {
+	err = db.ForEachRow(rows, []any{&d.Date, &d.Reason, &d.Count}, func() error {
 		st.Daily = append(st.Daily, d)
 		st.Reasons[d.Reason] += d.Count
 		st.Total += d.Count

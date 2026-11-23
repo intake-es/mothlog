@@ -482,6 +482,8 @@ Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `interna
 INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...
 ```
 
+El código habla con la base por `internal/db` (consultas, filas, lotes y transacciones) y escribe el SQL que cambia de un motor a otro con su `Dialect`; solo `internal/db` e `internal/store` importan pgx, y un test lo hace cumplir. [docs/sqlite.md](docs/sqlite.md) recoge lo que sigue siendo propio de Postgres y cómo se hará con SQLite.
+
 ## Releases, despliegues y entornos
 
 Cada proyecto tiene sus releases: la versión, cuándo se vio por primera vez y sus despliegues (entorno y fecha). Una release se crea sola con el primer evento que trae una versión nueva, y también a mano:

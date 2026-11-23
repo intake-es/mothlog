@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 type uptimeChanges struct {
@@ -15,7 +15,7 @@ type uptimeChanges struct {
 	list []UptimeChange
 }
 
-func (c *uptimeChanges) UptimeChanged(_ context.Context, _ pgx.Tx, ch UptimeChange) error {
+func (c *uptimeChanges) UptimeChanged(_ context.Context, _ db.Tx, ch UptimeChange) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.list = append(c.list, ch)

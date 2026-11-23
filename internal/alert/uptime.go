@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -30,7 +29,7 @@ type uptimeInfo struct {
 // UptimeChanged encola los avisos de una caída o una vuelta: los de las
 // reglas del proyecto con condiciones de disponibilidad o, si no tiene
 // ninguna, uno por canal. Si falla, lo registra y deja seguir.
-func (a *Alerter) UptimeChanged(ctx context.Context, tx pgx.Tx, ch store.UptimeChange) error {
+func (a *Alerter) UptimeChanged(ctx context.Context, tx db.Tx, ch store.UptimeChange) error {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
 		a.log.ErrorContext(ctx, "encolar aviso de disponibilidad", "monitor", ch.Monitor.ID, "err", err)
@@ -47,7 +46,7 @@ func (a *Alerter) UptimeChanged(ctx context.Context, tx pgx.Tx, ch store.UptimeC
 	return nil
 }
 
-func (a *Alerter) enqueueUptime(ctx context.Context, tx pgx.Tx, ch store.UptimeChange) error {
+func (a *Alerter) enqueueUptime(ctx context.Context, tx db.Tx, ch store.UptimeChange) error {
 	rules, err := store.RulesOfProject(ctx, tx, ch.Monitor.ProjectID)
 	if err != nil {
 		return err
@@ -95,13 +94,13 @@ func (a *Alerter) enqueueUptime(ctx context.Context, tx pgx.Tx, ch store.UptimeC
 }
 
 // loadUptime lee el monitor y el incidente de un aviso de disponibilidad.
-func (a *Alerter) loadUptime(ctx context.Context, tx pgx.Tx, p *pending, monitorID int64, incidentID *int64) error {
+func (a *Alerter) loadUptime(ctx context.Context, tx db.Tx, p *pending, monitorID int64, incidentID *int64) error {
 	u := &uptimeInfo{monitorID: monitorID}
 	err := tx.QueryRow(ctx, `
 		SELECT p.id, p.name, p.linear_label_ids, m.slug, m.name, m.url, m.method, m.failure_threshold, m.last_status_code
 		FROM uptime_monitors m JOIN projects p ON p.id = m.project_id WHERE m.id = $1`, monitorID).
 		Scan(&u.projectID, &p.project, &p.labels, &u.slug, &u.name, &u.url, &u.method, &u.threshold, &u.statusCode)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return errGone
 	}
 	if err != nil {
@@ -112,7 +111,7 @@ func (a *Alerter) loadUptime(ctx context.Context, tx pgx.Tx, p *pending, monitor
 		err = tx.QueryRow(ctx, `SELECT id, monitor_id, started_at, ended_at, duration_ms, first_error
 			FROM uptime_incidents WHERE id = $1`, *incidentID).
 			Scan(&i.ID, &i.MonitorID, &i.StartedAt, &i.EndedAt, &i.DurationMs, &i.FirstError)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return fmt.Errorf("leer incidente %d: %w", *incidentID, err)
 		}
 		// El aviso de la caída cuenta el incidente como estaba al caer, aunque salga tarde.

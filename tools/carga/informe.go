@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Lo que se quiere aguantar: el servicio con 0,25 vCPU y menos de esto.
@@ -87,7 +87,7 @@ func (inf *informe) resumir() {
 }
 
 // comprobar mira que la base tiene lo que el servicio dijo que había aceptado.
-func comprobar(ctx context.Context, pool *pgxpool.Pool, reg *registro, met metricas) (comprobacion, error) {
+func comprobar(ctx context.Context, pool db.DB, reg *registro, met metricas) (comprobacion, error) {
 	var c comprobacion
 	var aceptados, guardados int64
 	for p, ids := range reg.eventos {

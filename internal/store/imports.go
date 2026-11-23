@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // maxImportedTitle es el mismo tope que pone la ingesta a los títulos.
@@ -37,12 +37,8 @@ const (
 
 // importTx corre fn en una transacción. En una prueba (dry) la transacción
 // es de solo lectura y se deshace: fn no debe escribir, y si lo intenta, falla.
-func (s *Store) importTx(ctx context.Context, dry bool, fn func(pgx.Tx) error) error {
-	opts := pgx.TxOptions{}
-	if dry {
-		opts.AccessMode = pgx.ReadOnly
-	}
-	tx, err := s.pool.BeginTx(ctx, opts)
+func (s *Store) importTx(ctx context.Context, dry bool, fn func(db.Tx) error) error {
+	tx, err := s.pool.BeginTx(ctx, db.TxOptions{ReadOnly: dry})
 	if err != nil {
 		return err
 	}
@@ -67,7 +63,7 @@ func findOrigin(ctx context.Context, q Querier, o Origin, kind, externalID strin
 		SELECT COALESCE(project_id, issue_id, release_id, deploy_id), imported FROM import_origins
 		WHERE source = $1 AND server = $2 AND org = $3 AND kind = $4 AND external_id = $5`,
 		o.Source, o.Server, o.Org, kind, externalID).Scan(&r.localID, &r.imported)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
@@ -84,8 +80,8 @@ func saveOrigin(ctx context.Context, q Querier, o Origin, kind, externalID strin
 	_, err = q.Exec(ctx, `
 		INSERT INTO import_origins (source, server, org, kind, external_id, project_id, issue_id, release_id, deploy_id, imported)
 		VALUES ($1, $2, $3, $4, $5,
-			CASE WHEN $4 = 'project' THEN $6::bigint END, CASE WHEN $4 = 'issue' THEN $6::bigint END,
-			CASE WHEN $4 = 'release' THEN $6::bigint END, CASE WHEN $4 = 'deploy' THEN $6::bigint END, $7)
+			CASE WHEN $4 = 'project' THEN CAST($6 AS bigint) END, CASE WHEN $4 = 'issue' THEN CAST($6 AS bigint) END,
+			CASE WHEN $4 = 'release' THEN CAST($6 AS bigint) END, CASE WHEN $4 = 'deploy' THEN CAST($6 AS bigint) END, $7)
 		ON CONFLICT (source, server, org, kind, external_id) DO UPDATE SET
 			project_id = EXCLUDED.project_id, issue_id = EXCLUDED.issue_id, release_id = EXCLUDED.release_id,
 			deploy_id = EXCLUDED.deploy_id, imported = EXCLUDED.imported, updated_at = now()`,
@@ -106,7 +102,7 @@ func (s *Store) ImportProject(ctx context.Context, o Origin, externalID, name st
 	}
 	var id int64
 	act := ImportUnchanged
-	err = s.importTx(ctx, dry, func(tx pgx.Tx) error {
+	err = s.importTx(ctx, dry, func(tx db.Tx) error {
 		prev, err := findOrigin(ctx, tx, o, "project", externalID)
 		if err != nil || prev != nil {
 			if prev != nil {
@@ -116,7 +112,7 @@ func (s *Store) ImportProject(ctx context.Context, o Origin, externalID, name st
 		}
 		err = tx.QueryRow(ctx, `SELECT id FROM projects WHERE name = $1 ORDER BY id LIMIT 1`, name).Scan(&id)
 		switch {
-		case errors.Is(err, pgx.ErrNoRows):
+		case errors.Is(err, db.ErrNoRows):
 			act = ImportCreated
 			if dry {
 				return nil
@@ -165,7 +161,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 	}
 	var id int64
 	act := ImportUnchanged
-	err = s.importTx(ctx, dry, func(tx pgx.Tx) error {
+	err = s.importTx(ctx, dry, func(tx db.Tx) error {
 		prev, err := findOrigin(ctx, tx, o, "release", r.ExternalID)
 		if err != nil {
 			return err
@@ -178,7 +174,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 			}
 		} else {
 			err := tx.QueryRow(ctx, `SELECT id FROM releases WHERE project_id = $1 AND version = $2`, projectID, version).Scan(&id)
-			if errors.Is(err, pgx.ErrNoRows) {
+			if errors.Is(err, db.ErrNoRows) {
 				act = ImportCreated
 				if dry {
 					return nil
@@ -209,7 +205,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 		}
 		if changed {
 			if _, err := tx.Exec(ctx, `
-				UPDATE releases SET first_seen = LEAST(first_seen, $2), finalized_at = COALESCE(finalized_at, $3)
+				UPDATE releases SET first_seen = `+tx.Dialect().Least("first_seen", "$2")+`, finalized_at = COALESCE(finalized_at, $3)
 				WHERE id = $1`, id, r.Created, r.Released); err != nil {
 				return fmt.Errorf("actualizar release: %w", err)
 			}
@@ -228,7 +224,7 @@ func (s *Store) ImportDeploy(ctx context.Context, o Origin, releaseID int64, ext
 		return 0, err
 	}
 	act := ImportUnchanged
-	err = s.importTx(ctx, dry, func(tx pgx.Tx) error {
+	err = s.importTx(ctx, dry, func(tx db.Tx) error {
 		prev, err := findOrigin(ctx, tx, o, "deploy", externalID)
 		if err != nil || prev != nil {
 			return err
@@ -330,7 +326,7 @@ func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in I
 	}
 	own := importFingerprint(o, in.ExternalID)
 	var res ImportIssueResult
-	err := s.importTx(ctx, dry, func(tx pgx.Tx) error {
+	err := s.importTx(ctx, dry, func(tx db.Tx) error {
 		res = ImportIssueResult{}
 		prev, err := findOrigin(ctx, tx, o, "issue", in.ExternalID)
 		if err != nil {
@@ -339,7 +335,7 @@ func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in I
 		fp, current := own, ""
 		if prev != nil {
 			res.ID = prev.localID
-			lock := " FOR UPDATE"
+			lock := tx.Dialect().ForUpdate()
 			if dry {
 				lock = ""
 			}
@@ -358,7 +354,7 @@ func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in I
 			err := tx.QueryRow(ctx, `SELECT id FROM issues WHERE project_id = $1 AND fingerprint = $2`,
 				projectID, in.Fingerprint).Scan(&other)
 			switch {
-			case errors.Is(err, pgx.ErrNoRows):
+			case errors.Is(err, db.ErrNoRows):
 				fp, res.Grouped = in.Fingerprint, true
 			case err != nil:
 				return fmt.Errorf("buscar huella: %w", err)
@@ -376,7 +372,7 @@ func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in I
 	return res, err
 }
 
-func createImportedIssue(ctx context.Context, tx pgx.Tx, o Origin, projectID int64, in ImportedIssue, fp string,
+func createImportedIssue(ctx context.Context, tx db.Tx, o Origin, projectID int64, in ImportedIssue, fp string,
 	dry bool, res *ImportIssueResult) error {
 	res.Action = ImportCreated
 	if dry {
@@ -401,7 +397,7 @@ func createImportedIssue(ctx context.Context, tx pgx.Tx, o Origin, projectID int
 	return saveOrigin(ctx, tx, o, "issue", in.ExternalID, res.ID, in)
 }
 
-func updateImportedIssue(ctx context.Context, tx pgx.Tx, o Origin, in, old ImportedIssue, fp string,
+func updateImportedIssue(ctx context.Context, tx db.Tx, o Origin, in, old ImportedIssue, fp string,
 	dry bool, res *ImportIssueResult) error {
 	type row struct {
 		fingerprint, title, culprit, typ, level, status, fixedIn, resolvedIn string
@@ -504,9 +500,10 @@ func (s *Store) HasEvent(ctx context.Context, projectID int64, eventID string) (
 // mayor entre el que trae el otro servicio y los distintos de sus eventos
 // guardados, que la ingesta suma uno a uno al guardar cada evento importado.
 func (s *Store) SettleImportedUsers(ctx context.Context, issueID, users int64) error {
+	n := s.pool.Dialect().Greatest("$2", "(SELECT count(*) FROM issue_users WHERE issue_id = $1)")
 	_, err := s.pool.Exec(ctx, `
-		UPDATE issues SET user_count = GREATEST($2, (SELECT count(*) FROM issue_users WHERE issue_id = $1))
-		WHERE id = $1 AND user_count IS DISTINCT FROM GREATEST($2, (SELECT count(*) FROM issue_users WHERE issue_id = $1))`,
+		UPDATE issues SET user_count = `+n+`
+		WHERE id = $1 AND user_count IS DISTINCT FROM `+n,
 		issueID, users)
 	if err != nil {
 		return fmt.Errorf("contar usuarios: %w", err)

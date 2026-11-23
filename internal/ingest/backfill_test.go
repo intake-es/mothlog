@@ -14,11 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
@@ -35,7 +33,7 @@ func TestBackfillMatchesIngest(t *testing.T) {
 	}
 	ctx := context.Background()
 	schema := "test_" + storetest.RandomHex(t, 6)
-	admin, err := pgx.Connect(ctx, base)
+	admin, err := db.OpenPostgres(ctx, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +42,7 @@ func TestBackfillMatchesIngest(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		_, _ = admin.Exec(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-		_ = admin.Close(context.Background())
+		admin.Close()
 	})
 	u, err := url.Parse(base)
 	if err != nil {
@@ -53,14 +51,14 @@ func TestBackfillMatchesIngest(t *testing.T) {
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
-	pool, err := pgxpool.New(ctx, u.String())
+	pool, err := db.OpenPostgres(ctx, u.String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	db := stdlib.OpenDBFromPool(pool)
-	t.Cleanup(func() { _ = db.Close() })
-	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+	sqlDB := pool.SQLDB()
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.FS,
 		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))))
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +131,7 @@ func TestBackfillMatchesIngest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		got, err := db.CollectRows(rows, db.RowTo[string])
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,7 +144,7 @@ func TestBackfillMatchesIngest(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if hashes, err = pgx.CollectRows(rows, pgx.RowTo[[]byte]); err != nil {
+		if hashes, err = db.CollectRows(rows, db.RowTo[[]byte]); err != nil {
 			t.Fatal(err)
 		}
 		var n int64

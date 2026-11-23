@@ -12,8 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/markdown"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -46,7 +45,7 @@ type linearRef struct {
 
 // send crea la issue de Linear o, si ya hay una, la reabre en una regresión y
 // la comenta en el resto de avisos. tx es nil en los avisos de prueba.
-func (l *linear) send(ctx context.Context, tx pgx.Tx, p *pending) error {
+func (l *linear) send(ctx context.Context, tx db.Tx, p *pending) error {
 	if p.isMonitor() {
 		return l.createCron(ctx, p)
 	}

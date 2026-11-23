@@ -1049,12 +1049,12 @@ func TestRulesLookupUsesIngestTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	for range pool.Stat().MaxConns() - 1 {
-		c, err := pool.Acquire(ctx)
+	for range pool.Stats().Max - 1 {
+		busy, err := pool.Begin(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer c.Release()
+		defer func() { _ = busy.Rollback(context.Background()) }()
 	}
 	e.alerter.RulesChanged(e.project)
 	res := ingest.Result{IssueID: issue, ProjectID: e.project, Outcome: ingest.New}

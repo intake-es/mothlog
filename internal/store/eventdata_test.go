@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/event"
 )
@@ -292,7 +292,7 @@ func TestEncodedColumnsMatchLegacySQL(t *testing.T) {
 	}
 	i := 0
 	var label, ident, org, summary string
-	_, err = pgx.ForEachRow(rows, []any{&label, &ident, &org, &summary}, func() error {
+	err = db.ForEachRow(rows, []any{&label, &ident, &org, &summary}, func() error {
 		enc, err := EncodeEvent(&evs[i])
 		if err != nil {
 			return err
@@ -321,7 +321,7 @@ func snapshot(t *testing.T, s *Store) eventSnapshot {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	ids, err := db.CollectRows(rows, db.RowTo[int64])
 	if err != nil {
 		t.Fatal(err)
 	}

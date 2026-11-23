@@ -10,10 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 )
 
@@ -171,8 +170,8 @@ func EventSummaryLine(ev *event.Event) string {
 }
 
 type execQuerier interface {
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+	Exec(ctx context.Context, sql string, args ...any) (db.Result, error)
+	QueryRow(ctx context.Context, sql string, args ...any) db.Row
 }
 
 // NewEvent es una fila de events por guardar.
@@ -197,7 +196,7 @@ func InsertEvent(ctx context.Context, q execQuerier, e NewEvent) (int64, error) 
 		RETURNING id`,
 		e.IssueID, e.ProjectID, ev.ID, ev.Timestamp, e.ReceivedAt, ev.Release, ev.Environment,
 		enc.Data, enc.UserLabel, enc.UserIdent, enc.OrganizationID, enc.Summary).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return 0, nil
 	}
 	if err != nil {
@@ -207,9 +206,9 @@ func InsertEvent(ctx context.Context, q execQuerier, e NewEvent) (int64, error) 
 }
 
 // InsertEventsQuery es la sentencia que guarda varios eventos ya codificados,
-// en su orden, para mandarla en un pgx.Batch. Los que ya estaban en su
+// en su orden, para mandarla en un db.Batch. Los que ya estaban en su
 // proyecto no se guardan ni cuentan en las filas afectadas.
-func InsertEventsQuery(es []NewEvent) (string, []any) {
+func InsertEventsQuery(d db.Dialect, es []NewEvent) (string, []any) {
 	n := len(es)
 	issues, projects := make([]int64, n), make([]int64, n)
 	ids, releases, envs := make([]string, n), make([]string, n), make([]string, n)
@@ -229,10 +228,9 @@ func InsertEventsQuery(es []NewEvent) (string, []any) {
 			data_zstd, user_label, user_ident, organization_id, summary)
 		SELECT issue_id, project_id, event_id, occurred_at, received_at, NULLIF(release, ''), NULLIF(environment, ''),
 			data_zstd, NULLIF(user_label, ''), NULLIF(user_ident, ''), NULLIF(organization_id, ''), NULLIF(summary, '')
-		FROM unnest($1::bigint[], $2::bigint[], $3::uuid[], $4::timestamptz[], $5::timestamptz[], $6::text[], $7::text[],
-			$8::bytea[], $9::text[], $10::text[], $11::text[], $12::text[])
-			WITH ORDINALITY AS e(issue_id, project_id, event_id, occurred_at, received_at, release, environment,
-				data_zstd, user_label, user_ident, organization_id, summary, n)
+		FROM ` + d.UnnestNumbered("e", "n", 1, "issue_id bigint", "project_id bigint", "event_id uuid", "occurred_at timestamptz",
+			"received_at timestamptz", "release text", "environment text", "data_zstd bytea", "user_label text", "user_ident text",
+			"organization_id text", "summary text") + `
 		ORDER BY n
 		ON CONFLICT (project_id, event_id) DO NOTHING`,
 		[]any{issues, projects, ids, occurred, received, releases, envs, data, labels, idents, orgs, summaries}

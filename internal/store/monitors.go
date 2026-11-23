@@ -11,9 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
 	"github.com/intake-es/intake-errors/internal/cron"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Estados de un monitor y de sus check-ins.
@@ -197,7 +196,7 @@ const monitorColumns = `m.id, m.project_id, p.name, m.slug, m.name, m.schedule_t
 
 const monitorFrom = ` FROM monitors m JOIN projects p ON p.id = m.project_id`
 
-func scanMonitor(r pgx.Row) (Monitor, error) {
+func scanMonitor(r db.Row) (Monitor, error) {
 	var m Monitor
 	err := r.Scan(&m.ID, &m.ProjectID, &m.Project, &m.Slug, &m.Name, &m.Schedule.Type, &m.Schedule.Crontab,
 		&m.Schedule.Every, &m.Schedule.Unit, &m.Timezone, &m.CheckinMargin, &m.MaxRuntime,
@@ -214,12 +213,12 @@ func scheduleArgs(s cron.Schedule) (string, *int, *string) {
 }
 
 // checkInIDColumn da el check_in_id en 32 hex, como lo mandan los SDK.
-const checkInIDColumn = `replace(check_in_id::text, '-', '')`
+const checkInIDColumn = `replace(CAST(check_in_id AS text), '-', '')`
 
 const checkInColumns = `id, monitor_id, ` + checkInIDColumn + `, status, duration_ms, environment, release,
 	expected_at, started_at, finished_at, timeout_at, received_at`
 
-func scanCheckIn(r pgx.Row) (CheckIn, error) {
+func scanCheckIn(r db.Row) (CheckIn, error) {
 	var c CheckIn
 	err := r.Scan(&c.ID, &c.MonitorID, &c.CheckInID, &c.Status, &c.DurationMs, &c.Environment, &c.Release,
 		&c.ExpectedAt, &c.StartedAt, &c.FinishedAt, &c.TimeoutAt, &c.ReceivedAt)
@@ -262,7 +261,7 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 	if err != nil {
 		return nil, fmt.Errorf("leer monitores: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Monitor, error) { return scanMonitor(r) })
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (Monitor, error) { return scanMonitor(r) })
 	if err != nil {
 		return nil, fmt.Errorf("leer monitores: %w", err)
 	}
@@ -278,7 +277,7 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 	}
 	rows, err = s.pool.Query(ctx, `
 		SELECT c.monitor_id, c.status, c.started_at, c.duration_ms
-		FROM unnest($1::bigint[]) AS m(id)
+		FROM `+s.pool.Dialect().Unnest("m", 1, "id bigint")+`
 		CROSS JOIN LATERAL (SELECT monitor_id, status, started_at, duration_ms FROM monitor_checkins
 			WHERE monitor_id = m.id ORDER BY started_at DESC, id DESC LIMIT $2) c`, ids, RecentCheckIns)
 	if err != nil {
@@ -300,7 +299,7 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 func (s *Store) Monitor(ctx context.Context, projectID int64, slug string) (Monitor, error) {
 	m, err := scanMonitor(s.pool.QueryRow(ctx, `SELECT `+monitorColumns+monitorFrom+`
 		WHERE m.project_id = $1 AND m.slug = $2`, projectID, slug))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return Monitor{}, ErrNotFound
 	}
 	if err != nil {
@@ -351,7 +350,7 @@ func (s *Store) CheckIns(ctx context.Context, monitorID int64, cursor string, li
 	if err != nil {
 		return CheckInPage{}, fmt.Errorf("leer check-ins: %w", err)
 	}
-	list, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (CheckIn, error) { return scanCheckIn(r) })
+	list, err := db.CollectRows(rows, func(r db.CollectableRow) (CheckIn, error) { return scanCheckIn(r) })
 	if err != nil {
 		return CheckInPage{}, fmt.Errorf("leer check-ins: %w", err)
 	}
@@ -385,7 +384,7 @@ func (s *Store) CreateMonitor(ctx context.Context, projectID int64, in MonitorIn
 		ON CONFLICT (project_id, slug) DO NOTHING
 		RETURNING id`, projectID, m.Slug, m.Name, m.Schedule.Type, sched, every, unit,
 		m.Timezone, m.CheckinMargin, m.MaxRuntime, m.Environment, m.Muted).Scan(&id)
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		if _, err := s.ProjectByID(ctx, projectID); err != nil {
 			return Monitor{}, err
 		}
@@ -401,7 +400,7 @@ func (s *Store) CreateMonitor(ctx context.Context, projectID int64, in MonitorIn
 // ejecución se calcula desde el último check-in.
 func (s *Store) UpdateMonitor(ctx context.Context, projectID int64, slug string, in MonitorInput) (Monitor, error) {
 	var out Monitor
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		m, err := lockMonitor(ctx, tx, projectID, slug)
 		if err != nil {
 			return err
@@ -446,10 +445,10 @@ func (s *Store) DeleteMonitor(ctx context.Context, projectID int64, slug string)
 	return nil
 }
 
-func lockMonitor(ctx context.Context, tx pgx.Tx, projectID int64, slug string) (Monitor, error) {
+func lockMonitor(ctx context.Context, tx db.Tx, projectID int64, slug string) (Monitor, error) {
 	m, err := scanMonitor(tx.QueryRow(ctx, `SELECT `+monitorColumns+monitorFrom+`
-		WHERE m.project_id = $1 AND m.slug = $2 FOR UPDATE OF m`, projectID, slug))
-	if errors.Is(err, pgx.ErrNoRows) {
+		WHERE m.project_id = $1 AND m.slug = $2`+tx.Dialect().ForUpdate("m"), projectID, slug))
+	if errors.Is(err, db.ErrNoRows) {
 		return Monitor{}, ErrNotFound
 	}
 	return m, err

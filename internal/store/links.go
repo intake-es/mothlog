@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/intake-es/intake-errors/internal/db"
 )
 
 // Sitios a los que se enlaza un issue y de los que llegan cambios.
@@ -72,18 +72,18 @@ func LinearStateCategory(typ string) string {
 const linkColumns = `id, issue_id, provider, kind, external_id, COALESCE(identifier, ''), COALESCE(url, ''),
 	COALESCE(state, ''), COALESCE(state_name, ''), rule_id, COALESCE(action_id, ''), created_at, updated_at`
 
-func scanLink(r pgx.Row) (IssueLink, error) {
+func scanLink(r db.Row) (IssueLink, error) {
 	var l IssueLink
 	err := r.Scan(&l.ID, &l.IssueID, &l.Provider, &l.Kind, &l.ExternalID, &l.Identifier, &l.URL,
 		&l.State, &l.StateName, &l.RuleID, &l.ActionID, &l.CreatedAt, &l.UpdatedAt)
 	return l, err
 }
 
-func collectLinks(rows pgx.Rows, err error) ([]IssueLink, error) {
+func collectLinks(rows db.Rows, err error) ([]IssueLink, error) {
 	if err != nil {
 		return nil, fmt.Errorf("leer enlaces: %w", err)
 	}
-	out, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (IssueLink, error) { return scanLink(r) })
+	out, err := db.CollectRows(rows, func(r db.CollectableRow) (IssueLink, error) { return scanLink(r) })
 	if err != nil {
 		return nil, fmt.Errorf("leer enlaces: %w", err)
 	}
@@ -113,7 +113,7 @@ func (s *Store) LinksTo(ctx context.Context, provider, kind, externalID string) 
 // Link es un enlace por su id.
 func (s *Store) Link(ctx context.Context, id int64) (IssueLink, error) {
 	l, err := scanLink(s.pool.QueryRow(ctx, `SELECT `+linkColumns+` FROM issue_links WHERE id = $1`, id))
-	if errors.Is(err, pgx.ErrNoRows) {
+	if errors.Is(err, db.ErrNoRows) {
 		return l, ErrNotFound
 	}
 	return l, err
@@ -142,7 +142,7 @@ func SaveLink(ctx context.Context, q Querier, l IssueLink, only bool) (IssueLink
 			updated_at = now()
 		RETURNING `+linkColumns,
 		l.IssueID, l.Provider, l.Kind, l.ExternalID, l.Identifier, l.URL, l.State, l.StateName, l.RuleID, l.ActionID))
-	if isForeignKeyViolation(err) {
+	if db.IsForeignKeyViolation(err) {
 		return l, ErrNotFound
 	}
 	if err != nil {
@@ -195,7 +195,7 @@ const EchoWindow = 10 * time.Minute
 // un envío nuestro que aún no ha vuelto, y lo da por vuelto. Un eco no se
 // aplica: aquí puede haber ya un cambio más nuevo (resolver y reabrir antes de
 // que vuelva el «closed»), o llegar desordenado.
-func consumeEcho(ctx context.Context, tx pgx.Tx, linkID int64, status string) (bool, error) {
+func consumeEcho(ctx context.Context, tx db.Tx, linkID int64, status string) (bool, error) {
 	if linkID == 0 {
 		return false, nil
 	}
@@ -208,8 +208,8 @@ func consumeEcho(ctx context.Context, tx pgx.Tx, linkID int64, status string) (b
 	tag, err := tx.Exec(ctx, `
 		UPDATE issue_link_sync SET echoed_at = now()
 		WHERE id = (SELECT id FROM issue_link_sync
-			WHERE link_id = $1 AND sent_at IS NOT NULL AND echoed_at IS NULL AND sent_at > now() - make_interval(secs => $3)
-				AND status = ANY($2)
+			WHERE link_id = $1 AND sent_at IS NOT NULL AND echoed_at IS NULL AND sent_at > `+tx.Dialect().SubSeconds("now()", "$3")+`
+				AND `+tx.Dialect().InList("status", "$2")+`
 			ORDER BY id LIMIT 1)`, linkID, same, EchoWindow.Seconds())
 	if err != nil {
 		return false, fmt.Errorf("buscar el eco: %w", err)
@@ -226,10 +226,10 @@ func (s *Store) ApplyExternalStatus(ctx context.Context, id int64, status string
 		return false, fmt.Errorf("%w: origen del cambio %q", ErrInvalid, by.Source)
 	}
 	changed := false
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		var from string
-		err := tx.QueryRow(ctx, `SELECT status FROM issues WHERE id = $1 FOR UPDATE`, id).Scan(&from)
-		if errors.Is(err, pgx.ErrNoRows) {
+		err := tx.QueryRow(ctx, `SELECT status FROM issues WHERE id = $1`+tx.Dialect().ForUpdate(), id).Scan(&from)
+		if errors.Is(err, db.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {

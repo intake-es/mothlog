@@ -13,9 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
@@ -35,7 +33,7 @@ type notes struct {
 	panicOn string
 }
 
-func (n *notes) IssueChanged(_ context.Context, _ pgx.Tx, ev *event.Event, res Result) error {
+func (n *notes) IssueChanged(_ context.Context, _ db.Tx, ev *event.Event, res Result) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if ev.ID == n.failOn {
@@ -162,7 +160,7 @@ func (e *batchEnv) titles(t *testing.T) map[int64]string {
 	m := map[int64]string{}
 	var id int64
 	var title string
-	if _, err := pgx.ForEachRow(rows, []any{&id, &title}, func() error { m[id] = title; return nil }); err != nil {
+	if err := db.ForEachRow(rows, []any{&id, &title}, func() error { m[id] = title; return nil }); err != nil {
 		t.Fatal(err)
 	}
 	return m
@@ -519,11 +517,11 @@ func TestBatchWaitsOnlyForAnnouncedEnvelopes(t *testing.T) {
 // se repite evento a evento: aquí, que el error del callback llega tal cual.
 func TestBatchWriteConflictIsDetected(t *testing.T) {
 	e := newBatchEnv(t, time.Now().UTC())
-	err := pgx.BeginFunc(context.Background(), e.s.Pool(), func(tx pgx.Tx) error {
-		b := &pgx.Batch{}
-		b.Queue(`SELECT 1`).Exec(func(pgconn.CommandTag) error { return errConflict })
+	err := db.BeginFunc(context.Background(), e.s.Pool(), func(tx db.Tx) error {
+		b := &db.Batch{}
+		b.Queue(`SELECT 1`).Exec(func(db.Result) error { return errConflict })
 		b.Queue(`SELECT 2`)
-		return tx.SendBatch(context.Background(), b).Close()
+		return tx.SendBatch(context.Background(), b)
 	})
 	if !errors.Is(err, errConflict) {
 		t.Fatalf("err = %v, quiero errConflict", err)

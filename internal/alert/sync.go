@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/jackc/pgx/v5"
-
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -43,9 +42,8 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 			AND NOT EXISTS (SELECT 1 FROM issue_link_sync b WHERE b.link_id = s.link_id AND b.id < s.id
 				AND b.sent_at IS NULL AND b.failed_at IS NULL)
 		ORDER BY s.next_attempt_at, s.id
-		LIMIT 1
-		FOR UPDATE SKIP LOCKED`, now).Scan(&id, &linkID, &status, &attempts)
-	if errors.Is(err, pgx.ErrNoRows) {
+		LIMIT 1`+tx.Dialect().ForUpdateSkipLocked(), now).Scan(&id, &linkID, &status, &attempts)
+	if errors.Is(err, db.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
@@ -61,7 +59,7 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 	case sendErr == nil:
 		// Si allí no ha cambiado nada, no llegará ningún webhook de vuelta.
 		if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET attempts = $2, sent_at = $3::timestamptz, last_error = NULL,
-			echoed_at = CASE WHEN $4::boolean THEN NULL ELSE $3::timestamptz END WHERE id = $1`,
+			echoed_at = CASE WHEN CAST($4 AS boolean) THEN NULL ELSE $3::timestamptz END WHERE id = $1`,
 			id, attempts, now, moved); err != nil {
 			return false, err
 		}
@@ -94,7 +92,7 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 
 // pushState deja la issue de allí en la categoría, si no lo está ya, y
 // devuelve su estado, el nombre que tiene allí y si la ha movido.
-func (a *Alerter) pushState(ctx context.Context, tx pgx.Tx, link store.IssueLink, category string) (string, string, bool, error) {
+func (a *Alerter) pushState(ctx context.Context, tx db.Tx, link store.IssueLink, category string) (string, string, bool, error) {
 	switch link.Provider {
 	case store.ProviderLinear:
 		if a.linearKey == "" {
@@ -128,12 +126,12 @@ func (a *Alerter) pushState(ctx context.Context, tx pgx.Tx, link store.IssueLink
 
 // githubFor es la API de GitHub con el token de la acción que creó la issue
 // o, si no tiene, GITHUB_TOKEN.
-func (a *Alerter) githubFor(ctx context.Context, tx pgx.Tx, link store.IssueLink) (*githubAPI, error) {
+func (a *Alerter) githubFor(ctx context.Context, tx db.Tx, link store.IssueLink) (*githubAPI, error) {
 	token := a.githubToken
 	if link.RuleID != nil {
 		var actions []store.RuleAction
 		err := tx.QueryRow(ctx, `SELECT actions FROM alert_rules WHERE id = $1`, *link.RuleID).Scan(&actions)
-		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return nil, err
 		}
 		if i := slices.IndexFunc(actions, func(x store.RuleAction) bool { return x.ID == link.ActionID }); i >= 0 && actions[i].Token != "" {
