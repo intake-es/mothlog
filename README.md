@@ -98,6 +98,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `OIDC_ALLOW_ANY` | `1` deja entrar a cualquiera con cuenta en el emisor; sin esto ni límites, no arranca con OIDC | vacía |
 | `OIDC_SCOPES`, `OIDC_NAME` | scopes que se piden y nombre del botón («Entrar con …») | `openid email profile`, `SSO` |
 | `UPTIME_ALLOW_PRIVATE` | `1` deja a los [monitores de disponibilidad](#monitores-de-disponibilidad) pedir a redes privadas y a loopback (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7, ::1); las de metadatos y link-local nunca | vacía: solo direcciones públicas |
+| `METRICS_TOKEN` | token de `GET /metrics` ([Métricas](#métricas)); sin él, la ruta no existe y no se cuenta nada | vacío |
 | `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
 
 `GET /healthz` responde `ok` si Postgres contesta.

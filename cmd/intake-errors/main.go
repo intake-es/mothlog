@@ -17,6 +17,7 @@ import (
 	"github.com/intake-es/intake-errors/internal/api"
 	"github.com/intake-es/intake-errors/internal/digest"
 	"github.com/intake-es/intake-errors/internal/ingest"
+	"github.com/intake-es/intake-errors/internal/metrics"
 	"github.com/intake-es/intake-errors/internal/monitor"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -40,6 +41,8 @@ type config struct {
 	UptimeAllowPrivate  bool
 	LinearWebhookSecret string
 	GitHubWebhookSecret string
+	// MetricsToken protege /metrics; sin él, la ruta no existe.
+	MetricsToken string
 }
 
 func loadConfig() (config, error) {
@@ -62,6 +65,7 @@ func loadConfig() (config, error) {
 		},
 		LinearWebhookSecret: os.Getenv("LINEAR_WEBHOOK_SECRET"),
 		GitHubWebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
+		MetricsToken:        os.Getenv("METRICS_TOKEN"),
 	}
 	c.Alerts.PublicURL = c.PublicURL
 	c.UptimeAllowPrivate = os.Getenv("UPTIME_ALLOW_PRIVATE") == "1"
@@ -174,21 +178,29 @@ func run(args []string) error {
 	monitors := monitor.New(db, alerts, log)
 	go monitors.Run(ctx, monitor.SweepInterval, time.Duration(cfg.RetentionDays)*24*time.Hour)
 	go uptime.New(db, uptime.NewChecker(cfg.UptimeAllowPrivate, nil), alerts, log).Run(ctx, uptime.TickInterval)
+	var met *metrics.Metrics
+	if cfg.MetricsToken != "" {
+		met = metrics.New(db, log)
+	}
 	envelopes := ingest.NewHandler(db, ingester, ingest.NewRateLimiter(cfg.RateLimitPerMinute), drops, log).
-		WithCheckIns(monitors)
+		WithCheckIns(monitors).WithMetrics(met)
 
 	hooks := webhooks.New(db, webhooks.Options{
 		LinearSecret: cfg.LinearWebhookSecret, GitHubSecret: cfg.GitHubWebhookSecret, PublicURL: cfg.PublicURL,
 		LinearAPIKey: cfg.Alerts.LinearAPIKey != "", GitHubToken: cfg.Alerts.GitHubToken != "", Log: log,
 	})
-	mux := routes(db, envelopes, maps.Register, auth.Register, hooks.Register)
+	register := []func(*http.ServeMux){maps.Register, auth.Register, hooks.Register}
+	if met != nil {
+		register = append(register, met.Register(cfg.MetricsToken))
+	}
+	mux := routes(db, envelopes, register...)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
 	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks, Digests: alerts}); err != nil {
 		return err
 	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           ui.Handler(mux),
+		Handler:           ui.Handler(met.Routes(mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

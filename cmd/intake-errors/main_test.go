@@ -8,7 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/intake-es/intake-errors/internal/metrics"
 	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/intake-errors/internal/ui"
 )
 
 type fakeDB struct{ err error }
@@ -117,5 +121,44 @@ func TestDevLoginOnlyLocal(t *testing.T) {
 	err := run(nil)
 	if err == nil || !strings.Contains(err.Error(), "UI_DEV_LOGIN") {
 		t.Fatalf("con LISTEN_ADDR=:8080 = %v; quiero que se niegue a arrancar", err)
+	}
+}
+
+type metricsSource struct{ pool *pgxpool.Pool }
+
+func (m metricsSource) MetricsSnapshot(context.Context) (store.MetricsSnapshot, error) {
+	return store.MetricsSnapshot{}, nil
+}
+
+func (m metricsSource) Pool() *pgxpool.Pool { return m.pool }
+
+func TestMetricsRoute(t *testing.T) {
+	get := func(h http.Handler, auth string) int {
+		r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		if auth != "" {
+			r.Header.Set("Authorization", auth)
+		}
+		rec := httptest.NewRecorder()
+		ui.Handler(h).ServeHTTP(rec, r)
+		return rec.Code
+	}
+	if code := get(routes(fakeDB{}, http.NotFoundHandler()), ""); code != http.StatusNotFound {
+		t.Errorf("sin METRICS_TOKEN, /metrics da %d; quiero 404", code)
+	}
+	pool, err := pgxpool.New(context.Background(), "postgres://x:x@127.0.0.1:1/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	met := metrics.New(metricsSource{pool}, nil)
+	mux := met.Routes(routes(fakeDB{}, http.NotFoundHandler(), met.Register("secreto")))
+	for auth, want := range map[string]int{
+		"":               http.StatusUnauthorized,
+		"Bearer malo":    http.StatusUnauthorized,
+		"Bearer secreto": http.StatusOK,
+	} {
+		if code := get(mux, auth); code != want {
+			t.Errorf("Authorization %q: %d; quiero %d", auth, code, want)
+		}
 	}
 }

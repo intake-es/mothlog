@@ -80,7 +80,7 @@ func New(app fs.FS, next http.Handler) http.Handler {
 func reserved(p string) bool {
 	return p == "/api" || strings.HasPrefix(p, "/api/") ||
 		p == "/mcp" || strings.HasPrefix(p, "/mcp/") ||
-		p == "/healthz" || p == "/llms.txt" ||
+		p == "/healthz" || p == "/llms.txt" || p == "/metrics" ||
 		p == "/auth" || strings.HasPrefix(p, "/auth/")
 }
 

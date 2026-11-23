@@ -16,6 +16,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/intake-errors/internal/metrics"
 	"github.com/intake-es/intake-errors/internal/monitor"
 	"github.com/intake-es/intake-errors/internal/store"
 )
@@ -44,7 +45,19 @@ type Handler struct {
 	limiter  *RateLimiter
 	drops    *Drops
 	checkIns CheckIns
+	metrics  *metrics.Metrics
 	log      *slog.Logger
+}
+
+// WithMetrics hace que el handler cuente en m lo que recibe; sin él, no cuenta.
+func (h *Handler) WithMetrics(m *metrics.Metrics) *Handler {
+	h.metrics = m
+	return h
+}
+
+func (h *Handler) drop(projectID int64, reason string, n int) {
+	h.drops.Add(projectID, reason, n)
+	h.metrics.Dropped(projectID, reason, n)
 }
 
 // WithCheckIns hace que el handler guarde los items check_in; sin él, se ignoran.
@@ -70,7 +83,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hdr.Set("Access-Control-Max-Age", "86400")
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodPost:
-		h.envelope(w, r)
+		if h.metrics == nil {
+			h.envelope(w, r)
+			return
+		}
+		start := time.Now()
+		cw, code := metrics.CodeWriter(w)
+		h.envelope(cw, r)
+		h.metrics.Envelope(code(), time.Since(start))
 	default:
 		hdr.Set("Allow", "POST, OPTIONS")
 		fail(w, http.StatusMethodNotAllowed, "método no permitido")
@@ -155,6 +175,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	h.metrics.Received(project.ID, len(events))
 	lim := DefaultLimits()
 	perMinute := 0
 	sessions := env.Sessions()
@@ -175,7 +196,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		kept := events[:0]
 		for _, ev := range events {
 			if reason := fl.Drop(ev); reason != "" {
-				h.drops.Add(project.ID, reason, 1)
+				h.drop(project.ID, reason, 1)
 				h.log.DebugContext(ctx, "evento descartado", "proyecto", project.ID, "event_id", ev.ID, "motivo", reason)
 				continue
 			}
@@ -188,7 +209,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	if n := len(events) + len(checkIns); n > 0 {
 		if ok, wait := h.limiter.AllowUpTo(project.ID, n, perMinute); !ok {
 			if len(events) > 0 {
-				h.drops.Add(project.ID, store.DropRateLimit, len(events))
+				h.drop(project.ID, store.DropRateLimit, len(events))
 			}
 			var cats []string
 			if len(events) > 0 {
@@ -218,17 +239,28 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		if i == 0 {
 			respID = ev.ID
 		}
-		if res.Dropped != "" && !res.Duplicate {
-			h.drops.Add(project.ID, res.Dropped, 1)
+		switch {
+		case res.Duplicate:
+			h.metrics.Dropped(project.ID, metrics.DropDuplicate, 1)
+		case res.Dropped != "":
+			h.drop(project.ID, res.Dropped, 1)
+		default:
+			h.metrics.Saved(project.ID)
 		}
 		h.log.DebugContext(ctx, "evento", "proyecto", project.ID, "event_id", ev.ID, "issue", res.IssueID,
 			"resultado", res.Outcome.String(), "repetido", res.Duplicate, "descartado", res.Dropped, "duración", time.Since(start))
 	}
 	for _, in := range checkIns {
-		if _, err := h.checkIns.CheckIn(ctx, project.ID, in); err != nil {
+		res, err := h.checkIns.CheckIn(ctx, project.ID, in)
+		if err != nil {
 			h.log.ErrorContext(ctx, "guardar check-in", "proyecto", project.ID, "monitor", in.Slug, "err", err)
 			fail(w, http.StatusInternalServerError, "error interno")
 			return
+		}
+		if res.Outcome == store.CheckInIgnored {
+			h.metrics.CheckIn("ignored")
+		} else {
+			h.metrics.CheckIn(in.Status)
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": respID})
