@@ -1,7 +1,7 @@
 // Package db es la base de datos tal como la usa el resto del servicio:
-// consultas, filas, lotes y transacciones, sin atarse a un motor. La
-// implementación de hoy es la de Postgres (postgres.go); el SQL que cambia de
-// un motor a otro pasa por Dialect.
+// consultas, filas, lotes y transacciones, sin atarse a un motor. Hay dos
+// implementaciones, la de Postgres (postgres.go) y la de SQLite (sqlite.go);
+// el SQL que cambia de un motor a otro pasa por Dialect.
 package db
 
 import (

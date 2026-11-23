@@ -428,13 +428,21 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 }
 
 func (a *Alerter) loadIssue(ctx context.Context, tx db.Tx, p *pending) error {
-	err := tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, db.ByEngine(tx.Dialect(), `
 		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(l.external_id, ''),
 			COALESCE(l.identifier, ''), COALESCE(l.url, '')
 		FROM issues i JOIN projects p ON p.id = i.project_id
 			LEFT JOIN LATERAL (SELECT external_id, identifier, url FROM issue_links
 				WHERE issue_id = i.id AND provider = 'linear' AND kind = 'issue' ORDER BY id DESC LIMIT 1) l ON true
-		WHERE i.id = $1`, p.issueID).
+		WHERE i.id = $1`,
+		// Sin LATERAL: el último enlace de Linear, por su id.
+		`
+		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(l.external_id, ''),
+			COALESCE(l.identifier, ''), COALESCE(l.url, '')
+		FROM issues i JOIN projects p ON p.id = i.project_id
+			LEFT JOIN issue_links l ON l.id = (SELECT max(id) FROM issue_links
+				WHERE issue_id = i.id AND provider = 'linear' AND kind = 'issue')
+		WHERE i.id = $1`), p.issueID).
 		Scan(&p.project, &p.labels, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
 	if err != nil {
 		return fmt.Errorf("leer issue %d: %w", p.issueID, err)

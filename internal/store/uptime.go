@@ -331,7 +331,7 @@ func (s *Store) ListUptimeMonitors(ctx context.Context, f UptimeFilter, now time
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+uptimeColumns+uptimeFrom+`
 		WHERE `+strings.Join(where, " AND ")+`
-		ORDER BY m.status = 'down' AND NOT m.paused DESC, p.name, m.name, m.slug`, args...)
+		ORDER BY m.status = 'down' AND NOT m.paused DESC, `+s.pool.Dialect().Collate("p.name")+`, `+s.pool.Dialect().Collate("m.name")+`, `+s.pool.Dialect().Collate("m.slug"), args...)
 	if err != nil {
 		return nil, fmt.Errorf("leer monitores de disponibilidad: %w", err)
 	}
@@ -352,11 +352,19 @@ func (s *Store) ListUptimeMonitors(ctx context.Context, f UptimeFilter, now time
 	if err := s.fillAvailability(ctx, out, idx, ids, now); err != nil {
 		return nil, err
 	}
-	rows, err = s.pool.Query(ctx, `
+	d := s.pool.Dialect()
+	rows, err = s.pool.Query(ctx, db.ByEngine(d, `
 		SELECT c.monitor_id, c.checked_at, c.ok, c.status_code, c.duration_ms, c.error
-		FROM `+s.pool.Dialect().Unnest("m", 1, "id bigint")+`
+		FROM `+d.Unnest("m", 1, "id bigint")+`
 		CROSS JOIN LATERAL (SELECT monitor_id, checked_at, ok, status_code, duration_ms, error FROM uptime_checks
-			WHERE monitor_id = m.id ORDER BY checked_at DESC, id DESC LIMIT $2) c`, ids, RecentUptimeChecks)
+			WHERE monitor_id = m.id ORDER BY checked_at DESC, id DESC LIMIT $2) c`,
+		// Sin LATERAL: los ids de las últimas de cada monitor, por su índice.
+		`
+		SELECT c.monitor_id, c.checked_at, c.ok, c.status_code, c.duration_ms, c.error
+		FROM `+d.Unnest("m", 1, "id bigint")+`
+		JOIN uptime_checks c ON c.id IN (SELECT id FROM uptime_checks
+			WHERE monitor_id = m.id ORDER BY checked_at DESC, id DESC LIMIT $2)
+		ORDER BY c.monitor_id, c.checked_at DESC, c.id DESC`), ids, RecentUptimeChecks)
 	if err != nil {
 		return nil, fmt.Errorf("leer comprobaciones: %w", err)
 	}
@@ -500,11 +508,16 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 		return d, fmt.Errorf("leer comprobaciones: %w", err)
 	}
 	since := now.Add(-ResponseTimeWindow).Truncate(ResponseTimeBucket)
+	// El tramo de cada comprobación; en SQLite, con las fechas y el paso en microsegundos.
+	bin, step := `date_bin($3::interval, checked_at, $2)`, any(ResponseTimeBucket)
+	if s.sqlite() {
+		bin, step = `($2 + (checked_at - $2) / $3 * $3)`, ResponseTimeBucket.Microseconds()
+	}
 	rows, err = s.pool.Query(ctx, `
-		SELECT date_bin($3::interval, checked_at, $2) AS at, CAST(round(avg(duration_ms) FILTER (WHERE ok)) AS integer),
+		SELECT `+bin+` AS at, CAST(round(avg(duration_ms) FILTER (WHERE ok)) AS integer),
 			max(duration_ms), count(*), count(*) FILTER (WHERE NOT ok)
 		FROM uptime_checks WHERE monitor_id = $1 AND checked_at >= $2 AND checked_at <= $4
-		GROUP BY at ORDER BY at`, m.ID, since, ResponseTimeBucket, now)
+		GROUP BY at ORDER BY at`, m.ID, since, step, now)
 	if err != nil {
 		return d, fmt.Errorf("leer tiempos de respuesta: %w", err)
 	}
@@ -527,10 +540,7 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 	return d, nil
 }
 
-func uniqueViolation(err error) bool {
-	var pe interface{ SQLState() string }
-	return errors.As(err, &pe) && pe.SQLState() == "23505"
-}
+func uniqueViolation(err error) bool { return db.IsUniqueViolation(err) }
 
 // CreateUptimeMonitor crea un monitor; se comprueba por primera vez en el siguiente repaso.
 func (s *Store) CreateUptimeMonitor(ctx context.Context, projectID int64, in UptimeInput) (UptimeMonitor, error) {
@@ -595,7 +605,7 @@ func (s *Store) UpdateUptimeMonitor(ctx context.Context, projectID int64, slug s
 		if m.Paused && !old.Paused {
 			failures, firstAt, firstErr = 0, nil, nil
 			if m.Status == UptimeDown {
-				end := tx.Dialect().Greatest("$2::timestamptz", "started_at")
+				end := tx.Dialect().Greatest(tx.Dialect().Typed("$2", "timestamptz"), "started_at")
 				if _, err := tx.Exec(ctx, `
 					UPDATE uptime_incidents SET ended_at = `+end+`,
 						duration_ms = CAST((`+tx.Dialect().SecondsBetween(end, "started_at")+` * 1000) AS bigint)
@@ -658,11 +668,11 @@ type UptimeTarget struct {
 func (s *Store) ClaimUptimeChecks(ctx context.Context, now time.Time, limit int) ([]UptimeTarget, error) {
 	d := s.pool.Dialect()
 	rows, err := s.pool.Query(ctx, `
-		UPDATE uptime_monitors m SET next_check_at = `+d.AddSeconds("$1", "m.interval_seconds")+`
-		FROM (SELECT id FROM uptime_monitors WHERE NOT paused AND next_check_at <= $1
+		UPDATE uptime_monitors AS m SET next_check_at = `+d.AddSeconds("$1", "m.interval_seconds")+`
+		FROM (SELECT id AS due_id FROM uptime_monitors WHERE NOT paused AND next_check_at <= $1
 			ORDER BY next_check_at, id LIMIT $2`+d.ForUpdateSkipLocked()+`) due
-		WHERE m.id = due.id
-		RETURNING m.id, m.url, m.method, m.timeout_seconds, m.expected_status`, now.UTC(), limit)
+		WHERE m.id = due.due_id
+		RETURNING id, url, method, timeout_seconds, expected_status`, now.UTC(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("reservar comprobaciones: %w", err)
 	}

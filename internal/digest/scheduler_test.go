@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	dbpkg "github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/digest/digesttest"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
@@ -20,8 +21,9 @@ type outboxRow struct {
 
 func outbox(t *testing.T, db *storetest.DB) []outboxRow {
 	t.Helper()
+	start := dbpkg.ByEngine(db.Pool().Dialect(), `(detail->>'period_start')::timestamptz`, `detail->>'period_start'`)
 	rows, err := db.Pool().Query(context.Background(), `
-		SELECT channel, action_id, event_at, (detail->>'period_start')::timestamptz FROM alert_outbox
+		SELECT channel, action_id, event_at, `+start+` FROM alert_outbox
 		WHERE digest_project_id IS NOT NULL ORDER BY id`)
 	if err != nil {
 		t.Fatal(err)

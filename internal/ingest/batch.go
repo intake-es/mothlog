@@ -448,8 +448,8 @@ func (in *Ingester) saveBatch(ctx context.Context, tx db.Tx, items []*pending) e
 		sql, args := store.TrackEventsQuery(tx.Dialect(), tracked)
 		writes.Queue(sql, args...)
 	}
-	if sql, args, ok := tagsQuery(tx.Dialect(), tags, users); ok {
-		writes.Queue(sql, args...)
+	for _, q := range tagsQueries(tx.Dialect(), tags, users) {
+		writes.Queue(q.sql, q.args...)
 	}
 	if err := tx.SendBatch(ctx, writes); err != nil {
 		if errors.Is(err, errConflict) {
@@ -504,7 +504,7 @@ func readBatch(ctx context.Context, tx db.Tx, items []*pending) (map[eventKey]bo
 	var ek eventKey
 	reads.Queue(`
 		SELECT k.project_id, k.event_id FROM `+d.Unnest("k", 1, "project_id bigint", "event_id text")+`
-		JOIN events e ON e.project_id = k.project_id AND e.event_id = k.event_id::uuid`, evProjects, evIDs).
+		JOIN events e ON e.project_id = k.project_id AND e.event_id = `+d.Typed("k.event_id", "uuid"), evProjects, evIDs).
 		Query(func(rows db.Rows) error {
 			return db.ForEachRow(rows, []any{&ek.projectID, &ek.id}, func() error {
 				seen[ek] = true
@@ -597,7 +597,7 @@ func updateIssuesQuery(d db.Dialect, order []int64, byID map[int64]*batchIssue) 
 		return "", nil, false
 	}
 	return `
-		UPDATE issues i SET
+		UPDATE issues AS i SET
 			event_count = i.event_count + u.n,
 			first_seen = ` + d.Least("i.first_seen", "u.first_seen") + `,
 			last_seen = ` + d.Greatest("i.last_seen", "u.last_seen") + `,
@@ -616,9 +616,14 @@ func updateIssuesQuery(d db.Dialect, order []int64, byID map[int64]*batchIssue) 
 		[]any{ids, counts, first, last, statuses, regressed, regressedAt, hours, storedIn, stored, storedAt}, true
 }
 
-// tagsQuery es recordTags para todo el lote: suma cada valor de etiqueta una
-// vez con lo que suma en el lote y cuenta los usuarios nuevos.
-func tagsQuery(d db.Dialect, tags map[tagKey]*tagCount, users map[userKey]bool) (string, []any, bool) {
+type query struct {
+	sql  string
+	args []any
+}
+
+// tagsQueries es recordTags para todo el lote: suma cada valor de etiqueta
+// una vez con lo que suma en el lote y cuenta los usuarios nuevos.
+func tagsQueries(d db.Dialect, tags map[tagKey]*tagCount, users map[userKey]bool) []query {
 	tkeys := slices.SortedFunc(func(yield func(tagKey) bool) {
 		for k := range tags {
 			if !yield(k) {
@@ -641,15 +646,35 @@ func tagsQuery(d db.Dialect, tags map[tagKey]*tagCount, users map[userKey]bool) 
 		hashes = append(hashes, []byte(k.hash))
 	}
 	if len(tkeys) == 0 && len(hashes) == 0 {
-		return "", nil, false
+		return nil
 	}
-	return `
-		WITH t AS (
+	insertTags := `
 			INSERT INTO issue_tag_values (issue_id, key, value, count, last_seen)
 			SELECT * FROM ` + d.Unnest("x", 1, "issue_id bigint", "key text", "value text", "count bigint", "last_seen timestamptz") + `
+			WHERE true
 			ON CONFLICT (issue_id, key, value) DO UPDATE SET
 				count = issue_tag_values.count + EXCLUDED.count,
-				last_seen = ` + d.Greatest("issue_tag_values.last_seen", "EXCLUDED.last_seen") + `
+				last_seen = ` + d.Greatest("issue_tag_values.last_seen", "EXCLUDED.last_seen")
+	if d.Name() == "sqlite" {
+		// SQLite no tiene INSERT dentro de WITH: con el cerrojo de escritura
+		// cogido, primero cuenta los usuarios que no estaban y luego los guarda.
+		return []query{
+			{insertTags, []any{issues, keys, values, counts, lasts}},
+			{`
+		UPDATE issues SET user_count = user_count + c.n
+		FROM (SELECT h.issue_id, count(*) AS n FROM ` + d.Unnest("h", 1, "issue_id bigint", "user_hash bytea") + `
+			WHERE NOT EXISTS (SELECT 1 FROM issue_users u WHERE u.issue_id = h.issue_id AND u.user_hash = h.user_hash)
+			GROUP BY h.issue_id) c
+		WHERE issues.id = c.issue_id`, []any{userIssues, hashes}},
+			{`
+		INSERT INTO issue_users (issue_id, user_hash)
+		SELECT * FROM ` + d.Unnest("h", 1, "issue_id bigint", "user_hash bytea") + `
+		WHERE true
+		ON CONFLICT DO NOTHING`, []any{userIssues, hashes}},
+		}
+	}
+	return []query{{`
+		WITH t AS (` + insertTags + `
 		), u AS (
 			INSERT INTO issue_users (issue_id, user_hash)
 			SELECT * FROM ` + d.Unnest("h", 6, "issue_id bigint", "user_hash bytea") + `
@@ -659,7 +684,7 @@ func tagsQuery(d db.Dialect, tags map[tagKey]*tagCount, users map[userKey]bool) 
 		UPDATE issues SET user_count = user_count + c.n
 		FROM (SELECT issue_id, count(*) AS n FROM u GROUP BY issue_id) c
 		WHERE issues.id = c.issue_id`,
-		[]any{issues, keys, values, counts, lasts, userIssues, hashes}, true
+		[]any{issues, keys, values, counts, lasts, userIssues, hashes}}}
 }
 
 func minTime(a, b time.Time) time.Time {

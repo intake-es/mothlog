@@ -21,8 +21,9 @@ import (
 // source maps del envío del navegador.
 func sembrar(ctx context.Context, pool db.DB, base, dir string) error {
 	for _, p := range proyectos {
-		if _, err := pool.Exec(ctx,
+		if _, err := pool.Exec(ctx, db.ByEngine(pool.Dialect(),
 			`INSERT INTO projects (id, name, public_key) OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3)`,
+			`INSERT INTO projects (id, name, public_key) VALUES ($1, $2, $3)`),
 			p.id, p.nombre, p.pk); err != nil {
 			return fmt.Errorf("crear proyecto: %w", err)
 		}

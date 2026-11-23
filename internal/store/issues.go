@@ -69,7 +69,7 @@ const issueFrom = `issues i JOIN projects p ON p.id = i.project_id`
 // issueSQL da las columnas y el FROM de un issue. Con entorno (envArg es su
 // parámetro), los eventos, la primera y la última vez y la última release son
 // los de ese entorno.
-func issueSQL(envArg string) (cols, from string) {
+func issueSQL(d db.Dialect, envArg string) (cols, from string) {
 	if envArg == "" {
 		return issueColumns, issueFrom
 	}
@@ -80,11 +80,19 @@ func issueSQL(envArg string) (cols, from string) {
 	  WHERE e.issue_id = i.id AND e.environment = ` + envArg + ` AND e.release IS NOT NULL AND e.release <> ''
 	  ORDER BY e.occurred_at DESC, e.id DESC LIMIT 1),
 	i.resolved_in_release, i.last_regressed_at, i.first_release, i.fixed_in_release`
-	from = issueFrom + ` CROSS JOIN LATERAL (
+	stats := `FROM issue_stats s WHERE s.issue_id = i.id AND s.environment = ` + envArg
+	from = issueFrom + db.ByEngine(d, ` CROSS JOIN LATERAL (
 		SELECT CAST(COALESCE(sum(s.event_count), 0) AS bigint) AS n,
 			COALESCE(min(s.first_seen), i.first_seen) AS first_seen,
 			COALESCE(max(s.last_seen), i.last_seen) AS last_seen
-		FROM issue_stats s WHERE s.issue_id = i.id AND s.environment = ` + envArg + `) es`
+		FROM issue_stats s WHERE s.issue_id = i.id AND s.environment = `+envArg+`) es`,
+		// Sin LATERAL: una subconsulta por recuento, que SQLite calcula fila
+		// a fila con el índice de issue_stats.
+		` JOIN (SELECT i.id AS issue_id,
+			(SELECT CAST(COALESCE(sum(s.event_count), 0) AS bigint) `+stats+`) AS n,
+			COALESCE((SELECT min(s.first_seen) `+stats+`), i.first_seen) AS first_seen,
+			COALESCE((SELECT max(s.last_seen) `+stats+`), i.last_seen) AS last_seen
+		FROM issues i) es ON es.issue_id = i.id`)
 	return cols, from
 }
 
@@ -233,7 +241,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		}
 		where = append(where, fmt.Sprintf("(%s, i.id) < (%s, %s)", col, arg(v), arg(c.ID)))
 	}
-	cols, from := issueWithAssigneeSQL(envArg)
+	cols, from := issueWithAssigneeSQL(s.pool.Dialect(), envArg)
 	q := fmt.Sprintf(`SELECT %s FROM %s
 		WHERE %s ORDER BY %s DESC, i.id DESC LIMIT %d`,
 		cols, from, strings.Join(where, " AND "), col, limit+1)
@@ -307,7 +315,7 @@ func (s *Store) termSQL(ctx context.Context, t search.Term, viewer *Actor, arg f
 		for _, id := range userIdents(t.Value) {
 			hashes = append(hashes, UserHash(key, id))
 		}
-		return "EXISTS (SELECT 1 FROM issue_users u WHERE u.issue_id = i.id AND " + s.pool.Dialect().InList("u.user_hash", arg(hashes)) + ")", nil
+		return "EXISTS (SELECT 1 FROM issue_users u WHERE u.issue_id = i.id AND " + s.pool.Dialect().InBytes("u.user_hash", arg(hashes)) + ")", nil
 	}
 	return fmt.Sprintf("EXISTS (SELECT 1 FROM issue_tag_values t WHERE t.issue_id = i.id AND t.key = %s AND t.value = %s)",
 		arg(t.Key), arg(t.Value)), nil
@@ -323,7 +331,7 @@ func (s *Store) IssueIn(ctx context.Context, id int64, env string) (Issue, error
 	if env != "" {
 		envArg, args = "$2", append(args, env)
 	}
-	cols, from := issueWithAssigneeSQL(envArg)
+	cols, from := issueWithAssigneeSQL(s.pool.Dialect(), envArg)
 	i, err := scanIssueWithAssignee(s.pool.QueryRow(ctx, `SELECT `+cols+` FROM `+from+` WHERE i.id = $1`, args...))
 	if errors.Is(err, db.ErrNoRows) {
 		return Issue{}, ErrNotFound
@@ -362,6 +370,10 @@ func scanStoredEvent(r db.Row) (StoredEvent, error) {
 
 // Lo que se leía de events.data en SQL, solo para los eventos que aún no se
 // han convertido. Se va cuando se quite la columna data.
+// legacy da expr, que lee events.data de los eventos aún sin convertir; con
+// SQLite, NULL: allí todos los eventos nacen comprimidos.
+func legacy(d db.Dialect, expr string) string { return db.ByEngine(d, expr, "NULL") }
+
 const (
 	legacyUserLabel = `COALESCE(NULLIF(e.data->'user'->>'id', ''), NULLIF(e.data->'user'->>'email', ''),
 		NULLIF(e.data->'user'->>'username', ''), NULLIF(e.data->'user'->>'ip_address', ''))`
@@ -377,7 +389,10 @@ func (s *Store) Event(ctx context.Context, ref string) (StoredEvent, error) {
 	if id, err := strconv.ParseInt(ref, 10, 64); err == nil {
 		row = s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+` FROM events WHERE id = $1`, id)
 	} else if isUUID(ref) {
-		row = s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+` FROM events WHERE event_id = $1::uuid ORDER BY id LIMIT 1`, ref)
+		// Como lo guarda la ingesta: 32 hexadecimales en minúscula.
+		ref = strings.ToLower(strings.ReplaceAll(ref, "-", ""))
+		row = s.pool.QueryRow(ctx, `SELECT `+storedEventColumns+` FROM events WHERE event_id = `+
+			s.pool.Dialect().Typed("$1", "uuid")+` ORDER BY id LIMIT 1`, ref)
 	} else {
 		return StoredEvent{}, ErrNotFound
 	}
@@ -466,17 +481,30 @@ func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now tim
 	}
 	d.Daily = daily[id]
 
-	rows, err := s.pool.Query(ctx, `
+	dl := s.pool.Dialect()
+	user := `COALESCE(e.user_label, ` + legacy(dl, legacyUserLabel) + `)`
+	org := `COALESCE(e.organization_id, ` + legacy(dl, legacyOrganizationID) + `)`
+	// Sin LATERAL, cada columna con su consulta.
+	values := `FROM events e WHERE e.issue_id = $1 AND ($2 = '' OR e.environment = $2)`
+	rows, err := s.pool.Query(ctx, db.ByEngine(dl, `
 		SELECT v.key, v.value, count(*) AS n
 		FROM events e CROSS JOIN LATERAL (VALUES
 			('environment', e.environment),
 			('release', e.release),
-			('user', COALESCE(e.user_label, `+legacyUserLabel+`)),
-			('organization_id', COALESCE(e.organization_id, `+legacyOrganizationID+`))
+			('user', `+user+`),
+			('organization_id', `+org+`)
 		) AS v(key, value)
 		WHERE e.issue_id = $1 AND v.value <> '' AND ($2 = '' OR e.environment = $2)
 		GROUP BY v.key, v.value
-		ORDER BY v.key, n DESC, v.value`, id, env)
+		ORDER BY `+dl.Collate("v.key")+`, n DESC, `+dl.Collate("v.value"), `
+		SELECT v.key, v.value, count(*) AS n
+		FROM (SELECT 'environment' AS key, e.environment AS value `+values+`
+			UNION ALL SELECT 'release', e.release `+values+`
+			UNION ALL SELECT 'user', `+user+` `+values+`
+			UNION ALL SELECT 'organization_id', `+org+` `+values+`) v
+		WHERE v.value <> ''
+		GROUP BY v.key, v.value
+		ORDER BY `+dl.Collate("v.key")+`, n DESC, `+dl.Collate("v.value")), id, env)
 	if err != nil {
 		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
 	}
@@ -507,16 +535,29 @@ func (s *Store) DailyCountsIn(ctx context.Context, ids []int64, env string, now 
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, err := s.pool.Query(ctx, `
+	d := s.pool.Dialect()
+	rows, err := s.pool.Query(ctx, db.ByEngine(d, `
 		SELECT i.id, to_char(d, 'YYYY-MM-DD'), count(e.id)
-		FROM `+s.pool.Dialect().Unnest("i", 1, "id bigint")+`
+		FROM `+d.Unnest("i", 1, "id bigint")+`
 		CROSS JOIN generate_series((($2::timestamptz AT TIME ZONE 'UTC')::date - CAST($3 AS integer) + 1)::timestamp,
 		                     ($2::timestamptz AT TIME ZONE 'UTC')::date::timestamp, interval '1 day') d
 		LEFT JOIN events e ON e.issue_id = i.id
 			AND e.occurred_at >= d AT TIME ZONE 'UTC'
 			AND e.occurred_at < (d + interval '1 day') AT TIME ZONE 'UTC'
 			AND ($4 = '' OR e.environment = $4)
-		GROUP BY i.id, d ORDER BY i.id, d`, ids, now, DailyDays, env)
+		GROUP BY i.id, d ORDER BY i.id, d`,
+		// Los días, en microsegundos de sus 00:00 UTC, con un CTE recursivo.
+		`
+		WITH RECURSIVE d(day) AS (
+			SELECT ($2 / 86400000000 - $3 + 1) * 86400000000
+			UNION ALL SELECT day + 86400000000 FROM d WHERE day < ($2 / 86400000000) * 86400000000)
+		SELECT i.id, strftime('%Y-%m-%d', d.day / 1000000, 'unixepoch'), count(e.id)
+		FROM `+d.Unnest("i", 1, "id bigint")+`
+		CROSS JOIN d
+		LEFT JOIN events e ON e.issue_id = i.id
+			AND e.occurred_at >= d.day AND e.occurred_at < d.day + 86400000000
+			AND ($4 = '' OR e.environment = $4)
+		GROUP BY i.id, d.day ORDER BY i.id, d.day`), ids, now, DailyDays, env)
 	if err != nil {
 		return nil, fmt.Errorf("eventos por día: %w", err)
 	}
@@ -578,8 +619,8 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 	rows, err := s.pool.Query(ctx, `
 		SELECT e.id, replace(CAST(e.event_id AS text), '-', ''), e.occurred_at, e.received_at,
 			COALESCE(e.release, ''), COALESCE(e.environment, ''),
-			COALESCE(e.user_label, `+legacyUserLabel+`, ''),
-			COALESCE(e.summary, `+legacySummary+`, '')
+			COALESCE(e.user_label, `+legacy(s.pool.Dialect(), legacyUserLabel)+`, ''),
+			COALESCE(e.summary, `+legacy(s.pool.Dialect(), legacySummary)+`, '')
 		FROM events e
 		WHERE e.issue_id = $1 AND (e.occurred_at, e.id) < ($2, $3) AND ($5 = '' OR e.environment = $5)
 		ORDER BY e.occurred_at DESC, e.id DESC LIMIT $4`, issueID, after, afterID, limit+1, env)

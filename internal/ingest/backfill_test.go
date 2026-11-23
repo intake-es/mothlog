@@ -27,10 +27,8 @@ import (
 // ya había con las mismas reglas que la ingesta: cada evento, en su issue,
 // debe dar lo mismo que Tags() y UserIdent().
 func TestBackfillMatchesIngest(t *testing.T) {
-	base := os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL")
-	if base == "" {
-		t.Skip("sin INTAKE_ERRORS_TEST_DATABASE_URL")
-	}
+	storetest.OnlyPostgres(t, "prueba el relleno de la migración 00011 de Postgres; SQLite empieza con el esquema de hoy")
+	base := os.Getenv(storetest.URLVar)
 	ctx := context.Background()
 	schema := "test_" + storetest.RandomHex(t, 6)
 	admin, err := db.OpenPostgres(ctx, base)

@@ -58,8 +58,9 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 	switch {
 	case sendErr == nil:
 		// Si allí no ha cambiado nada, no llegará ningún webhook de vuelta.
-		if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET attempts = $2, sent_at = $3::timestamptz, last_error = NULL,
-			echoed_at = CASE WHEN CAST($4 AS boolean) THEN NULL ELSE $3::timestamptz END WHERE id = $1`,
+		at := tx.Dialect().Typed("$3", "timestamptz")
+		if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET attempts = $2, sent_at = `+at+`, last_error = NULL,
+			echoed_at = CASE WHEN CAST($4 AS boolean) THEN NULL ELSE `+at+` END WHERE id = $1`,
 			id, attempts, now, moved); err != nil {
 			return false, err
 		}

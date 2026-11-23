@@ -137,7 +137,7 @@ func TestDropped(t *testing.T) {
 
 func TestMigrationFilters(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,8 @@ type Dialect interface {
 	// InList es expr comparado con cada elemento de la lista que va en el
 	// parámetro param, un slice de Go.
 	InList(expr, param string) string
+	// InBytes es InList con una lista de []byte.
+	InBytes(expr, param string) string
 	// Unnest da como tabla alias las listas de los parámetros $first,
 	// $first+1…, una por columna; cols son «nombre tipo», con el tipo de un
 	// elemento. Las listas van juntas por posición.
@@ -41,6 +43,12 @@ type Dialect interface {
 	// JSONType, su tipo («object», «array», «string»…).
 	JSONText(doc, key string) string
 	JSONType(doc, key string) string
+	// Collate es el texto expr de un ORDER BY, ordenado como lo ordena
+	// Postgres con la colación en_US.UTF-8.
+	Collate(expr string) string
+	// Typed es expr, un parámetro, con el tipo typ de Postgres: Postgres lo
+	// necesita para saber el tipo del parámetro; SQLite no.
+	Typed(expr, typ string) string
 }
 
 // PostgresDialect es el dialecto de Postgres 16.
@@ -64,6 +72,8 @@ func (d postgresDialect) ForUpdateSkipLocked(of ...string) string {
 func (postgresDialect) InList(expr, param string) string {
 	return expr + " = ANY(" + param + ")"
 }
+
+func (d postgresDialect) InBytes(expr, param string) string { return d.InList(expr, param) }
 
 func (postgresDialect) Unnest(alias string, first int, cols ...string) string {
 	params, names := unnestCols(first, cols)
@@ -116,4 +126,17 @@ func (postgresDialect) JSONText(doc, key string) string { return doc + "->>'" + 
 
 func (postgresDialect) JSONType(doc, key string) string {
 	return "jsonb_typeof(" + doc + "->'" + key + "')"
+}
+
+func (postgresDialect) Collate(expr string) string { return expr }
+
+func (postgresDialect) Typed(expr, typ string) string { return expr + "::" + typ }
+
+// ByEngine da la consulta de Postgres o la de SQLite según el motor de d,
+// para las que no se escriben igual más allá de los trozos de Dialect.
+func ByEngine(d Dialect, postgres, sqlite string) string {
+	if d.Name() == "sqlite" {
+		return sqlite
+	}
+	return postgres
 }

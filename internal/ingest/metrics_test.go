@@ -131,10 +131,11 @@ func TestMetricsMatchFixtures(t *testing.T) {
 	}
 
 	issueID := e.count(t, `SELECT id FROM issues WHERE title LIKE 'ZeroDivisionError%'`)
+	ago := e.s.Pool().Dialect().SubSeconds
 	if _, err := e.s.Pool().Exec(ctx, `
 		INSERT INTO alert_outbox (issue_id, channel, kind, event_at, created_at, sent_at, failed_at) VALUES
-			($1, 'slack', 'new', now(), now() - interval '1 hour', NULL, NULL),
-			($1, 'slack', 'new', now(), now() - interval '2 hours', NULL, now()),
+			($1, 'slack', 'new', now(), `+ago("now()", "3600")+`, NULL, NULL),
+			($1, 'slack', 'new', now(), `+ago("now()", "7200")+`, NULL, now()),
 			($1, 'linear', 'new', now(), now(), now(), NULL)`, issueID); err != nil {
 		t.Fatal(err)
 	}

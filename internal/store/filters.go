@@ -126,9 +126,9 @@ func (f *Filters) Normalize() error {
 func (s *Store) Filters(ctx context.Context, projectID int64) (Filters, error) {
 	f := DefaultFilters()
 	err := s.pool.QueryRow(ctx, `
-		SELECT COALESCE(f.messages, '{}'), COALESCE(f.exception_types, '{}'),
+		SELECT f.messages, f.exception_types,
 			COALESCE(f.browser_extensions, false), COALESCE(f.web_crawlers, false), COALESCE(f.localhost, false),
-			COALESCE(f.environments, '{}'), COALESCE(f.releases, '{}'),
+			f.environments, f.releases,
 			f.events_per_issue_per_hour, COALESCE(f.sample_rate, 1), f.rate_limit_per_minute
 		FROM projects p LEFT JOIN project_filters f ON f.project_id = p.id
 		WHERE p.id = $1`, projectID).Scan(&f.Messages, &f.ExceptionTypes, &f.BrowserExtensions, &f.WebCrawlers,
@@ -138,6 +138,12 @@ func (s *Store) Filters(ctx context.Context, projectID int64) (Filters, error) {
 	}
 	if err != nil {
 		return Filters{}, fmt.Errorf("leer filtros: %w", err)
+	}
+	// Sin fila de filtros, las listas vacías.
+	for _, l := range []*[]string{&f.Messages, &f.ExceptionTypes, &f.Environments, &f.Releases} {
+		if *l == nil {
+			*l = []string{}
+		}
 	}
 	return f, nil
 }
@@ -189,10 +195,13 @@ func (s *Store) AddDropped(ctx context.Context, ds []Dropped) error {
 	for i, d := range ds {
 		projects[i], reasons[i], days[i], counts[i] = d.ProjectID, d.Reason, d.Day, d.Count
 	}
+	d := s.pool.Dialect()
+	// El día UTC: en SQLite, los microsegundos de sus 00:00.
+	day := db.ByEngine(d, `(d.day AT TIME ZONE 'UTC')::date`, `(d.day / 86400000000) * 86400000000`)
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO dropped_events (project_id, reason, day, count)
-		SELECT d.project_id, d.reason, (d.day AT TIME ZONE 'UTC')::date, sum(d.count)
-		FROM `+s.pool.Dialect().Unnest("d", 1, "project_id bigint", "reason text", "day timestamptz", "count bigint")+`
+		SELECT d.project_id, d.reason, `+day+`, sum(d.count)
+		FROM `+d.Unnest("d", 1, "project_id bigint", "reason text", "day timestamptz", "count bigint")+`
 		JOIN projects p ON p.id = d.project_id
 		GROUP BY 1, 2, 3
 		ON CONFLICT (project_id, day, reason) DO UPDATE SET count = dropped_events.count + EXCLUDED.count`,
@@ -232,10 +241,17 @@ func (s *Store) DroppedSince(ctx context.Context, projectID int64, days int, now
 	for _, r := range DropReasons {
 		st.Reasons[r] = 0
 	}
-	rows, err := s.pool.Query(ctx, `
+	q, from := `
 		SELECT to_char(day, 'YYYY-MM-DD'), reason, count FROM dropped_events
 		WHERE project_id = $1 AND day >= $2::date
-		ORDER BY day, reason`, projectID, st.Since)
+		ORDER BY day, reason`, any(st.Since)
+	if s.sqlite() {
+		q, from = `
+		SELECT strftime('%Y-%m-%d', day / 1000000, 'unixepoch'), reason, count FROM dropped_events
+		WHERE project_id = $1 AND day >= $2
+		ORDER BY day, reason`, since
+	}
+	rows, err := s.pool.Query(ctx, q, projectID, from)
 	if err != nil {
 		return DroppedStats{}, fmt.Errorf("leer descartados: %w", err)
 	}

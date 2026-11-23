@@ -85,7 +85,7 @@ func saveOrigin(ctx context.Context, q Querier, o Origin, kind, externalID strin
 		ON CONFLICT (source, server, org, kind, external_id) DO UPDATE SET
 			project_id = EXCLUDED.project_id, issue_id = EXCLUDED.issue_id, release_id = EXCLUDED.release_id,
 			deploy_id = EXCLUDED.deploy_id, imported = EXCLUDED.imported, updated_at = now()`,
-		o.Source, o.Server, o.Org, kind, externalID, localID, data)
+		o.Source, o.Server, o.Org, kind, externalID, localID, json.RawMessage(data))
 	if err != nil {
 		return fmt.Errorf("apuntar de dónde viene: %w", err)
 	}
@@ -192,7 +192,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 		}
 		var changed bool
 		err = tx.QueryRow(ctx, `
-			SELECT first_seen > $2 OR (finalized_at IS NULL AND $3::timestamptz IS NOT NULL)
+			SELECT first_seen > $2 OR (finalized_at IS NULL AND `+tx.Dialect().Typed("$3", "timestamptz")+` IS NOT NULL)
 			FROM releases WHERE id = $1`, id, r.Created, r.Released).Scan(&changed)
 		if err != nil {
 			return fmt.Errorf("leer release: %w", err)
@@ -381,7 +381,7 @@ func createImportedIssue(ctx context.Context, tx db.Tx, o Origin, projectID int6
 	err := tx.QueryRow(ctx, `
 		INSERT INTO issues (project_id, fingerprint, title, culprit, type, level, status, fixed_in_release,
 			resolved_in_release, resolved_at, first_seen, last_seen, event_count, user_count, first_release)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $7 IN ('resolved', 'resolved_next') THEN $11::timestamptz END,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $7 IN ('resolved', 'resolved_next') THEN `+tx.Dialect().Typed("$11", "timestamptz")+` END,
 			$10, $11, $12, $13, $14)
 		RETURNING id`,
 		projectID, fp, in.Title, in.Culprit, in.Type, in.Level, in.Status, nullIfEmpty(in.FixedIn), nullIfEmpty(in.ResolvedIn),

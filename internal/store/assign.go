@@ -58,8 +58,8 @@ const (
 		LEFT JOIN api_tokens atk ON atk.id = i.assignee_token_id`
 )
 
-func issueWithAssigneeSQL(envArg string) (cols, from string) {
-	cols, from = issueSQL(envArg)
+func issueWithAssigneeSQL(d db.Dialect, envArg string) (cols, from string) {
+	cols, from = issueSQL(d, envArg)
 	return cols + assigneeCols, from + assigneeJoins
 }
 
@@ -154,7 +154,7 @@ func (s *Store) ensurePerson(ctx context.Context, q Querier, login string) error
 
 // People son las personas que han entrado, por nombre.
 func (s *Store) People(ctx context.Context) ([]Person, error) {
-	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, provider, last_login_at FROM people ORDER BY lower(name), login`)
+	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, provider, last_login_at FROM people ORDER BY `+s.pool.Dialect().Collate("lower(name)")+`, `+s.pool.Dialect().Collate("login"))
 	if err != nil {
 		return nil, fmt.Errorf("listar personas: %w", err)
 	}
@@ -171,7 +171,7 @@ func (s *Store) Assignees(ctx context.Context) ([]Assignee, error) {
 		SELECT login, 'user', CASE WHEN name <> login THEN name ELSE '' END, avatar_url FROM people
 		UNION ALL
 		SELECT name, 'token', '', NULL FROM api_tokens WHERE revoked_at IS NULL
-		ORDER BY 2 DESC, 1`)
+		ORDER BY 2 DESC, `+s.pool.Dialect().Collate("1"))
 	if err != nil {
 		return nil, fmt.Errorf("listar asignables: %w", err)
 	}

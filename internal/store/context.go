@@ -15,7 +15,7 @@ func (s *Store) IssueEnvironments(ctx context.Context, issueID int64) ([]ValueCo
 	rows, err := s.pool.Query(ctx, `
 		SELECT environment, CAST(sum(event_count) AS bigint) AS n FROM issue_stats
 		WHERE issue_id = $1 AND environment <> ''
-		GROUP BY environment ORDER BY n DESC, environment`, issueID)
+		GROUP BY environment ORDER BY n DESC, `+s.pool.Dialect().Collate("environment"), issueID)
 	if err != nil {
 		return nil, fmt.Errorf("entornos del issue: %w", err)
 	}

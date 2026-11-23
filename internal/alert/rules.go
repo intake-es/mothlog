@@ -196,7 +196,7 @@ func countUser(ctx context.Context, tx db.Tx, r store.Rule, issueID int64, ev *e
 
 func (a *Alerter) enqueueRule(ctx context.Context, tx db.Tx, r store.Rule, kind string, detail *ruleDetail,
 	ev *event.Event, res ingest.Result, now time.Time) error {
-	var raw []byte
+	var raw json.RawMessage
 	if detail != nil {
 		raw, _ = json.Marshal(detail)
 	}

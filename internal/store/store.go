@@ -1,4 +1,4 @@
-// Package store guarda proyectos, issues y eventos en Postgres.
+// Package store guarda proyectos, issues y eventos en Postgres o en SQLite.
 package store
 
 import (
@@ -15,6 +15,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/migrations"
+	sqlitemigrations "github.com/intake-es/intake-errors/migrations/sqlite"
 )
 
 var ErrNotFound = errors.New("no encontrado")
@@ -33,8 +34,32 @@ type Project struct {
 	LinearLabelIDs []string
 }
 
-// Open conecta con Postgres y aplica las migraciones pendientes.
+// Open conecta con la base de url y aplica las migraciones pendientes:
+// postgres://… es Postgres y sqlite:///ruta/intake.db, un fichero de SQLite.
+// Con SQLite coge el cerrojo del fichero, para que no corran dos instancias
+// del servicio sobre él.
 func Open(ctx context.Context, url string, log *slog.Logger) (*Store, error) {
+	return open(ctx, url, log, true)
+}
+
+// OpenForCommand es Open para las órdenes de la línea de comandos, que
+// pueden correr con el servicio arrancado: con SQLite no coge el cerrojo.
+func OpenForCommand(ctx context.Context, url string, log *slog.Logger) (*Store, error) {
+	return open(ctx, url, log, false)
+}
+
+func open(ctx context.Context, url string, log *slog.Logger, exclusive bool) (*Store, error) {
+	if db.IsSQLiteURL(url) {
+		lite, err := db.OpenSQLite(ctx, url, db.SQLiteOptions{Exclusive: exclusive})
+		if err != nil {
+			return nil, err
+		}
+		if err := migrateSQLite(ctx, lite.WriteDB(), log); err != nil {
+			lite.Close()
+			return nil, err
+		}
+		return &Store{pool: lite}, nil
+	}
 	pool, err := db.OpenPostgres(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("conectar con postgres: %w", err)
@@ -60,6 +85,20 @@ func migrate(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("preparar migraciones: %w", err)
 	}
+	return up(ctx, p, log)
+}
+
+// migrateSQLite no necesita cerrojo: con SQLite hay una sola instancia.
+func migrateSQLite(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
+	p, err := goose.NewProvider(goose.DialectSQLite3, sqlDB, sqlitemigrations.FS,
+		goose.WithSlog(log), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		return fmt.Errorf("preparar migraciones: %w", err)
+	}
+	return up(ctx, p, log)
+}
+
+func up(ctx context.Context, p *goose.Provider, log *slog.Logger) error {
 	res, err := p.Up(ctx)
 	if err != nil {
 		return fmt.Errorf("aplicar migraciones: %w", err)
@@ -71,6 +110,9 @@ func migrate(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
 }
 
 func (s *Store) Close() { s.pool.Close() }
+
+// sqlite dice si la base es SQLite.
+func (s *Store) sqlite() bool { return s.pool.Dialect().Name() == "sqlite" }
 
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 

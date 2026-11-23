@@ -257,7 +257,7 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+monitorColumns+monitorFrom+`
 		WHERE `+strings.Join(where, " AND ")+`
-		ORDER BY m.status IN ('error', 'missed', 'timeout') DESC, p.name, m.slug`, args...)
+		ORDER BY m.status IN ('error', 'missed', 'timeout') DESC, `+s.pool.Dialect().Collate("p.name")+`, `+s.pool.Dialect().Collate("m.slug"), args...)
 	if err != nil {
 		return nil, fmt.Errorf("leer monitores: %w", err)
 	}
@@ -275,11 +275,19 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 		idx[m.ID] = i
 		out[i].Recent = []CheckInMark{}
 	}
-	rows, err = s.pool.Query(ctx, `
+	d := s.pool.Dialect()
+	rows, err = s.pool.Query(ctx, db.ByEngine(d, `
 		SELECT c.monitor_id, c.status, c.started_at, c.duration_ms
-		FROM `+s.pool.Dialect().Unnest("m", 1, "id bigint")+`
+		FROM `+d.Unnest("m", 1, "id bigint")+`
 		CROSS JOIN LATERAL (SELECT monitor_id, status, started_at, duration_ms FROM monitor_checkins
-			WHERE monitor_id = m.id ORDER BY started_at DESC, id DESC LIMIT $2) c`, ids, RecentCheckIns)
+			WHERE monitor_id = m.id ORDER BY started_at DESC, id DESC LIMIT $2) c`,
+		// Sin LATERAL: los ids de los últimos de cada monitor, por su índice.
+		`
+		SELECT c.monitor_id, c.status, c.started_at, c.duration_ms
+		FROM `+d.Unnest("m", 1, "id bigint")+`
+		JOIN monitor_checkins c ON c.id IN (SELECT id FROM monitor_checkins
+			WHERE monitor_id = m.id ORDER BY started_at DESC, id DESC LIMIT $2)
+		ORDER BY c.monitor_id, c.started_at DESC, c.id DESC`), ids, RecentCheckIns)
 	if err != nil {
 		return nil, fmt.Errorf("leer check-ins: %w", err)
 	}
@@ -420,8 +428,7 @@ func (s *Store) UpdateMonitor(ctx context.Context, projectID int64, slug string,
 				muted = $12, next_checkin_at = $13, updated_at = now()
 			WHERE id = $1`, m.ID, m.Slug, m.Name, m.Schedule.Type, sched, every, unit, m.Timezone,
 			m.CheckinMargin, m.MaxRuntime, m.Environment, m.Muted, m.NextCheckinAt)
-		var pe interface{ SQLState() string }
-		if errors.As(err, &pe) && pe.SQLState() == "23505" {
+		if db.IsUniqueViolation(err) {
 			return fmt.Errorf("%w: ya hay un monitor %q en el proyecto", ErrInvalid, m.Slug)
 		}
 		out = m
@@ -458,7 +465,7 @@ func lockMonitor(ctx context.Context, tx db.Tx, projectID int64, slug string) (M
 // de cada monitor, que sostiene su estado.
 func (s *Store) PurgeCheckIns(ctx context.Context, cutoff time.Time) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `
-		DELETE FROM monitor_checkins c WHERE c.received_at < $1
+		DELETE FROM monitor_checkins AS c WHERE c.received_at < $1
 			AND c.id <> (SELECT max(id) FROM monitor_checkins l WHERE l.monitor_id = c.monitor_id)`, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("borrar check-ins: %w", err)

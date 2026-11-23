@@ -108,13 +108,33 @@ func (in *Ingester) recordTags(ctx context.Context, tx db.Tx, issueID int64, ev 
 		}
 		userHash = store.UserHash(key, ident)
 	}
-	_, err := tx.Exec(ctx, `
-		WITH t AS (
+	d := tx.Dialect()
+	insertTags := `
 			INSERT INTO issue_tag_values (issue_id, key, value, count, last_seen)
-			SELECT $1, k, v, 1, $4 FROM `+tx.Dialect().Unnest("x", 2, "k text", "v text")+`
+			SELECT $1, k, v, 1, $4 FROM ` + d.Unnest("x", 2, "k text", "v text") + `
+			WHERE true
 			ON CONFLICT (issue_id, key, value) DO UPDATE SET
 				count = issue_tag_values.count + 1,
-				last_seen = `+tx.Dialect().Greatest("issue_tag_values.last_seen", "EXCLUDED.last_seen")+`
+				last_seen = ` + d.Greatest("issue_tag_values.last_seen", "EXCLUDED.last_seen")
+	if d.Name() == "sqlite" {
+		// SQLite no tiene INSERT dentro de WITH: van una detrás de otra.
+		if _, err := tx.Exec(ctx, insertTags, issueID, keys, values, ev.Timestamp); err != nil {
+			return fmt.Errorf("contar etiquetas: %w", err)
+		}
+		if userHash == nil {
+			return nil
+		}
+		tag, err := tx.Exec(ctx, `INSERT INTO issue_users (issue_id, user_hash) VALUES ($1, $2) ON CONFLICT DO NOTHING`, issueID, userHash)
+		if err == nil && tag.RowsAffected() > 0 {
+			_, err = tx.Exec(ctx, `UPDATE issues SET user_count = user_count + 1 WHERE id = $1`, issueID)
+		}
+		if err != nil {
+			return fmt.Errorf("contar etiquetas: %w", err)
+		}
+		return nil
+	}
+	_, err := tx.Exec(ctx, `
+		WITH t AS (`+insertTags+`
 		), u AS (
 			INSERT INTO issue_users (issue_id, user_hash)
 			SELECT $1, $5::bytea WHERE $5::bytea IS NOT NULL

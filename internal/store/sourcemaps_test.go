@@ -43,7 +43,8 @@ func TestSourceMaps(t *testing.T) {
 	if err := put("r0", "chunk-A.js", `{}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE sourcemaps SET uploaded_at = now() - interval '91 days' WHERE release = 'r0'`); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE sourcemaps SET uploaded_at = `+s.pool.Dialect().SubSeconds("now()", "$1")+` WHERE release = 'r0'`,
+		91*24*3600); err != nil {
 		t.Fatal(err)
 	}
 	deleted, err := s.DeleteSourceMapsBefore(ctx, time.Now().AddDate(0, 0, -90))

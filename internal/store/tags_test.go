@@ -19,7 +19,7 @@ import (
 // había, con el mismo hash que la ingesta.
 func TestMigrationTagsBackfill(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}

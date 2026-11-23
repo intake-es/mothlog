@@ -203,8 +203,7 @@ func newTestEnv(t *testing.T, perMinute int) *testEnv {
 	s := storetest.New(t)
 	ctx := context.Background()
 	for _, p := range fixtureProjects {
-		if _, err := s.Pool().Exec(ctx,
-			`INSERT INTO projects (id, name, public_key) OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3)`,
+		if _, err := s.Pool().Exec(ctx, storetest.ProjectWithIDSQL(s.Pool().Dialect()),
 			p.id, p.name, p.key); err != nil {
 			t.Fatal(err)
 		}
@@ -614,11 +613,13 @@ func TestPurge(t *testing.T) {
 	}
 	ctx := context.Background()
 	old := time.Now().AddDate(0, 0, -100)
-	if _, err := e.s.Pool().Exec(ctx, `
-		WITH viejo AS (SELECT id FROM issues WHERE title LIKE 'ZeroDivisionError%')
-		, ev AS (UPDATE events SET received_at = $1, occurred_at = $1 WHERE issue_id IN (SELECT id FROM viejo))
-		UPDATE issues SET first_seen = $1, last_seen = $1 WHERE id IN (SELECT id FROM viejo)`, old); err != nil {
-		t.Fatal(err)
+	for _, q := range []string{
+		`UPDATE events SET received_at = $1, occurred_at = $1 WHERE issue_id IN (SELECT id FROM issues WHERE title LIKE 'ZeroDivisionError%')`,
+		`UPDATE issues SET first_seen = $1, last_seen = $1 WHERE title LIKE 'ZeroDivisionError%'`,
+	} {
+		if _, err := e.s.Pool().Exec(ctx, q, old); err != nil {
+			t.Fatal(err)
+		}
 	}
 	evs, iss, err := Purge(ctx, e.s.Pool(), time.Now().AddDate(0, 0, -90))
 	if err != nil || evs != 1 || iss != 1 {
@@ -633,6 +634,8 @@ func TestPurge(t *testing.T) {
 // Un evento con fecha antigua que llega a un issue mientras se purga no debe
 // perderse ni bloquear la purga.
 func TestPurgeSkipsIssueBeingIngested(t *testing.T) {
+	storetest.OnlyPostgres(t, "con SQLite la transacción abierta tiene el cerrojo de escritura y la purga espera a que acabe; "+
+		"no hay filas bloqueadas de las que saltarse")
 	e := newTestEnv(t, 1000)
 	f := loadFixture(t, "api-excepcion-1")
 	e.sendOK(t, f, f.body)
@@ -683,6 +686,68 @@ func TestPurgeSkipsIssueBeingIngested(t *testing.T) {
 	}
 }
 
+// Un evento con fecha antigua que se está guardando mientras empieza la purga
+// no se pierde, con los dos motores: con Postgres la purga se salta su issue;
+// con SQLite espera a que acabe la transacción del evento.
+func TestPurgeKeepsEventBeingIngested(t *testing.T) {
+	e := newTestEnv(t, 1000)
+	f := loadFixture(t, "api-excepcion-1")
+	e.sendOK(t, f, f.body)
+	ctx := context.Background()
+	old := time.Now().AddDate(0, 0, -100)
+	for _, q := range []string{`UPDATE events SET received_at = $1, occurred_at = $1`, `UPDATE issues SET first_seen = $1, last_seen = $1`} {
+		if _, err := e.s.Pool().Exec(ctx, q, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tx, err := e.s.Pool().Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	ing := NewIngester(e.s.Pool(), nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ev, err := event.Parse(f.envelope(t).Events()[0].Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev.ID = newHexID()
+	ev.Timestamp = old
+	enc, err := store.EncodeEvent(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ing.save(ctx, tx, 1, ev, Group(ev), enc, time.Now(), DefaultLimits()); err != nil {
+		t.Fatal(err)
+	}
+
+	type purged struct {
+		evs, iss int64
+		err      error
+	}
+	done := make(chan purged, 1)
+	go func() {
+		pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		evs, iss, err := Purge(pctx, e.s.Pool(), time.Now().AddDate(0, 0, -90))
+		done <- purged{evs, iss, err}
+	}()
+	time.Sleep(200 * time.Millisecond)
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("guardar el evento con la purga en marcha: %v", err)
+	}
+	if p := <-done; p.err != nil || p.evs != 1 || p.iss != 0 {
+		t.Fatalf("purga: borrados %d eventos y %d issues, %v", p.evs, p.iss, p.err)
+	}
+	var n int64
+	if err := e.s.Pool().QueryRow(ctx, `SELECT count(*) FROM events WHERE event_id = $1`, ev.ID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("el evento guardado durante la purga: %d, %v", n, err)
+	}
+	if is := e.issues(t); len(is) != 1 {
+		t.Fatalf("issues = %+v", is)
+	}
+}
+
 func TestValidID(t *testing.T) {
 	if !validID(hex.EncodeToString(make([]byte, 16))) || validID("xyz") || validID("") {
 		t.Fatal("validID")
@@ -695,7 +760,7 @@ func TestStoredEventKeepsDebugMeta(t *testing.T) {
 		f := loadFixture(t, name)
 		e.sendOK(t, f, f.body)
 	}
-	rows, err := e.s.Pool().Query(context.Background(), `SELECT id::text FROM events ORDER BY id`)
+	rows, err := e.s.Pool().Query(context.Background(), `SELECT CAST(id AS text) FROM events ORDER BY id`)
 	if err != nil {
 		t.Fatal(err)
 	}

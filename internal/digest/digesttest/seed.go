@@ -88,7 +88,7 @@ func Seed(t testing.TB, db *storetest.DB, projectID int64, end time.Time) Issues
 		{invoices, "missed", at(start, 9)}, {backup, "error", at(prev, 3)},
 	} {
 		exec(`INSERT INTO monitor_checkins (monitor_id, check_in_id, status, started_at, expected_at)
-			VALUES ($1, gen_random_uuid(), $2, $3, $3)`, c.monitor, c.status, c.at)
+			VALUES ($1, $4, $2, $3, $3)`, c.monitor, c.status, c.at, storetest.RandomHex(t, 16))
 	}
 
 	exec(`INSERT INTO release_sessions (project_id, release, environment, hour, total, errored, crashed)

@@ -19,9 +19,13 @@ import (
 	"github.com/intake-es/intake-errors/migrations"
 )
 
+// migrationsOnlyPostgres es por qué los tests de las migraciones de Postgres
+// no corren con SQLite.
+const migrationsOnlyPostgres = "prueba una migración de Postgres sobre datos de antes; SQLite empieza con el esquema de hoy"
+
 func TestMigrationProjectLabels(t *testing.T) {
 	ctx := context.Background()
-	u := testSchemaURL(t)
+	u := testSchemaURL(t, migrationsOnlyPostgres)
 	pool, err := pgxpool.New(ctx, u)
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +126,7 @@ func TestMigrationProjectLabels(t *testing.T) {
 
 func TestMigrationSourceMapsSentryCLI(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +187,7 @@ func TestMigrationSourceMapsSentryCLI(t *testing.T) {
 
 func TestMigrationReleases(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +246,7 @@ func TestMigrationReleases(t *testing.T) {
 
 func TestMigrationAlertRules(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +302,7 @@ func TestMigrationAlertRules(t *testing.T) {
 
 func TestMigrationComments(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +380,7 @@ func TestMigrationComments(t *testing.T) {
 
 func TestMigrationAssign(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -443,7 +447,7 @@ func TestMigrationAssign(t *testing.T) {
 
 func TestMigrationIssueLinks(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +551,7 @@ func TestMigrationIssueLinks(t *testing.T) {
 
 func TestMigrationDigest(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -625,7 +629,7 @@ func TestMigrationDigest(t *testing.T) {
 
 func TestMigrationOIDC(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -713,7 +717,7 @@ func TestMigrationOIDC(t *testing.T) {
 
 func TestMigrationImport(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	pool, err := pgxpool.New(ctx, testSchemaURL(t, migrationsOnlyPostgres))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -791,7 +795,7 @@ func TestMigrationImport(t *testing.T) {
 // perder los que ya se han convertido.
 func TestMigrationCompressedEvents(t *testing.T) {
 	ctx := context.Background()
-	u := testSchemaURL(t)
+	u := testSchemaURL(t, migrationsOnlyPostgres)
 	pool, err := pgxpool.New(ctx, u)
 	if err != nil {
 		t.Fatal(err)

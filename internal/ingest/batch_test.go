@@ -61,8 +61,7 @@ type batchEnv struct {
 func newBatchEnv(t *testing.T, now time.Time) *batchEnv {
 	t.Helper()
 	s := storetest.New(t)
-	if _, err := s.Pool().Exec(context.Background(),
-		`INSERT INTO projects (id, name, public_key) OVERRIDING SYSTEM VALUE VALUES (1, 'api', 'clave')`); err != nil {
+	if _, err := s.Pool().Exec(context.Background(), storetest.ProjectWithIDSQL(s.Pool().Dialect()), 1, "api", "clave"); err != nil {
 		t.Fatal(err)
 	}
 	n := &notes{}
@@ -283,7 +282,8 @@ func (e *batchEnv) prepareScenario(t *testing.T, sc batchScenario) {
 		}
 	}
 	if _, err := e.s.Pool().Exec(context.Background(),
-		`UPDATE issues SET status = 'resolved', resolved_at = now() - interval '1 hour' WHERE title = 'vuelve'`); err != nil {
+		`UPDATE issues SET status = 'resolved', resolved_at = `+e.s.Pool().Dialect().SubSeconds("now()", "$1")+` WHERE title = 'vuelve'`,
+		3600); err != nil {
 		t.Fatal(err)
 	}
 	e.notes.reset()
@@ -341,31 +341,48 @@ func TestBatchBadEventDoesNotSinkOthers(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	for _, tc := range []struct {
 		name string
-		bad  func(evs []*event.Event, n *notes) string
+		bad  func(t *testing.T, evs []*event.Event, e *batchEnv) string
 	}{
-		{"aviso que falla", func(evs []*event.Event, n *notes) string {
-			n.failOn = evs[5].ID
+		{"aviso que falla", func(_ *testing.T, evs []*event.Event, e *batchEnv) string {
+			e.notes.failOn = evs[5].ID
 			return evs[5].ID
 		}},
-		{"etiqueta que Postgres no acepta", func(evs []*event.Event, _ *notes) string {
+		{"etiqueta que Postgres no acepta", func(_ *testing.T, evs []*event.Event, _ *batchEnv) string {
 			evs[5].Tags = map[string]string{"modo": "a\x00b"}
+			return evs[5].ID
+		}},
+		// Como la etiqueta con NUL, pero con los dos motores: la base rechaza
+		// a mitad del lote lo que guarda un evento.
+		{"etiqueta que la base rechaza", func(t *testing.T, evs []*event.Event, e *batchEnv) string {
+			evs[5].Tags = map[string]string{"modo": "rechazado"}
+			if _, err := e.s.Pool().Exec(context.Background(), db.ByEngine(e.s.Pool().Dialect(), `
+				CREATE FUNCTION rechaza() RETURNS trigger LANGUAGE plpgsql AS $$
+				BEGIN IF NEW.value = 'rechazado' THEN RAISE EXCEPTION 'rechazado'; END IF; RETURN NEW; END $$;
+				CREATE TRIGGER rechaza BEFORE INSERT ON issue_tag_values FOR EACH ROW EXECUTE FUNCTION rechaza();`,
+				`CREATE TRIGGER rechaza BEFORE INSERT ON issue_tag_values WHEN NEW.value = 'rechazado'
+				BEGIN SELECT RAISE(ABORT, 'rechazado'); END`)); err != nil {
+				t.Fatal(err)
+			}
 			return evs[5].ID
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if strings.Contains(tc.name, "Postgres") {
+				storetest.OnlyPostgres(t, "SQLite sí guarda un texto con el carácter NUL, así que ese evento no falla")
+			}
 			sc := newBatchScenario(now)
 			lim := Limits{PerIssuePerHour: 5, SampleRate: 1}
 
 			batch := newBatchEnv(t, now)
 			batch.prepareScenario(t, sc)
 			bevs := copyEvents(sc.batch)
-			bad := tc.bad(bevs, batch.notes)
+			bad := tc.bad(t, bevs, batch)
 			_, berrs := batch.together(t, bevs, lim)
 
 			one := newBatchEnv(t, now)
 			one.prepareScenario(t, sc)
 			oevs := copyEvents(sc.batch)
-			tc.bad(oevs, one.notes)
+			tc.bad(t, oevs, one)
 			_, oerrs := one.oneByOne(t, oevs, lim)
 
 			for i, ev := range bevs {

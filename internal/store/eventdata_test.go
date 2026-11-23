@@ -112,6 +112,7 @@ func randomJSON(r *rand.Rand, depth int) string {
 
 // La forma canónica es la misma que da Postgres al leer el JSON de jsonb.
 func TestCanonicalJSONMatchesJSONB(t *testing.T) {
+	onlyPostgres(t, "compara con el jsonb de Postgres")
 	s := testStore(t)
 	ctx := context.Background()
 	samples := []string{
@@ -153,6 +154,7 @@ func TestCanonicalJSONMatchesJSONB(t *testing.T) {
 }
 
 func TestNumericTextMatchesPostgres(t *testing.T) {
+	onlyPostgres(t, "compara con los numeric de Postgres")
 	s := testStore(t)
 	ctx := context.Background()
 	lits := []string{"0", "-0", "0.0", "-0.00", "7", "-7", "10", "1.0", "1.50", "0.10", "0.001", "1e0", "1e2", "1E+2", "1e-2",
@@ -272,6 +274,7 @@ func variedEvents(t *testing.T, n int) []event.Event {
 // Las columnas que salen del evento dan lo mismo que el SQL que las sacaba de
 // events.data.
 func TestEncodedColumnsMatchLegacySQL(t *testing.T) {
+	onlyPostgres(t, "compara con el SQL de los eventos guardados en jsonb, que en SQLite no existen")
 	s := testStore(t)
 	ctx := context.Background()
 	p, err := s.CreateProject(ctx, "p", "clave")
@@ -351,6 +354,7 @@ func (s *Store) legacyCount(t *testing.T) (legacy, converted int64) {
 // una fila bloqueada por otro, y al final todo está convertido una sola vez y
 // se lee igual que antes.
 func TestConvertLegacyEvents(t *testing.T) {
+	onlyPostgres(t, "la conversión de eventos antiguos no hace nada con SQLite")
 	s := testStore(t)
 	ctx := context.Background()
 	p, err := s.CreateProject(ctx, "p", "clave")
@@ -457,6 +461,7 @@ func TestConvertLegacyEvents(t *testing.T) {
 
 // Con un tope de bytes, cada lote lleva al menos un evento y la conversión acaba.
 func TestConvertLegacyEventsByteLimit(t *testing.T) {
+	onlyPostgres(t, "la conversión de eventos antiguos no hace nada con SQLite")
 	s := testStore(t)
 	ctx := context.Background()
 	p, err := s.CreateProject(ctx, "p", "clave")
@@ -523,6 +528,7 @@ func TestEventDictionaryVersion(t *testing.T) {
 // sigue guardando así), la conversión vuelve a pasar; acaba con la primera
 // pasada que no encuentra ninguno.
 func TestRunEventConversionRepeats(t *testing.T) {
+	onlyPostgres(t, "la conversión de eventos antiguos no hace nada con SQLite")
 	s := testStore(t)
 	ctx := context.Background()
 	p, err := s.CreateProject(ctx, "p", "clave")
@@ -597,6 +603,7 @@ func (f writerFunc) Write(b []byte) (int, error) { return f(b) }
 // Una pasada que no convierte nada porque otra réplica tiene bloqueadas las
 // filas no da la conversión por acabada: si esa réplica muere, se convierten.
 func TestRunEventConversionWaitsForLockedRows(t *testing.T) {
+	onlyPostgres(t, "la conversión de eventos antiguos no hace nada con SQLite")
 	s := testStore(t)
 	ctx := context.Background()
 	p, err := s.CreateProject(ctx, "p", "clave")

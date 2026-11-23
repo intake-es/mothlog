@@ -42,7 +42,7 @@ func runCommand(args []string, out io.Writer) error {
 	}
 	ctx := context.Background()
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: max(cfg.LogLevel, slog.LevelWarn)}))
-	db, err := store.Open(ctx, cfg.DatabaseURL, log)
+	db, err := store.OpenForCommand(ctx, cfg.DatabaseURL, log)
 	if err != nil {
 		return err
 	}

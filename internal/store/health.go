@@ -130,12 +130,17 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 	}
 
 	// Por entorno con su propia fila y, en total, cada usuario una vez.
-	rows, err = s.pool.Query(ctx, `
-		SELECT r.id, COALESCE(u.environment, ''), u.environment IS NULL,
-			count(DISTINCT u.user_hash), count(DISTINCT u.user_hash) FILTER (WHERE u.crashed)
+	d := s.pool.Dialect()
+	users := `
 		FROM releases r JOIN release_users u ON u.project_id = r.project_id AND u.release = r.version
-		WHERE `+s.pool.Dialect().InList("r.id", "$1")+` AND ($2 = '' OR u.environment = $2)
-		GROUP BY GROUPING SETS ((r.id, u.environment), (r.id))`, ids, env)
+		WHERE ` + d.InList("r.id", "$1") + ` AND ($2 = '' OR u.environment = $2)`
+	counts := `count(DISTINCT u.user_hash), count(DISTINCT u.user_hash) FILTER (WHERE u.crashed)`
+	rows, err = s.pool.Query(ctx, db.ByEngine(d, `
+		SELECT r.id, COALESCE(u.environment, ''), u.environment IS NULL, `+counts+users+`
+		GROUP BY GROUPING SETS ((r.id, u.environment), (r.id))`, `
+		SELECT r.id, u.environment, false, `+counts+users+` GROUP BY r.id, u.environment
+		UNION ALL
+		SELECT r.id, '', true, `+counts+users+` GROUP BY r.id`), ids, env)
 	if err != nil {
 		return fmt.Errorf("leer usuarios de las releases: %w", err)
 	}

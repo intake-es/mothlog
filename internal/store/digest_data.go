@@ -63,15 +63,23 @@ func (s *Store) DigestNewIssues(ctx context.Context, projectID int64, start, end
 // DigestRegressions son los issues que volvieron en [start, end) tras
 // resolverse, con la release con la que volvieron la última vez.
 func (s *Store) DigestRegressions(ctx context.Context, projectID int64, start, end time.Time, limit int) ([]DigestIssue, int, error) {
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
+	changes := `FROM issue_status_changes c
+			WHERE c.issue_id = i.id AND c.source = 'ingest' AND c.created_at >= $2 AND c.created_at < $3`
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(db.ByEngine(s.pool.Dialect(), `
 		SELECT `+digestIssueCols+`, `+eventsIn+` AS n, CAST(0 AS bigint), count(*) OVER (), COALESCE(r.release, '')
 		FROM issues i
 		CROSS JOIN LATERAL (
-			SELECT c.release FROM issue_status_changes c
-			WHERE c.issue_id = i.id AND c.source = 'ingest' AND c.created_at >= $2 AND c.created_at < $3
+			SELECT c.release `+changes+`
 			ORDER BY c.created_at DESC, c.id DESC LIMIT 1) r
 		WHERE i.project_id = $1 AND i.first_seen < $2
-		ORDER BY n DESC, i.id LIMIT $4`, "$2", "$3"), projectID, start, end, limit)
+		ORDER BY n DESC, i.id LIMIT $4`,
+		// Sin LATERAL: la release de la última vuelta, con una subconsulta.
+		`
+		SELECT `+digestIssueCols+`, `+eventsIn+` AS n, CAST(0 AS bigint), count(*) OVER (),
+			COALESCE((SELECT c.release `+changes+` ORDER BY c.created_at DESC, c.id DESC LIMIT 1), '')
+		FROM issues i
+		WHERE i.project_id = $1 AND i.first_seen < $2 AND EXISTS (SELECT 1 `+changes+`)
+		ORDER BY n DESC, i.id LIMIT $4`), "$2", "$3"), projectID, start, end, limit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("regresiones del resumen: %w", err)
 	}
@@ -143,7 +151,9 @@ type DigestTotals struct {
 }
 
 // userIdent es el usuario de un evento guardado, como lo cuenta la ingesta.
-const userIdent = `COALESCE(e.user_ident, ` + legacyUserIdent + `)`
+func userIdent(d db.Dialect) string {
+	return `COALESCE(e.user_ident, ` + legacy(d, legacyUserIdent) + `)`
+}
 
 // legacyUserIdent es userIdent leído de events.data, para los eventos aún sin
 // convertir. Se va cuando se quite la columna data.
@@ -162,7 +172,7 @@ func (s *Store) DigestTotals(ctx context.Context, projectID int64, start, end ti
 		SELECT count(*) FILTER (WHERE e.occurred_at >= $2),
 			count(*) FILTER (WHERE e.occurred_at < $2),
 			count(DISTINCT e.issue_id) FILTER (WHERE e.occurred_at >= $2),
-			count(DISTINCT `+userIdent+`) FILTER (WHERE e.occurred_at >= $2)
+			count(DISTINCT `+userIdent(s.pool.Dialect())+`) FILTER (WHERE e.occurred_at >= $2)
 		FROM events e
 		WHERE e.project_id = $1 AND e.occurred_at >= $4 AND e.occurred_at < $3`,
 		projectID, start, end, prev).Scan(&t.Events, &t.PreviousEvents, &t.Issues, &t.Users)
@@ -200,7 +210,7 @@ func (s *Store) DigestCrons(ctx context.Context, projectID int64, start, end tim
 		WHERE m.project_id = $1 AND c.status IN ('error', 'missed', 'timeout')
 			AND COALESCE(c.expected_at, c.started_at) >= $2 AND COALESCE(c.expected_at, c.started_at) < $3
 		GROUP BY m.id
-		ORDER BY count(*) DESC, m.slug`, projectID, start, end)
+		ORDER BY count(*) DESC, `+s.pool.Dialect().Collate("m.slug"), projectID, start, end)
 	if err != nil {
 		return nil, fmt.Errorf("crons del resumen: %w", err)
 	}
@@ -238,7 +248,7 @@ func (s *Store) DigestUptime(ctx context.Context, projectID int64, start, end ti
 		FROM uptime_incidents i JOIN uptime_monitors m ON m.id = i.monitor_id
 		WHERE m.project_id = $1 AND i.started_at < $3 AND (i.ended_at IS NULL OR i.ended_at > $2)
 		GROUP BY m.id
-		ORDER BY 4 DESC, m.slug`, projectID, start, end)
+		ORDER BY 4 DESC, `+d.Collate("m.slug"), projectID, start, end)
 	if err != nil {
 		return nil, fmt.Errorf("disponibilidad del resumen: %w", err)
 	}

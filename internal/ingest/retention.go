@@ -41,7 +41,7 @@ func purgeEmptyIssues(ctx context.Context, pool db.DB) (int64, error) {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `
-			DELETE FROM issues i
+			DELETE FROM issues AS i
 			WHERE `+tx.Dialect().InList("i.id", "$1")+`
 			  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.issue_id = i.id)`, ids)
 		n = tag.RowsAffected()

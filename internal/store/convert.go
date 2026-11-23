@@ -32,8 +32,12 @@ func DefaultConvertOptions(log *slog.Logger) ConvertOptions {
 // que no queda ninguno o se cancela ctx. Cada lote bloquea sus filas con SKIP
 // LOCKED, así que varios procesos a la vez se reparten las filas sin
 // convertir ninguna dos veces, y cortarlo a medias deja convertido solo lo de
-// los lotes ya confirmados. Devuelve cuántos ha convertido.
+// los lotes ya confirmados. Devuelve cuántos ha convertido. Con SQLite no
+// hace nada: la base nace con todos los eventos comprimidos.
 func (s *Store) ConvertLegacyEvents(ctx context.Context, o ConvertOptions) (int64, error) {
+	if s.sqlite() {
+		return 0, nil
+	}
 	var total int64
 	for {
 		// Una pasada recorre los eventos por id; si ha convertido alguno, otra
@@ -140,6 +144,9 @@ func encodeLegacy(data []byte) (EncodedEvent, error) {
 // tener bloqueadas filas que suelta si muere. Acaba cuando no queda ninguno o
 // al cancelarse ctx; si falla, reintenta cada retry.
 func (s *Store) RunEventConversion(ctx context.Context, log *slog.Logger, retry, every time.Duration) {
+	if s.sqlite() {
+		return
+	}
 	for {
 		start := time.Now()
 		n, err := s.ConvertLegacyEvents(ctx, DefaultConvertOptions(log))

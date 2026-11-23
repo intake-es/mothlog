@@ -251,6 +251,9 @@ func (s *Store) ApplyExternalStatus(ctx context.Context, id int64, status string
 	return changed, err
 }
 
+// webhookDeliveryRetention es lo que se guardan las entregas de los webhooks.
+const webhookDeliveryRetention = 30 * 24 * time.Hour
+
 // RecordWebhookDelivery apunta una entrega de un webhook y dice si es nueva.
 // Guarda las de los últimos 30 días.
 func (s *Store) RecordWebhookDelivery(ctx context.Context, provider, deliveryID, event string) (bool, error) {
@@ -259,8 +262,8 @@ func (s *Store) RecordWebhookDelivery(ctx context.Context, provider, deliveryID,
 	if err != nil {
 		return false, fmt.Errorf("apuntar entrega: %w", err)
 	}
-	if _, err := s.pool.Exec(ctx, `DELETE FROM webhook_deliveries WHERE provider = $1 AND received_at < now() - interval '30 days'`,
-		provider); err != nil {
+	if _, err := s.pool.Exec(ctx, `DELETE FROM webhook_deliveries WHERE provider = $1 AND received_at < `+
+		s.pool.Dialect().SubSeconds("now()", "$2"), provider, int64(webhookDeliveryRetention.Seconds())); err != nil {
 		return false, fmt.Errorf("apuntar entrega: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil

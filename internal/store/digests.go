@@ -279,7 +279,8 @@ func (s *Store) EnqueueDigest(ctx context.Context, projectID int64, start, end t
 		return false, nil
 	}
 	if send {
-		detail, _ := json.Marshal(DigestDetail{PeriodStart: start.UTC()})
+		var detail json.RawMessage
+		detail, _ = json.Marshal(DigestDetail{PeriodStart: start.UTC()})
 		for _, d := range dests {
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO alert_outbox (digest_project_id, channel, kind, event_at, next_attempt_at, created_at, action_id, detail)

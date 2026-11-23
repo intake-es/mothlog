@@ -128,8 +128,9 @@ func TestAutoMonitorsCap(t *testing.T) {
 	ctx := context.Background()
 	p, _ := s.CreateProject(ctx, "api", randomHex(t, 16))
 	if _, err := s.pool.Exec(ctx, `
+		WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM g WHERE n < $2)
 		INSERT INTO monitors (project_id, slug, name, schedule_type, schedule)
-		SELECT $1, 'm' || g, 'm' || g, 'crontab', '* * * * *' FROM generate_series(1, $2) g`, p.ID, MaxAutoMonitors); err != nil {
+		SELECT $1, 'm' || n, 'm' || n, 'crontab', '* * * * *' FROM g`, p.ID, MaxAutoMonitors); err != nil {
 		t.Fatal(err)
 	}
 	res := checkIn(t, s, p.ID, CheckInInput{Slug: "uno-mas", Status: "ok", Config: every(1, "hour")}, t0, nil)
@@ -270,7 +271,7 @@ func TestSweepMissedAndTimeout(t *testing.T) {
 // repasando a la vez, cada missed y cada timeout se marcan una vez.
 func TestSweepConcurrentNoDuplicates(t *testing.T) {
 	ctx := context.Background()
-	u := testSchemaURL(t)
+	u := testSchemaURL(t, "dos réplicas sobre la misma base se reparten el trabajo con FOR UPDATE SKIP LOCKED; con SQLite corre una sola instancia")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	replicas := make([]*Store, 2)
 	for i := range replicas {
@@ -390,7 +391,8 @@ func TestCheckInsPagesAndPurge(t *testing.T) {
 	if err != nil || len(second.CheckIns) != 2 || second.NextCursor != "" || !second.CheckIns[0].StartedAt.Before(first.CheckIns[2].StartedAt) {
 		t.Fatalf("segunda = %+v %v", second, err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE monitor_checkins SET received_at = received_at - interval '100 days'`); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE monitor_checkins SET received_at = `+s.pool.Dialect().SubSeconds("received_at", "$1"),
+		100*24*3600); err != nil {
 		t.Fatal(err)
 	}
 	n, err := s.PurgeCheckIns(ctx, time.Now().Add(-90*24*time.Hour))

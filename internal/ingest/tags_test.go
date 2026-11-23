@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
@@ -189,7 +190,8 @@ func TestTagCountsAndUsers(t *testing.T) {
 	}
 
 	// Ni el email ni la IP se guardan en claro.
-	if n := e.count(t, `SELECT count(*) FROM issue_users WHERE position($1::bytea IN user_hash) > 0 OR length(user_hash) <> 16`, []byte("example.com")); n != 0 {
+	inHash := db.ByEngine(e.s.Pool().Dialect(), `position($1::bytea IN user_hash) > 0`, `instr(user_hash, $1) > 0`)
+	if n := e.count(t, `SELECT count(*) FROM issue_users WHERE `+inHash+` OR length(user_hash) <> 16`, []byte("example.com")); n != 0 {
 		t.Errorf("%d usuarios en claro", n)
 	}
 	if n := e.count(t, `SELECT user_count FROM issues WHERE id = $1`, res.IssueID); n != 4 {

@@ -1,6 +1,6 @@
 // Command carga mide la ingesta: levanta el servicio con la imagen del
 // Dockerfile en un contenedor con la CPU y la memoria limitadas y un Postgres
-// 16 aparte, le manda envíos de los fixtures por pasos de concurrencia o a un
+// 16 aparte (o, con -motor sqlite, un fichero de SQLite), le manda envíos de los fixtures por pasos de concurrencia o a un
 // ritmo fijo, y saca un informe. Al acabar borra lo que ha creado.
 package main
 
@@ -35,6 +35,7 @@ type opciones struct {
 	salida        string
 	cpus, memoria string
 	postgres      string
+	motor         string
 	env           listaFlag
 	perfil        bool
 	fixtures      string
@@ -69,6 +70,7 @@ func main() {
 	flag.StringVar(&o.cpus, "cpus", "0.25", "--cpus del contenedor del servicio")
 	flag.StringVar(&o.memoria, "memoria", "256m", "--memory del contenedor del servicio")
 	flag.StringVar(&o.postgres, "postgres", "postgres:16", "imagen de Postgres")
+	flag.StringVar(&o.motor, "motor", "postgres", "base de datos del servicio: postgres o sqlite")
 	flag.Var(&o.env, "e", "variable de entorno más para el servicio, CLAVE=valor (se puede repetir)")
 	flag.BoolVar(&o.perfil, "perfil", true, "sacar un perfil de CPU de cada paso (hace falta PPROF_ADDR en el servicio)")
 	flag.StringVar(&o.fixtures, "fixtures", "testdata/envelopes", "directorio de los envíos grabados")
@@ -77,6 +79,10 @@ func main() {
 	flag.Uint64Var(&o.semilla, "semilla", 1, "semilla de la mezcla")
 	flag.StringVar(&o.etiqueta, "etiqueta", "", "nombre de la medida en el informe (por defecto, la ref o el commit)")
 	flag.Parse()
+	if o.motor != "postgres" && o.motor != "sqlite" {
+		fmt.Fprintf(os.Stderr, "carga: -motor es postgres o sqlite, no %q\n", o.motor)
+		os.Exit(2)
+	}
 	for v := range strings.SplitSeq(conc, ",") {
 		n, err := strconv.Atoi(strings.TrimSpace(v))
 		if err != nil || n <= 0 {
@@ -128,25 +134,47 @@ func run(ctx context.Context, o opciones) error {
 	if err := env.crearRed(ctx, id); err != nil {
 		return err
 	}
-	db := id + "-db"
-	if err := env.arrancar(ctx, db, "--network", id, "--network-alias", "db", "-p", "127.0.0.1::5432",
-		"-e", "POSTGRES_PASSWORD=x", o.postgres); err != nil {
-		return err
+	var pool db.DB
+	var sqlitePath string
+	dbURL := "postgres://postgres:x@db:5432/postgres?sslmode=disable"
+	var dbArgs []string
+	switch o.motor {
+	case "sqlite":
+		// El fichero, en un directorio del anfitrión, y el servicio con el
+		// usuario de aquí, para poder abrirlo también desde aquí y comprobarlo.
+		dir, err := os.MkdirTemp("", id+"-")
+		if err != nil {
+			return err
+		}
+		env.dirs = append(env.dirs, dir)
+		dbURL = "sqlite:///data/intake.db"
+		dbArgs = []string{"-v", dir + ":/data", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())}
+		defer func() {
+			if pool != nil {
+				pool.Close()
+			}
+		}()
+		sqlitePath = filepath.Join(dir, "intake.db")
+	default:
+		dbc := id + "-db"
+		if err := env.arrancar(ctx, dbc, "--network", id, "--network-alias", "db", "-p", "127.0.0.1::5432",
+			"-e", "POSTGRES_PASSWORD=x", o.postgres); err != nil {
+			return err
+		}
+		dbAddr, err := puerto(ctx, dbc, "5432/tcp")
+		if err != nil {
+			return err
+		}
+		if pool, err = esperarPostgres(ctx, "postgres://postgres:x@"+dbAddr+"/postgres?sslmode=disable&application_name=carga"); err != nil {
+			return err
+		}
+		defer pool.Close()
 	}
-	dbAddr, err := puerto(ctx, db, "5432/tcp")
-	if err != nil {
-		return err
-	}
-	pool, err := esperarPostgres(ctx, "postgres://postgres:x@"+dbAddr+"/postgres?sslmode=disable&application_name=carga")
-	if err != nil {
-		return err
-	}
-	defer pool.Close()
 
 	svc := id + "-svc"
 	args := []string{"--network", id, "--cpus", o.cpus, "--memory", o.memoria,
 		"-p", "127.0.0.1::8000", "-p", "127.0.0.1::6060",
-		"-e", "DATABASE_URL=postgres://postgres:x@db:5432/postgres?sslmode=disable",
+		"-e", "DATABASE_URL=" + dbURL,
 		"-e", "LISTEN_ADDR=:8000",
 		"-e", "RATE_LIMIT_PER_MINUTE=1000000000",
 		"-e", "METRICS_TOKEN=" + tokenMetricas,
@@ -154,6 +182,7 @@ func run(ctx context.Context, o opciones) error {
 		"-e", "PPROF_ADDR=:6060",
 		"-e", "LOG_LEVEL=warn",
 	}
+	args = append(args, dbArgs...)
 	for _, e := range o.env {
 		args = append(args, "-e", e)
 	}
@@ -179,6 +208,12 @@ func run(ctx context.Context, o opciones) error {
 	if err != nil {
 		return err
 	}
+	if o.motor == "sqlite" {
+		// Ya ha creado el esquema; desde aquí se abre como las órdenes, sin cerrojo.
+		if pool, err = db.OpenSQLite(ctx, "sqlite://"+sqlitePath, db.SQLiteOptions{}); err != nil {
+			return err
+		}
+	}
 	if err := sembrar(ctx, pool, base, o.sourcemaps); err != nil {
 		return err
 	}
@@ -191,7 +226,7 @@ func run(ctx context.Context, o opciones) error {
 	}
 	reg := newRegistro()
 	inf := &informe{
-		Etiqueta: o.etiqueta, Commit: commit, Imagen: o.imagen, CPUs: o.cpus, Memoria: o.memoria,
+		Etiqueta: o.etiqueta, Commit: commit, Motor: o.motor, Imagen: o.imagen, CPUs: o.cpus, Memoria: o.memoria,
 		Duracion: o.duracion.Seconds(), Ritmo: o.ritmo, Maquina: maquina(ctx), Fecha: time.Now().Format(time.RFC3339),
 		Env: o.env,
 	}

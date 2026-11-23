@@ -1,5 +1,6 @@
-// Package storetest prepara un Store contra Postgres para los tests de otros
-// paquetes y crea issues y eventos directamente en la base.
+// Package storetest prepara un Store para los tests de otros paquetes, con
+// Postgres si hay INTAKE_ERRORS_TEST_DATABASE_URL y si no con SQLite en un
+// fichero temporal, y crea issues y eventos directamente en la base.
 package storetest
 
 import (
@@ -38,13 +39,40 @@ func RandomHex(t testing.TB, n int) string {
 	return hex.EncodeToString(b)
 }
 
+// URLVar es la variable con la URL del Postgres de pruebas.
+const URLVar = "INTAKE_ERRORS_TEST_DATABASE_URL"
+
+// Postgres dice si los tests corren con Postgres; si no, con SQLite.
+func Postgres() bool { return os.Getenv(URLVar) != "" }
+
+// OnlyPostgres salta el test con SQLite; why dice por qué solo vale con Postgres.
+func OnlyPostgres(t testing.TB, why string) {
+	t.Helper()
+	if !Postgres() {
+		t.Skip("solo con Postgres (" + URLVar + "): " + why)
+	}
+}
+
 // New abre un Store en un esquema propio de INTAKE_ERRORS_TEST_DATABASE_URL,
-// que se borra al acabar. Sin esa variable, el test se salta.
+// que se borra al acabar. Sin esa variable, en un fichero de SQLite nuevo.
 func New(t testing.TB) *store.Store {
 	t.Helper()
-	base := os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL")
+	ctx := context.Background()
+	s, err := store.Open(ctx, NewURL(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	return s
+}
+
+// NewURL da la URL de una base vacía que se borra al acabar el test: un
+// esquema propio del Postgres de pruebas o un fichero de SQLite nuevo.
+func NewURL(t testing.TB) string {
+	t.Helper()
+	base := os.Getenv(URLVar)
 	if base == "" {
-		t.Skip("sin INTAKE_ERRORS_TEST_DATABASE_URL")
+		return "sqlite://" + filepath.Join(t.TempDir(), "intake.db")
 	}
 	ctx := context.Background()
 	schema := "test_" + RandomHex(t, 6)
@@ -68,13 +96,13 @@ func New(t testing.TB) *store.Store {
 	q := u.Query()
 	q.Set("search_path", schema)
 	u.RawQuery = q.Encode()
+	return u.String()
+}
 
-	s, err := store.Open(ctx, u.String(), slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(s.Close)
-	return s
+// ProjectWithIDSQL crea un proyecto con un id elegido: $1 id, $2 nombre, $3 clave.
+func ProjectWithIDSQL(d db.Dialect) string {
+	return db.ByEngine(d, `INSERT INTO projects (id, name, public_key) OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3)`,
+		`INSERT INTO projects (id, name, public_key) VALUES ($1, $2, $3)`)
 }
 
 // NewDB es New con los atajos para crear proyectos, issues y eventos a mano.

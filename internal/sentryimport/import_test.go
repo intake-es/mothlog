@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -89,12 +90,20 @@ func (e *env) snapshot() string {
 		`SELECT id, issue_id, source, from_status, to_status, release FROM issue_status_changes ORDER BY id`,
 		`SELECT * FROM import_origins ORDER BY id`,
 	} {
-		var s string
-		if err := e.db.Pool().QueryRow(context.Background(),
-			`SELECT COALESCE(json_agg(x)::text, '[]') FROM (`+q+`) x`).Scan(&s); err != nil {
+		rows, err := e.db.Pool().Query(context.Background(), q)
+		if err != nil {
 			e.t.Fatalf("%s: %v", q, err)
 		}
-		b.WriteString(s)
+		for rows.Next() {
+			vals, err := rows.Values()
+			if err != nil {
+				e.t.Fatalf("%s: %v", q, err)
+			}
+			fmt.Fprintln(&b, vals...)
+		}
+		if err := rows.Err(); err != nil {
+			e.t.Fatalf("%s: %v", q, err)
+		}
 		b.WriteString("\n")
 	}
 	return b.String()

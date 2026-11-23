@@ -18,6 +18,8 @@ type entorno struct {
 	red          string
 	// imagen es la que ha construido la prueba y se borra al acabar.
 	imagen string
+	// dirs son los directorios que ha creado, con el fichero de SQLite.
+	dirs []string
 }
 
 func docker(ctx context.Context, args ...string) (string, error) {
@@ -67,6 +69,12 @@ func (e *entorno) limpiar() {
 		}
 		e.red = ""
 	}
+	for _, d := range e.dirs {
+		if err := os.RemoveAll(d); err != nil {
+			fmt.Fprintln(os.Stderr, "borrar directorio:", err)
+		}
+	}
+	e.dirs = nil
 	if e.imagen != "" {
 		if _, err := docker(ctx, "rmi", e.imagen); err != nil {
 			fmt.Fprintln(os.Stderr, "borrar imagen:", err)

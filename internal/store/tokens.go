@@ -58,7 +58,7 @@ func (s *Store) CreateToken(ctx context.Context, name string) (Token, string, er
 func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, name, created_at, last_used_at, revoked_at
-		FROM api_tokens ORDER BY revoked_at IS NOT NULL, name, id`)
+		FROM api_tokens ORDER BY revoked_at IS NOT NULL, `+s.pool.Dialect().Collate("name")+`, id`)
 	if err != nil {
 		return nil, fmt.Errorf("listar tokens: %w", err)
 	}

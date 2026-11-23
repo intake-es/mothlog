@@ -88,7 +88,7 @@ func importCommand(cfg config, args []string, out, progress io.Writer) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	log := slog.New(slog.NewTextHandler(progress, &slog.HandlerOptions{Level: max(cfg.LogLevel, slog.LevelWarn)}))
-	db, err := store.Open(ctx, cfg.DatabaseURL, log)
+	db, err := store.OpenForCommand(ctx, cfg.DatabaseURL, log)
 	if err != nil {
 		return err
 	}

@@ -34,7 +34,7 @@ func projects(cfg config, args []string, out io.Writer) error {
 	ctx := context.Background()
 	// Los logs de las migraciones van a stderr para no mezclarse con la salida.
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
-	db, err := store.Open(ctx, cfg.DatabaseURL, log)
+	db, err := store.OpenForCommand(ctx, cfg.DatabaseURL, log)
 	if err != nil {
 		return err
 	}

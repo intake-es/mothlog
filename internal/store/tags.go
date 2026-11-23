@@ -111,7 +111,7 @@ func (s *Store) IssueTags(ctx context.Context, issueID int64) (IssueTags, error)
 	rows, err := s.pool.Query(ctx, `
 		SELECT key, value, count, last_seen, sum(count) OVER (PARTITION BY key)
 		FROM issue_tag_values WHERE issue_id = $1
-		ORDER BY key, count DESC, value`, issueID)
+		ORDER BY `+s.pool.Dialect().Collate("key")+`, count DESC, `+s.pool.Dialect().Collate("value"), issueID)
 	if err != nil {
 		return out, fmt.Errorf("etiquetas: %w", err)
 	}
@@ -157,7 +157,7 @@ func (s *Store) TagKeys(ctx context.Context, project string) ([]TagKey, error) {
 		SELECT t.key, count(DISTINCT t.issue_id) AS n
 		FROM issue_tag_values t JOIN issues i ON i.id = t.issue_id JOIN projects p ON p.id = i.project_id
 		WHERE $1 = '' OR CAST(p.id AS text) = $1 OR p.name = $1
-		GROUP BY t.key ORDER BY n DESC, t.key LIMIT 100`, project)
+		GROUP BY t.key ORDER BY n DESC, `+s.pool.Dialect().Collate("t.key")+` LIMIT 100`, project)
 	if err != nil {
 		return nil, fmt.Errorf("claves de etiqueta: %w", err)
 	}
@@ -185,7 +185,7 @@ func (s *Store) TagValues(ctx context.Context, project, key, prefix string) ([]T
 		FROM issue_tag_values t JOIN issues i ON i.id = t.issue_id JOIN projects p ON p.id = i.project_id
 		WHERE t.key = $1 AND ($2 = '' OR CAST(p.id AS text) = $2 OR p.name = $2)
 		  AND `+s.pool.Dialect().ILike("t.value", "$3")+`
-		GROUP BY t.value ORDER BY 3 DESC, t.value LIMIT $4`,
+		GROUP BY t.value ORDER BY 3 DESC, `+s.pool.Dialect().Collate("t.value")+` LIMIT $4`,
 		key, project, prefixPattern(prefix), maxSuggestions)
 	if err != nil {
 		return nil, fmt.Errorf("valores de etiqueta: %w", err)

@@ -535,9 +535,10 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 	ctx := context.Background()
 	// Falla el guardado del id después de crear la issue en Linear, como si se
 	// cayera Postgres o se parara la réplica entre la petición y el commit.
-	if _, err := e.db.Pool().Exec(ctx, `
+	if _, err := e.db.Pool().Exec(ctx, db.ByEngine(e.db.Pool().Dialect(), `
 		CREATE FUNCTION rompe() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'caída'; END $$;
-		CREATE TRIGGER rompe BEFORE INSERT ON issue_links FOR EACH ROW EXECUTE FUNCTION rompe();`); err != nil {
+		CREATE TRIGGER rompe BEFORE INSERT ON issue_links FOR EACH ROW EXECUTE FUNCTION rompe();`,
+		`CREATE TRIGGER rompe BEFORE INSERT ON issue_links BEGIN SELECT RAISE(ABORT, 'caída'); END`)); err != nil {
 		t.Fatal(err)
 	}
 	first := e.ingest(t, "api-tarea-a-1")
@@ -547,7 +548,7 @@ func TestCreateRetryReusesLinearIssue(t *testing.T) {
 	if e.linear.created() != 1 {
 		t.Fatalf("creadas = %d", e.linear.created())
 	}
-	if _, err := e.db.Pool().Exec(ctx, `DROP TRIGGER rompe ON issue_links`); err != nil {
+	if _, err := e.db.Pool().Exec(ctx, db.ByEngine(e.db.Pool().Dialect(), `DROP TRIGGER rompe ON issue_links`, `DROP TRIGGER rompe`)); err != nil {
 		t.Fatal(err)
 	}
 	if n := e.send(t); n != 1 {

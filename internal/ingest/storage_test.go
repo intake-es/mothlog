@@ -11,6 +11,7 @@ import (
 
 // La retención borra los eventos viejos de los dos formatos y deja los demás.
 func TestPurgeBothFormats(t *testing.T) {
+	storetest.OnlyPostgres(t, "los eventos de antes, en jsonb, no existen en SQLite")
 	db := storetest.NewDB(t)
 	ctx := context.Background()
 	p := db.AddProject(t, "api")

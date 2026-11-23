@@ -37,7 +37,7 @@ tar -xzf intake-errors_${v}_${os}_${arch}.tar.gz intake-errors
 DATABASE_URL=postgres://... PUBLIC_URL=https://errors.example.com ./intake-errors
 ```
 
-Necesita Postgres 16; la configuración es la de la tabla de [Arrancar](#arrancar).
+Necesita Postgres 16, o nada con SQLite ([Con SQLite, sin servidor de base de datos](#con-sqlite-sin-servidor-de-base-de-datos)); la configuración es la de la tabla de [Arrancar](#arrancar).
 
 ### Con Docker
 
@@ -46,6 +46,40 @@ docker run -p 8000:8000 -e DATABASE_URL=postgres://... -e PUBLIC_URL=https://err
 ```
 
 La imagen es multiarquitectura (amd64 y arm64), distroless, sin shell y sin root, y escucha en el 8000. Hay una etiqueta por versión (`ghcr.io/intake-es/intake-errors:1.0.0`) y `latest`, la última que no es prerelease. Más en [Desplegar](#desplegar).
+
+### Con SQLite, sin servidor de base de datos
+
+Con `DATABASE_URL=sqlite:///ruta/intake.db` (o `sqlite://./intake.db`, relativa al directorio de trabajo) guarda todo en un fichero de SQLite, sin Postgres, con todas las funciones: ingesta, source maps, crons, disponibilidad, avisos, la API, el MCP y la interfaz. El mismo binario y la misma imagen valen para los dos; crea el fichero y su esquema (`migrations/sqlite/`) al arrancar.
+
+```sh
+DATABASE_URL=sqlite:///var/lib/intake-errors/intake.db PUBLIC_URL=https://errors.example.com ./intake-errors
+```
+
+Con Docker, el fichero va en un volumen montado en `/home/nonroot`, que en la imagen es del usuario con el que corre el servicio:
+
+```sh
+docker run -p 8000:8000 -v intake-errors:/home/nonroot -e DATABASE_URL=sqlite:///home/nonroot/intake.db \
+  -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/intake-errors:latest
+```
+
+Para probarlo sin Postgres, como el compose de arriba: `docker compose -f docker-compose.sqlite.yml up` (los datos van en el volumen `intake`).
+
+Límites:
+
+- **Una sola instancia.** SQLite admite un solo escritor y el fichero vive en una máquina: nada de réplicas detrás de un balanceador. Al arrancar coge un cerrojo en `intake.db.lock`, y una segunda instancia sobre el mismo fichero se niega a arrancar («otra instancia tiene abierta la base…»). Las órdenes (`projects`, `tokens`, `releases`, `import`) sí pueden correr con el servicio arrancado. Para varias réplicas, Postgres.
+- El fichero tiene que estar en un disco local, no en uno de red (NFS, SMB), donde los cerrojos de SQLite no son de fiar.
+- No hay paso de Postgres a SQLite ni al revés: cada base empieza vacía, aunque `import sentry` sirve para traer lo de un Sentry.
+
+Va en modo WAL (junto a `intake.db` están `intake.db-wal` e `intake.db-shm`, que son parte de la base), con una sola conexión que escribe y varias que leen. Con la mezcla de `make carga` y 0,25 vCPU recibe lo mismo que con Postgres (ver [Lotes y rendimiento](#lotes-y-rendimiento)).
+
+**Copias de seguridad.** Copiar el fichero con el servicio arrancado puede dar una copia rota; las dos formas buenas se hacen en caliente, sin pararlo:
+
+```sh
+sqlite3 /var/lib/intake-errors/intake.db ".backup '/copias/intake-$(date +%F).db'"
+sqlite3 /var/lib/intake-errors/intake.db "VACUUM INTO '/copias/intake-$(date +%F).db'"
+```
+
+`.backup` copia la base página a página; `VACUUM INTO` escribe una copia compactada. Las dos dan un único fichero, sin `-wal`, que se restaura parando el servicio y poniéndolo en el lugar de `intake.db` (borrando antes los `intake.db-wal` e `intake.db-shm` viejos). Con Docker, la imagen no trae `sqlite3`: se lanza desde otro contenedor con el mismo volumen, como `docker run --rm -v intake-errors:/datos -v "$PWD":/copias alpine sh -c "apk add -q sqlite && sqlite3 /datos/intake.db \".backup '/copias/intake.db'\""`. `sqlite3` sirve para leer y copiar la base, no para escribir en ella: el servicio registra funciones propias (`now()`, `lower` con Unicode y la colación `en_us`) que `sqlite3` no tiene.
 
 ### Publicar una versión
 
@@ -67,11 +101,11 @@ make test   # go test ./...
 make lint   # go vet, gofmt y golangci-lint
 ```
 
-Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
+Al arrancar aplica las migraciones de `migrations/` (con SQLite, las de `migrations/sqlite/`). Configuración por entorno:
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
-| `DATABASE_URL` | Postgres | obligatoria |
+| `DATABASE_URL` | `postgres://…` o, con SQLite, `sqlite:///ruta/intake.db` ([Con SQLite](#con-sqlite-sin-servidor-de-base-de-datos)) | obligatoria |
 | `LISTEN_ADDR` | dirección HTTP | `:8080` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
 | `PUBLIC_URL` | URL pública del servicio, para escribir los DSN y el enlace de los avisos | obligatoria para `projects create` y `list`; en `/api/0/projects/`, la de cada petición; sin ella, los avisos van sin enlace |
@@ -103,7 +137,7 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `METRICS_TOKEN` | token de `GET /metrics` ([Métricas](#métricas)); sin él, la ruta no existe y no se cuenta nada | vacío |
 | `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
 
-`GET /healthz` responde `ok` si Postgres contesta.
+`GET /healthz` responde `ok` si la base contesta.
 
 ## Interfaz
 
@@ -437,7 +471,7 @@ Los eventos guardados antes de esta versión siguen en `events.data` (`jsonb`). 
 
 Los eventos de los envíos que llegan mientras se escribe un lote van juntos en el siguiente, en una transacción: se buscan los repetidos, se bloquean los issues (una vez cada uno, por orden de id) y las releases en una ida y vuelta a Postgres; se decide cada evento en memoria y en su orden, igual que uno a uno (agrupado, regresión, tope, muestreo); y los eventos, los contadores de cada issue, los recuentos por release y entorno, las etiquetas y los usuarios se escriben de una vez en otra. Los avisos se encolan evento a evento dentro de la misma transacción. La respuesta espera a que su lote se confirme: un 200 sigue queriendo decir guardado. Si el lote falla, sus eventos se guardan uno a uno, así que el malo falla solo. Un lote lleva como mucho `INGEST_BATCH_MAX` eventos (los de un envío nunca se separan) y espera hasta `INGEST_BATCH_WAIT` solo si hay otro envío a medias de leer; con un envío solo, se escribe en el acto.
 
-`make carga` mide la ingesta: construye la imagen del `Dockerfile`, la arranca con `--cpus=0.25 --memory=256m` junto a un Postgres 16 en otro contenedor, sube los source maps de los fixtures y manda envíos hechos con `testdata/envelopes` con ids nuevos: un 45 % de cuatro errores calientes, un 20 % de una cola de 5.000 errores distintos, un 15 % del error del navegador con source maps, un 5 % de check-ins y un 15 % de sesiones. Va por pasos de concurrencia (`-concurrencia 1,4,16,64`, 20 s cada uno) o a un ritmo fijo (`-ritmo 300`), y deja en `carga-salida/` `informe.md` e `informe.json` con los eventos por segundo aceptados, las latencias p50, p95 y p99, los códigos, la CPU y lo que el cgroup la ha frenado, la RSS media y máxima, el pool, en qué esperan las conexiones con Postgres (`pg_stat_activity`), un perfil de CPU por paso (`cpu-*.pprof` y su `go tool pprof -top`) y la comprobación de que lo guardado cuadra con lo aceptado. Borra los contenedores, la red y la imagen que ha construido al acabar, también con Ctrl-C; con `-conservar-imagen` la deja, para repetir la medida con `-construir=false`. Necesita docker en la misma máquina, porque lee la memoria y la CPU del proceso desde `/proc` y su cgroup. Otro código: `make carga CARGA='-ref origin/main -salida carga-main'`.
+`make carga` mide la ingesta: construye la imagen del `Dockerfile`, la arranca con `--cpus=0.25 --memory=256m` junto a un Postgres 16 en otro contenedor, sube los source maps de los fixtures y manda envíos hechos con `testdata/envelopes` con ids nuevos: un 45 % de cuatro errores calientes, un 20 % de una cola de 5.000 errores distintos, un 15 % del error del navegador con source maps, un 5 % de check-ins y un 15 % de sesiones. Va por pasos de concurrencia (`-concurrencia 1,4,16,64`, 20 s cada uno) o a un ritmo fijo (`-ritmo 300`), y deja en `carga-salida/` `informe.md` e `informe.json` con los eventos por segundo aceptados, las latencias p50, p95 y p99, los códigos, la CPU y lo que el cgroup la ha frenado, la RSS media y máxima, el pool, en qué esperan las conexiones con Postgres (`pg_stat_activity`), un perfil de CPU por paso (`cpu-*.pprof` y su `go tool pprof -top`) y la comprobación de que lo guardado cuadra con lo aceptado. Borra los contenedores, la red y la imagen que ha construido al acabar, también con Ctrl-C; con `-conservar-imagen` la deja, para repetir la medida con `-construir=false`. Necesita docker en la misma máquina, porque lee la memoria y la CPU del proceso desde `/proc` y su cgroup. Otro código: `make carga CARGA='-ref origin/main -salida carga-main'`. Con `-motor sqlite` el servicio usa un fichero de SQLite en un directorio montado, sin contenedor de Postgres, y el informe no trae la sección de `pg_stat_activity`: `make carga CARGA='-motor sqlite -salida carga-sqlite'`.
 
 Medido el 2026-11-23 en un AMD Ryzen 7 9700X (WSL2, kernel 6.6, docker 29.9, 16 CPU), con la misma orden, pasos de 20 s:
 
@@ -449,6 +483,15 @@ Medido el 2026-11-23 en un AMD Ryzen 7 9700X (WSL2, kernel 6.6, docker 29.9, 16 
 | 64 | 195 | 703 ms | 56 MB | 323 | 298 ms | 59 MB |
 
 Con 0,25 vCPU y por debajo de 50 MB aguanta 214 eventos por segundo (antes, 172); al máximo, 323 (antes, 195). En todos los pasos la CPU está en su tope del 25 %. Antes, el 41 % del perfil era guardar el evento, casi todo escribir en el socket de Postgres (unas diez sentencias por evento), y con concurrencia las transacciones esperaban el cerrojo de la fila del issue caliente (`Lock:tuple` y `Lock:transactionid`, de 7 a 9 conexiones de media) con el pool agotado (929 s de espera a 64). Con lotes, escribir los lotes es el 4 % del perfil (el 10 % con preparar cada evento: source maps, huella y zstd) y lo que más pesa es leer el JSON del evento (31 %) y las dos lecturas de la base de cada envío, el proyecto y sus filtros (20 %); las esperas de cerrojos bajan a una conexión. No ha hecho falta ningún índice. Por encima de unos 16 envíos a la vez, la RSS pasa de 50 MB, antes y después: crece con los envíos en vuelo, no con los lotes.
+
+Con SQLite (`-motor sqlite`), la misma imagen y la misma mezcla, una medida de cada motor una detrás de otra el 2026-11-23; con Postgres la base va en otro contenedor sin límite de CPU, y con SQLite dentro de los 0,25 vCPU del servicio:
+
+| Concurrencia | SQLite: eventos/s | p99 | RSS máx | Postgres: eventos/s | p99 | RSS máx |
+|---|---|---|---|---|---|---|
+| 1 | 153 | 72 ms | 51 MB | 147 | 50 ms | 45 MB |
+| 4 | 216 | 90 ms | 55 MB | 209 | 82 ms | 48 MB |
+| 16 | 274 | 106 ms | 61 MB | 279 | 100 ms | 53 MB |
+| 64 | 324 | 396 ms | 63 MB | 325 | 295 ms | 59 MB |
 
 ### Filtros, tope y muestreo
 
@@ -476,13 +519,13 @@ El primer evento de un issue nuevo y el de una regresión se guardan siempre, au
 
 Las cifras de lo descartado se cuentan en memoria y se guardan cada 10 segundos y al parar, por proyecto, motivo y día (UTC); si el proceso muere sin parar, se pierden las de esos últimos segundos.
 
-Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de desarrollo (`docker compose up -d --wait db`, el servicio `db` del perfil `dev`, en el 5433):
+Los tests que usan la base (`internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert`, los subcomandos…) corren con Postgres si existe `INTAKE_ERRORS_TEST_DATABASE_URL`, con un esquema propio por test que se borra al acabar, y si no, con SQLite, en un fichero temporal por test: `go test ./...` sin nada instalado lo prueba todo con SQLite. Los pocos que solo tienen sentido con Postgres (sus migraciones, la conversión de los eventos de antes, varias réplicas a la vez) se saltan con SQLite y dicen por qué. Las salidas de referencia de la API, el MCP, los Markdown y el resumen son las mismas con los dos. Con el Postgres de desarrollo (`docker compose up -d --wait db`, el servicio `db` del perfil `dev`, en el 5433):
 
 ```sh
 INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...
 ```
 
-El código habla con la base por `internal/db` (consultas, filas, lotes y transacciones) y escribe el SQL que cambia de un motor a otro con su `Dialect`; solo `internal/db` e `internal/store` importan pgx, y un test lo hace cumplir. [docs/sqlite.md](docs/sqlite.md) recoge lo que sigue siendo propio de Postgres y cómo se hará con SQLite.
+El código habla con la base por `internal/db` (consultas, filas, lotes y transacciones), con una implementación para Postgres y otra para SQLite, y escribe el SQL que cambia de un motor a otro con su `Dialect`; solo `internal/db` e `internal/store` importan pgx, y un test lo hace cumplir. [docs/sqlite.md](docs/sqlite.md) recoge lo que es propio de Postgres y cómo se hace con SQLite.
 
 ## Releases, despliegues y entornos
 

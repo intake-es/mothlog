@@ -151,7 +151,7 @@ func TestSessionUpdatesCountOnceWithFinalStatus(t *testing.T) {
 func TestSessionsFollowProjectFilters(t *testing.T) {
 	e := newTestEnv(t, 1000)
 	if _, err := e.s.Pool().Exec(context.Background(),
-		`INSERT INTO project_filters (project_id, environments) VALUES (2, '{staging}')`); err != nil {
+		`INSERT INTO project_filters (project_id, environments) VALUES (2, $1)`, []string{"staging"}); err != nil {
 		t.Fatal(err)
 	}
 	e.sendSession(t, session("aaaa", true, "exited", 0, time.Now(), ""))
@@ -179,7 +179,7 @@ func TestPurgeSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := e.s.Pool().Exec(ctx, `INSERT INTO release_users (project_id, release, environment, user_hash, last_seen)
-		VALUES (2, '2.0.0', 'staging', '\x00', $1)`, now.AddDate(0, 0, -100)); err != nil {
+		VALUES (2, '2.0.0', 'staging', $2, $1)`, now.AddDate(0, 0, -100), []byte{0}); err != nil {
 		t.Fatal(err)
 	}
 	n, err := PurgeSessions(ctx, e.s.Pool(), now.AddDate(0, 0, -90), now)

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -1049,8 +1050,10 @@ func TestRulesLookupUsesIngestTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	// Con SQLite hay una sola conexión de escritura, la de tx; las demás leen.
+	readOnly := pool.Dialect().Name() == "sqlite"
 	for range pool.Stats().Max - 1 {
-		busy, err := pool.Begin(ctx)
+		busy, err := pool.BeginTx(ctx, db.TxOptions{ReadOnly: readOnly})
 		if err != nil {
 			t.Fatal(err)
 		}

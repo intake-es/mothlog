@@ -9,11 +9,14 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 func randomHex(t *testing.T, n int) string {
@@ -25,13 +28,15 @@ func randomHex(t *testing.T, n int) string {
 	return hex.EncodeToString(b)
 }
 
-// testSchemaURL crea un esquema propio en la base de pruebas, que se borra al
-// acabar, y devuelve la URL que lo usa.
-func testSchemaURL(t *testing.T) string {
+// testSchemaURL crea un esquema propio en la base de pruebas de Postgres,
+// que se borra al acabar, y devuelve la URL que lo usa. Es para los tests que
+// solo tienen sentido con Postgres (sus migraciones, varias réplicas): sin
+// Postgres, el test se salta y why dice por qué.
+func testSchemaURL(t *testing.T, why string) string {
 	t.Helper()
 	base := os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL")
 	if base == "" {
-		t.Skip("sin INTAKE_ERRORS_TEST_DATABASE_URL")
+		t.Skip("solo con Postgres (INTAKE_ERRORS_TEST_DATABASE_URL): " + why)
 	}
 	ctx := context.Background()
 	schema := "test_" + randomHex(t, 6)
@@ -58,11 +63,29 @@ func testSchemaURL(t *testing.T) string {
 	return u.String()
 }
 
+// testURL es un esquema propio de la base de pruebas de Postgres o, sin
+// INTAKE_ERRORS_TEST_DATABASE_URL, un fichero de SQLite nuevo.
+func testURL(t *testing.T) string {
+	t.Helper()
+	if os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL") == "" {
+		return "sqlite://" + filepath.Join(t.TempDir(), "intake.db")
+	}
+	return testSchemaURL(t, "")
+}
+
+// onlyPostgres salta el test con SQLite; why dice por qué solo vale con Postgres.
+func onlyPostgres(t *testing.T, why string) {
+	t.Helper()
+	if os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL") == "" {
+		t.Skip("solo con Postgres (INTAKE_ERRORS_TEST_DATABASE_URL): " + why)
+	}
+}
+
 // testStore abre un Store en un esquema propio de la base de pruebas.
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	ctx := context.Background()
-	u := testSchemaURL(t)
+	u := testURL(t)
 
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	s, err := Open(ctx, u, log)
@@ -72,7 +95,7 @@ func testStore(t *testing.T) *Store {
 	t.Cleanup(s.Close)
 
 	// Volver a abrir no debe fallar: las migraciones ya están aplicadas.
-	again, err := Open(ctx, u, log)
+	again, err := OpenForCommand(ctx, u, log)
 	if err != nil {
 		t.Fatalf("segunda apertura: %v", err)
 	}
@@ -80,10 +103,23 @@ func testStore(t *testing.T) *Store {
 	return s
 }
 
+// pgCode es el código de Postgres del error; con SQLite, el que le
+// corresponde a su código extendido.
 func pgCode(err error) string {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) {
 		return pe.Code
+	}
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		switch se.Code() {
+		case sqlite3.SQLITE_CONSTRAINT_UNIQUE, sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY:
+			return "23505"
+		case sqlite3.SQLITE_CONSTRAINT_FOREIGNKEY:
+			return "23503"
+		case sqlite3.SQLITE_CONSTRAINT_CHECK:
+			return "23514"
+		}
 	}
 	return ""
 }
@@ -173,5 +209,17 @@ func TestIssueAndEventConstraints(t *testing.T) {
 	var level string
 	if err := s.pool.QueryRow(ctx, `SELECT data->>'level' FROM events WHERE project_id = $1`, a.ID).Scan(&level); err != nil || level != "error" {
 		t.Errorf("jsonb: %q, %v", level, err)
+	}
+}
+
+// Con SQLite no hay eventos de antes que convertir.
+func TestConvertLegacyEventsNoopOnSQLite(t *testing.T) {
+	if os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL") != "" {
+		t.Skip("solo con SQLite")
+	}
+	s := testStore(t)
+	n, err := s.ConvertLegacyEvents(context.Background(), DefaultConvertOptions(nil))
+	if err != nil || n != 0 {
+		t.Fatalf("convertidos %d, %v", n, err)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/intake-es/intake-errors/internal/api"
+	dbpkg "github.com/intake-es/intake-errors/internal/db"
 	"github.com/intake-es/intake-errors/internal/digest"
 	"github.com/intake-es/intake-errors/internal/envelope"
 	"github.com/intake-es/intake-errors/internal/event"
@@ -61,8 +62,7 @@ func setupFixtures(t *testing.T) *goldenEnv {
 	db := storetest.NewDB(t)
 	ctx := context.Background()
 	for _, p := range fixtureProjects {
-		if _, err := db.Pool().Exec(ctx,
-			`INSERT INTO projects (id, name, public_key) OVERRIDING SYSTEM VALUE VALUES ($1, $2, $3)`,
+		if _, err := db.Pool().Exec(ctx, storetest.ProjectWithIDSQL(db.Pool().Dialect()),
 			p.id, p.name, p.key); err != nil {
 			t.Fatal(err)
 		}
@@ -127,13 +127,11 @@ func setupFixtures(t *testing.T) *goldenEnv {
 	}
 
 	// Lo que depende del reloj de la ingesta, fijo para comparar.
-	for _, q := range []string{
-		`UPDATE events SET received_at = occurred_at`,
-		`UPDATE releases SET first_seen = '2026-11-19T00:00:00Z'`,
-	} {
-		if _, err := db.Pool().Exec(ctx, q); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := db.Pool().Exec(ctx, `UPDATE events SET received_at = occurred_at`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Pool().Exec(ctx, `UPDATE releases SET first_seen = $1`, time.Date(2026, 11, 19, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
 	}
 	return e
 }
@@ -326,9 +324,7 @@ func (e *goldenEnv) outputs(t *testing.T) string {
 		}
 		issues = append(issues, id)
 	}
-	if err := e.db.Pool().QueryRow(ctx, `SELECT array_agg(id ORDER BY id) FROM events`).Scan(&events); err != nil {
-		t.Fatal(err)
-	}
+	events = e.eventIDs(t, "true")
 	if len(issues) == 0 || len(events) == 0 {
 		t.Fatalf("%d issues y %d eventos", len(issues), len(events))
 	}
@@ -358,8 +354,12 @@ func (e *goldenEnv) outputs(t *testing.T) string {
 		get(fmt.Sprintf("/api/0/events/%d/", id))
 		tool("get_event", map[string]any{"event_id": fmt.Sprint(id)})
 	}
-	var eventIDs []string
-	if err := e.db.Pool().QueryRow(ctx, `SELECT array_agg(replace(event_id::text, '-', '') ORDER BY id) FROM events`).Scan(&eventIDs); err != nil {
+	rows, err = e.db.Pool().Query(ctx, `SELECT replace(CAST(event_id AS text), '-', '') FROM events ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventIDs, err := dbpkg.CollectRows(rows, dbpkg.RowTo[string])
+	if err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range eventIDs {
@@ -429,9 +429,12 @@ func TestFixturesOutputsMatchGolden(t *testing.T) {
 
 func (e *goldenEnv) eventIDs(t *testing.T, where string) []int64 {
 	t.Helper()
-	var ids []int64
-	if err := e.db.Pool().QueryRow(context.Background(),
-		`SELECT COALESCE(array_agg(id ORDER BY id), '{}') FROM events WHERE `+where).Scan(&ids); err != nil {
+	rows, err := e.db.Pool().Query(context.Background(), `SELECT id FROM events WHERE `+where+` ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := dbpkg.CollectRows(rows, dbpkg.RowTo[int64])
+	if err != nil {
 		t.Fatal(err)
 	}
 	return ids
@@ -440,6 +443,7 @@ func (e *goldenEnv) eventIDs(t *testing.T, where string) []int64 {
 // Con los eventos guardados como antes (en jsonb), con la mitad de cada
 // formato y una vez convertidos, todo se lee igual que antes del cambio.
 func TestFixturesOutputsWithLegacyEvents(t *testing.T) {
+	storetest.OnlyPostgres(t, "los eventos de antes, en jsonb, no existen en SQLite y su conversión no hace nada")
 	e := setupFixtures(t)
 	ctx := context.Background()
 	all := e.eventIDs(t, "true")

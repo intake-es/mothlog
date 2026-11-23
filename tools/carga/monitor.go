@@ -151,6 +151,9 @@ func (m *monitor) empezar(ctx context.Context) {
 
 // muestrearBase apunta en qué está cada conexión del servicio con Postgres.
 func (m *monitor) muestrearBase(ctx context.Context) {
+	if m.pool.Dialect().Name() != "postgres" {
+		return
+	}
 	rows, err := m.pool.Query(ctx, `
 		SELECT COALESCE(state, ''), COALESCE(wait_event_type, ''), COALESCE(wait_event, '')
 		FROM pg_stat_activity

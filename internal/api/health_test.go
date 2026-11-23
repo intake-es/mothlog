@@ -29,7 +29,8 @@ func TestReleaseHealthAPIAndMCP(t *testing.T) {
 	}
 	if _, err := e.db.Pool().Exec(ctx, `
 		INSERT INTO release_users (project_id, release, environment, user_hash, crashed, last_seen) VALUES
-			($1, '1.0', 'production', '\x01', true, now()), ($1, '1.0', 'production', '\x02', false, now())`, web.ID); err != nil {
+			($1, '1.0', 'production', $2, true, now()), ($1, '1.0', 'production', $3, false, now())`,
+		web.ID, []byte{1}, []byte{2}); err != nil {
 		t.Fatal(err)
 	}
 

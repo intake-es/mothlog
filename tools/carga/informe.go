@@ -60,15 +60,17 @@ type linea struct {
 
 type informe struct {
 	Etiqueta, Commit, Imagen string
-	CPUs, Memoria            string
-	Env                      []string
-	Duracion, Ritmo          float64
-	Maquina, Fecha           string
-	RSSReposoMB              float64
-	RSSPicoMB                float64
-	Pasos                    []paso
-	Metricas                 metricas `json:"-"`
-	Comprobacion             comprobacion
+	// Motor es postgres o sqlite.
+	Motor           string
+	CPUs, Memoria   string
+	Env             []string
+	Duracion, Ritmo float64
+	Maquina, Fecha  string
+	RSSReposoMB     float64
+	RSSPicoMB       float64
+	Pasos           []paso
+	Metricas        metricas `json:"-"`
+	Comprobacion    comprobacion
 	// Aguanta es el paso con más eventos por segundo sin errores y por debajo
 	// del objetivo de memoria.
 	Aguanta *paso
@@ -93,7 +95,8 @@ func comprobar(ctx context.Context, pool db.DB, reg *registro, met metricas) (co
 	for p, ids := range reg.eventos {
 		aceptados += int64(len(ids))
 		var n int64
-		if err := pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE project_id = $1 AND event_id = ANY($2)`, p, ids).Scan(&n); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE project_id = $1 AND `+
+			pool.Dialect().InList("event_id", "$2"), p, ids).Scan(&n); err != nil {
 			return c, err
 		}
 		guardados += n
@@ -119,7 +122,8 @@ func comprobar(ctx context.Context, pool db.DB, reg *registro, met metricas) (co
 			return c, fmt.Errorf("%s: %w", k, err)
 		}
 	}
-	checkIns, err := q(`SELECT count(*) FROM monitor_checkins WHERE replace(check_in_id::text, '-', '') = ANY($1)`, reg.checkIns)
+	checkIns, err := q(`SELECT count(*) FROM monitor_checkins WHERE `+
+		pool.Dialect().InList("replace(CAST(check_in_id AS text), '-', '')", "$1"), reg.checkIns)
 	if err != nil {
 		return c, err
 	}
@@ -159,7 +163,11 @@ func (inf *informe) escribir(dir string) error {
 	var w strings.Builder
 	f := func(format string, args ...any) { fmt.Fprintf(&w, format, args...) }
 	f("# Prueba de carga: %s\n\n", inf.Etiqueta)
-	f("- Commit: %s\n- Imagen: %s, con `--cpus=%s --memory=%s`; Postgres 16 en otro contenedor\n", inf.Commit, inf.Imagen, inf.CPUs, inf.Memoria)
+	base := "Postgres 16 en otro contenedor"
+	if inf.Motor == "sqlite" {
+		base = "SQLite en un fichero de un directorio montado en el contenedor"
+	}
+	f("- Commit: %s\n- Imagen: %s, con `--cpus=%s --memory=%s`; %s\n", inf.Commit, inf.Imagen, inf.CPUs, inf.Memoria, base)
 	if len(inf.Env) > 0 {
 		f("- Entorno del servicio: `%s`\n", strings.Join(inf.Env, " "))
 	}
@@ -195,26 +203,8 @@ func (inf *informe) escribir(dir string) error {
 			strings.Join(cs, ", "), p.CPUPorcentaje, p.CPUFrenadoSegundos, p.RSSMedioMB, p.RSSMaxMB,
 			p.PoolEnUsoMax, p.PoolMax, p.PoolEsperas, p.PoolEsperaSegundos)
 	}
-	f("\n## Conexiones del servicio con Postgres\n\nMedia de conexiones en cada estado y espera por muestra de `pg_stat_activity` (cada 200 ms, sin las inactivas). `idle in transaction · Client:ClientRead` es una transacción abierta esperando al servicio; `active · Lock:…`, una esperando el cerrojo de otra.\n\n")
-	for _, p := range inf.Pasos {
-		f("- %s: ", p.Nombre)
-		keys := slices.SortedFunc(maps.Keys(p.ConexionesBase), func(a, b string) int {
-			switch {
-			case p.ConexionesBase[a] > p.ConexionesBase[b]:
-				return -1
-			case p.ConexionesBase[a] < p.ConexionesBase[b]:
-				return 1
-			}
-			return strings.Compare(a, b)
-		})
-		var es []string
-		for _, k := range keys {
-			es = append(es, fmt.Sprintf("%s %.2f", k, p.ConexionesBase[k]))
-		}
-		if len(es) == 0 {
-			es = []string{"ninguna activa"}
-		}
-		f("%s\n", strings.Join(es, "; "))
+	if inf.Motor != "sqlite" {
+		inf.conexiones(f)
 	}
 	f("\n## Lo guardado cuadra con lo aceptado\n\n| Comprobación | Esperado | En la base | |\n|---|---|---|---|\n")
 	for _, l := range inf.Comprobacion.Lineas {
@@ -244,4 +234,29 @@ func (inf *informe) escribir(dir string) error {
 		f("```\n")
 	}
 	return os.WriteFile(filepath.Join(dir, "informe.md"), []byte(w.String()), 0o644)
+}
+
+// conexiones escribe en qué esperan las conexiones con Postgres en cada paso.
+func (inf *informe) conexiones(f func(string, ...any)) {
+	f("\n## Conexiones del servicio con Postgres\n\nMedia de conexiones en cada estado y espera por muestra de `pg_stat_activity` (cada 200 ms, sin las inactivas). `idle in transaction · Client:ClientRead` es una transacción abierta esperando al servicio; `active · Lock:…`, una esperando el cerrojo de otra.\n\n")
+	for _, p := range inf.Pasos {
+		f("- %s: ", p.Nombre)
+		keys := slices.SortedFunc(maps.Keys(p.ConexionesBase), func(a, b string) int {
+			switch {
+			case p.ConexionesBase[a] > p.ConexionesBase[b]:
+				return -1
+			case p.ConexionesBase[a] < p.ConexionesBase[b]:
+				return 1
+			}
+			return strings.Compare(a, b)
+		})
+		var es []string
+		for _, k := range keys {
+			es = append(es, fmt.Sprintf("%s %.2f", k, p.ConexionesBase[k]))
+		}
+		if len(es) == 0 {
+			es = []string{"ninguna activa"}
+		}
+		f("%s\n", strings.Join(es, "; "))
+	}
 }

@@ -150,10 +150,10 @@ func pgBatch(b *Batch) *pgx.Batch {
 }
 
 // IsUniqueViolation dice si err es por una restricción UNIQUE.
-func IsUniqueViolation(err error) bool { return pgCode(err) == "23505" }
+func IsUniqueViolation(err error) bool { return pgCode(err) == "23505" || isSQLiteUnique(err) }
 
 // IsForeignKeyViolation dice si err es por una clave ajena que no existe.
-func IsForeignKeyViolation(err error) bool { return pgCode(err) == "23503" }
+func IsForeignKeyViolation(err error) bool { return pgCode(err) == "23503" || isSQLiteForeignKey(err) }
 
 func pgCode(err error) string {
 	var pe *pgconn.PgError
