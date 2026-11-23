@@ -126,8 +126,13 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i, f := range files {
-		if _, err := Parse(f.Map); err != nil {
+		m, err := Parse(f.Map)
+		if err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("%s no es un source map v3 válido: %v", names[i], err))
+			return
+		}
+		if err := s.checkSize(names[i], m); err != nil {
+			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
 			return
 		}
 	}

@@ -470,7 +470,7 @@ Una clave es una letra o `_` seguida de letras, números, `_`, `.` o `-`; lo que
 
 ## Ingesta
 
-Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido y 10 MiB descomprimido. Se guardan los items `event` y se cuentan los `session` y `sessions` ([Salud de las releases](#salud-de-las-releases)); el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
+Los SDK envían a `POST /api/<id>/envelope/` con la clave del DSN en `X-Sentry-Auth` o en `sentry_key` de la query. Se aceptan hasta 1 MiB comprimido, 10 MiB descomprimido y 100 items por envelope; pasado cualquiera de los tres, 413. Se guardan los items `event` y se cuentan los `session` y `sessions` ([Salud de las releases](#salud-de-las-releases)); el resto se acepta y se ignora. Pasado el límite por minuto del proyecto (`RATE_LIMIT_PER_MINUTE` si no pone el suyo), responde 429 con `Retry-After` y `X-Sentry-Rate-Limits`; el límite se cuenta en memoria, por réplica.
 
 Cada evento se agrupa en un issue por su huella: el `fingerprint` del SDK si lo trae; si no, el tipo de la excepción lanzada y el módulo o fichero y la función de sus fotogramas `in_app` (sin líneas); y en los logs sin excepción, el logger y el mensaje con UUIDs, hexadecimales y números cambiados por marcadores. Un evento en un issue `resolved`, o en uno `resolved_next` con una release posterior, lo reabre como regresión ([Releases, despliegues y entornos](#releases-despliegues-y-entornos)).
 
@@ -684,11 +684,13 @@ Los errores del navegador se traducen a su TypeScript original con los `.map` de
 {"release": "2026.11.19-1", "files": [{"name": "chunk-Z554BZQ6.js.map", "file": "chunk-Z554BZQ6.js", "size": 6177}]}
 ```
 
-Errores, como `{"error": "..."}`: 401 sin token o con uno malo, 404 si el proyecto no existe, 413 si un fichero pasa de 20 MiB o la petición de 100 MiB, y 400 si un fichero no es un source map v3 válido (con su nombre). Si algo falla no se guarda nada de esa petición.
+Errores, como `{"error": "..."}`: 401 sin token o con uno malo, 404 si el proyecto no existe, 413 si un fichero pasa de 20 MiB, la petición de 100 MiB o un mapa ocupa ya parseado más que la caché de source maps (64 MiB; el mensaje dice cuánto ocupa), y 400 si un fichero no es un source map v3 válido (con su nombre). Si algo falla no se guarda nada de esa petición.
 
 Cómo subirlos en el build, en [Desplegar](#desplegar).
 
 Al recibir un evento, cada fotograma de un `.js` con mapa pasa a su fichero original (`src/...`), con su línea, columna y 5 líneas de contexto antes y después de `sourcesContent`. El mapa se busca primero por el debug ID que el SDK manda en `debug_meta.images` (las imágenes `sourcemap`, por la URL del `.js`); si el evento no lo trae o ese debug ID no está subido, por el `release` y el `dist` del evento y el nombre del `.js` (un mapa subido sin dist vale para cualquiera). El evento guardado conserva `debug_meta` y `dist`. `in_app` queda falso para lo que viene de `node_modules/`. La función se deja como la manda el SDK, y la posición minificada se guarda en `minified`. Sin debug ID ni release, sin mapa o con un mapa roto, el fotograma se queda como estaba.
+
+Lo que cuesta un evento está acotado, tenga los fotogramas que tenga: se traducen como mucho 250, empezando por los más internos (el último fotograma de la última excepción); cada mapa se lee una vez por evento; cada línea de contexto se recorta a 512 caracteres y, cuando el evento ya lleva 256 KiB de contexto, el resto de fotogramas se traduce sin sus líneas; y no se busca ningún mapa con un `release`, un `dist` o un nombre de `.js` de más de 512 caracteres. Los mapas leídos se guardan en una caché en memoria de 64 MiB, que cuenta lo que ocupa cada mapa ya parseado y cada búsqueda sin mapa, y cada mapa caduca en ella a la hora; la retención la vacía en cada réplica, borre o no filas esa réplica, así que ninguna sigue usando un mapa que otra ha borrado.
 
 La ingesta pasa cada evento por esta traducción antes de agruparlo, así que los errores del navegador se agrupan por su fichero y función originales.
 
@@ -722,7 +724,7 @@ Las versiones actuales (probado con 3.8.2) suben un artifact bundle por trozos:
 |---|---|
 | `GET /api/0/organizations/{org}/chunk-upload/` | las opciones de la subida: trozos de 8 MiB en gzip con su sha1, hasta 32 MiB por petición y 100 MiB por bundle |
 | `POST /api/0/organizations/{org}/chunk-upload/` | guarda los trozos (`file_gzip` o `file`, con el sha1 del trozo de nombre); si el sha1 no coincide, 400 |
-| `POST /api/0/organizations/{org}/artifactbundle/assemble/` | `not_found` con los trozos que faltan; `ok` cuando el bundle queda guardado, o si ya lo estaba y sus trozos caducaron; `error` con el motivo si el bundle no es un zip, no trae `manifest.json`, un mapa no es un source map v3 o sus mapas pasan de 100 MiB descomprimidos, y entonces no se guarda nada de él |
+| `POST /api/0/organizations/{org}/artifactbundle/assemble/` | `not_found` con los trozos que faltan; `ok` cuando el bundle queda guardado, o si ya lo estaba y sus trozos caducaron; `error` con el motivo si el bundle no es un zip, no trae `manifest.json`, un mapa no es un source map v3 o no cabe en la caché de source maps ya parseado, o sus mapas pasan de 100 MiB descomprimidos, y entonces no se guarda nada de él |
 
 Del bundle se guardan solo los `.map`, con el release y el dist de la petición (o, si no los trae, los de su `manifest.json`), la URL de su `.js` (`~/assets/main-XXXX.js`) y su debug ID. Los trozos se guardan un día, aunque ya se hayan ensamblado, porque otra subida del mismo build puede estar usándolos; mientras están, volver a subir un bundle vuelve a guardar sus mapas (los repone si otra subida los sustituyó por nombre) y renueva su fecha para la retención.
 

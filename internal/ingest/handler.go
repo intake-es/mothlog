@@ -147,6 +147,10 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	env, err := envelope.Parse(data)
+	if errors.Is(err, envelope.ErrTooManyItems) {
+		fail(w, http.StatusRequestEntityTooLarge, err.Error())
+		return
+	}
 	if err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return

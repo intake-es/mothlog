@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/store/storetest"
 )
@@ -275,5 +276,45 @@ func TestStoreSentryCLIReleases(t *testing.T) {
 	rec = serve(t, s, http.MethodPost, "/api/0/organizations/o/releases/prueba-releases/deploys/", "Bearer no-vale", "application/json", []byte(`{"environment":"production"}`))
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("token malo: %d", rec.Code)
+	}
+}
+
+// Dos réplicas sobre la misma base: cuando la retención de una borra un
+// mapa, la otra deja de usarlo en su siguiente pasada aunque no borre nada.
+func TestStorePurgeAcrossReplicas(t *testing.T) {
+	st, admin := dbStore(t)
+	ctx := context.Background()
+	p, err := st.CreateProject(ctx, "web", "ce01335f125960aa6957a133d15b5f3a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(st, quiet(), Options{UploadToken: token})
+	b := New(st, quiet(), Options{UploadToken: token})
+	uploadOK(t, a, p.ID, release1, mapFile(t, chunkJS+".map"))
+
+	enrichTop := func(s *Service) event.Frame {
+		ev := readEvent(t, "web-typeerror-1")
+		if err := s.Enrich(ctx, p.ID, ev); err != nil {
+			t.Fatal(err)
+		}
+		return topFrame(ev)
+	}
+	if top := enrichTop(b); top.Filename != carrito {
+		t.Fatalf("la réplica b no traduce: %s", top.Filename)
+	}
+
+	if _, err := admin.Exec(ctx, `UPDATE sourcemaps SET uploaded_at = `+admin.Dialect().SubSeconds("now()", "7862400")); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := a.Purge(ctx, 90*24*time.Hour); err != nil || n != 1 {
+		t.Fatalf("la réplica a borra %d, %v", n, err)
+	}
+	if n, err := b.Purge(ctx, 90*24*time.Hour); err != nil || n != 0 {
+		t.Fatalf("la réplica b borra %d, %v", n, err)
+	}
+	for name, s := range map[string]*Service{"a": a, "b": b} {
+		if top := enrichTop(s); top.Minified != nil {
+			t.Errorf("la réplica %s traduce con un mapa borrado", name)
+		}
 	}
 }

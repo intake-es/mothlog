@@ -259,7 +259,7 @@ func (s *Service) assemble(w http.ResponseWriter, r *http.Request) error {
 		files []store.SourceMapFile
 	)
 	if detail == "" {
-		m, files, err = readBundle(b, s.opts.MaxFileBytes, s.opts.MaxBundleBytes)
+		m, files, err = readBundle(b, s.opts.MaxFileBytes, s.opts.MaxBundleBytes, s.checkSize)
 		if err != nil {
 			detail = err.Error()
 		}
@@ -423,8 +423,12 @@ func (s *Service) uploadReleaseFile(w http.ResponseWriter, r *http.Request) erro
 		name = "~/" + path.Base(strings.ReplaceAll(filename, `\`, "/"))
 	}
 	if jsURL, ok := strings.CutSuffix(name, ".map"); ok {
-		if _, err := Parse(data); err != nil {
+		sm, err := Parse(data)
+		if err != nil {
 			return cliErr(http.StatusBadRequest, "%s no es un source map v3 válido: %v", name, err)
+		}
+		if err := s.checkSize(name, sm); err != nil {
+			return cliErr(http.StatusRequestEntityTooLarge, "%s", err.Error())
 		}
 		f := store.SourceMapFile{File: path.Base(jsURL), Dist: dist, URL: jsURL, DebugID: mapDebugID(data), Map: data}
 		for _, id := range ids {

@@ -55,7 +55,10 @@ func Parse(b []byte) (*Map, error) {
 		sources:  make([]string, len(r.Sources)),
 		contents: make([][]string, len(r.Sources)),
 		index:    make(map[string]int, len(r.Sources)),
-		size:     int64(len(b)),
+		// El texto de las fuentes y su contenido sale del JSON, que no se
+		// retiene; cada fuente cuesta además su cadena, su slice de líneas y
+		// su entrada en el índice.
+		size: int64(len(b)) + int64(len(r.Sources))*(16+24+64),
 	}
 	for i, s := range r.Sources {
 		if s != nil {
@@ -73,12 +76,15 @@ func Parse(b []byte) (*Map, error) {
 			m.size += int64(len(lines)) * 16
 		}
 	}
-	lines, n, err := decodeMappings(*r.Mappings, len(m.sources))
+	lines, err := decodeMappings(*r.Mappings, len(m.sources))
 	if err != nil {
 		return nil, err
 	}
 	m.lines = lines
-	m.size += int64(n) * 16
+	m.size += int64(cap(lines)) * 24
+	for _, l := range lines {
+		m.size += int64(cap(l)) * 16
+	}
 	return m, nil
 }
 
@@ -148,12 +154,11 @@ var base64Value = func() (t [256]int8) {
 }()
 
 // decodeMappings devuelve los segmentos de cada línea generada, ordenados por
-// columna, y cuántos hay en total.
-func decodeMappings(s string, nSources int) ([][]segment, int, error) {
+// columna.
+func decodeMappings(s string, nSources int) ([][]segment, error) {
 	var (
 		lines                [][]segment
 		cur                  []segment
-		total                int
 		src, srcLine, srcCol int64
 		genCol               int64
 		fields               [5]int64
@@ -185,7 +190,6 @@ func decodeMappings(s string, nSources int) ([][]segment, int, error) {
 			return fmt.Errorf("mappings: columna no válida en la línea %d", len(lines)+1)
 		}
 		cur = append(cur, seg)
-		total++
 		nf = 0
 		return nil
 	}
@@ -202,37 +206,37 @@ func decodeMappings(s string, nSources int) ([][]segment, int, error) {
 		switch s[i] {
 		case ';':
 			if err := flushSegment(); err != nil {
-				return nil, 0, err
+				return nil, err
 			}
 			flushLine()
 			i++
 			continue
 		case ',':
 			if nf == 0 {
-				return nil, 0, fmt.Errorf("mappings: segmento vacío en la línea %d", len(lines)+1)
+				return nil, fmt.Errorf("mappings: segmento vacío en la línea %d", len(lines)+1)
 			}
 			if err := flushSegment(); err != nil {
-				return nil, 0, err
+				return nil, err
 			}
 			i++
 			continue
 		}
 		v, n, err := decodeVLQ(s[i:])
 		if err != nil {
-			return nil, 0, fmt.Errorf("mappings: %w en la línea %d", err, len(lines)+1)
+			return nil, fmt.Errorf("mappings: %w en la línea %d", err, len(lines)+1)
 		}
 		if nf == len(fields) {
-			return nil, 0, fmt.Errorf("mappings: segmento con más de 5 campos en la línea %d", len(lines)+1)
+			return nil, fmt.Errorf("mappings: segmento con más de 5 campos en la línea %d", len(lines)+1)
 		}
 		fields[nf] = v
 		nf++
 		i += n
 	}
 	if err := flushSegment(); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	flushLine()
-	return lines, total, nil
+	return lines, nil
 }
 
 func decodeVLQ(s string) (int64, int, error) {

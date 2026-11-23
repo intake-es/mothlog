@@ -47,8 +47,8 @@ func (f manifestFile) debugID() string {
 // readBundle abre un artifact bundle y devuelve su manifest y sus source
 // maps, validados. Los .js no se guardan: solo sirven para saber a qué
 // fichero y debug ID va cada mapa. Cada mapa puede ocupar maxFile y todos
-// juntos, descomprimidos, maxTotal.
-func readBundle(b []byte, maxFile, maxTotal int64) (manifest, []store.SourceMapFile, error) {
+// juntos, descomprimidos, maxTotal; check rechaza los que no caben en la caché.
+func readBundle(b []byte, maxFile, maxTotal int64, check func(string, *Map) error) (manifest, []store.SourceMapFile, error) {
 	var m manifest
 	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
@@ -105,8 +105,12 @@ func readBundle(b []byte, maxFile, maxTotal int64) (manifest, []store.SourceMapF
 		if label == "" {
 			label = name
 		}
-		if _, err := Parse(data); err != nil {
+		sm, err := Parse(data)
+		if err != nil {
 			return m, nil, fmt.Errorf("%s no es un source map v3 válido: %v", label, err)
+		}
+		if err := check(label, sm); err != nil {
+			return m, nil, err
 		}
 		js := jsFor[f.URL]
 		id := f.debugID()

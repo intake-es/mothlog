@@ -13,6 +13,12 @@ import (
 // ErrMalformed envuelve todos los errores de un envelope que no se puede leer.
 var ErrMalformed = errors.New("envelope mal formado")
 
+// MaxItems es el tope de items de un envelope; los SDK mandan unos pocos.
+const MaxItems = 100
+
+// ErrTooManyItems se devuelve cuando el envelope trae más de MaxItems items.
+var ErrTooManyItems = fmt.Errorf("el envelope trae más de %d items", MaxItems)
+
 const (
 	TypeEvent        = "event"
 	TypeTransaction  = "transaction"
@@ -93,6 +99,9 @@ func Parse(data []byte) (*Envelope, error) {
 		rest = bytes.TrimLeft(rest, " \t\r\n")
 		if len(rest) == 0 {
 			break
+		}
+		if n == MaxItems {
+			return nil, ErrTooManyItems
 		}
 		line, rest, _ = bytes.Cut(rest, []byte("\n"))
 		var it Item

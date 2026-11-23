@@ -538,6 +538,10 @@ func TestRejections(t *testing.T) {
 		{"envelope roto", func() *http.Request {
 			return f.request(gz([]byte("{}\n{\"type\":\"event\",\"length\":100}\n{\"message\":\"x\"}\n")))
 		}, http.StatusBadRequest},
+		{"más items de la cuenta", func() *http.Request {
+			body := "{}\n" + strings.Repeat("{\"type\":\"client_report\"}\n{}\n", envelope.MaxItems) + "{\"type\":\"event\"}\n{\"message\":\"x\"}\n"
+			return f.request(gz([]byte(body)))
+		}, http.StatusRequestEntityTooLarge},
 		{"gzip roto", func() *http.Request { return f.request(f.body[:len(f.body)/2]) }, http.StatusBadRequest},
 		{"event que no es json", func() *http.Request {
 			return f.request(gz([]byte("{}\n{\"type\":\"event\"}\n{no es json}\n")))

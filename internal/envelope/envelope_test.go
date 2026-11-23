@@ -194,6 +194,17 @@ func TestDecompressBroken(t *testing.T) {
 	}
 }
 
+func TestParseMaxItems(t *testing.T) {
+	item := "{\"type\":\"client_report\"}\n{}\n"
+	env, err := Parse([]byte("{}\n" + strings.Repeat(item, MaxItems)))
+	if err != nil || len(env.Items) != MaxItems {
+		t.Fatalf("con %d items: %v", MaxItems, err)
+	}
+	if _, err := Parse([]byte("{}\n" + strings.Repeat(item, MaxItems+1))); !errors.Is(err, ErrTooManyItems) {
+		t.Fatalf("con %d items: err = %v; quiero ErrTooManyItems", MaxItems+1, err)
+	}
+}
+
 func TestDecompressLimit(t *testing.T) {
 	big := bytes.Repeat([]byte("a"), 10_000)
 	_, err := Decompress(bytes.NewReader(compress(t, "gzip", big)), "gzip", 9_999)

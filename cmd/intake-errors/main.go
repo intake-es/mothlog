@@ -151,6 +151,7 @@ func run(args []string) error {
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
+	setMemoryLimit(log, "/sys/fs/cgroup")
 	if addr := os.Getenv("PPROF_ADDR"); addr != "" {
 		if !webauth.Loopback(addr) {
 			return fmt.Errorf("PPROF_ADDR solo vale en loopback (127.0.0.1, [::1] o localhost), no en %q", addr)
