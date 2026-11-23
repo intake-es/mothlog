@@ -9,8 +9,12 @@
       <span class="sp-skeleton login__skeleton"></span>
     } @else if (configured()) {
       <p class="login__lede">
-        @if (github()) {
+        @if (github() && oidc()) {
+          {{ t('login.lede.choose') }}
+        } @else if (github()) {
           {{ orgLede().before }}<strong>{{ info()?.org }}</strong>{{ orgLede().after }}
+        } @else if (oidc()) {
+          {{ oidcLede().before }}<strong>{{ oidcName() }}</strong>{{ oidcLede().after }}
         } @else {
           {{ t('login.lede.dev') }}
         }
@@ -30,8 +34,14 @@
             {{ t('login.github') }}
           </a>
         }
+        @if (oidc()) {
+          <a class="btn login__btn" [class.btn--primary]="!github()" [href]="href('/auth/oidc/login')">
+            <svg appIcon="key"></svg>
+            {{ t('login.oidc', { name: oidcName() }) }}
+          </a>
+        }
         @if (dev()) {
-          <a class="btn login__btn" [class.btn--primary]="!github()" [href]="href('/auth/dev/login')">
+          <a class="btn login__btn" [class.btn--primary]="!github() && !oidc()" [href]="href('/auth/dev/login')">
             {{ t('login.dev') }}
           </a>
         }
@@ -45,6 +55,9 @@
         <p class="login__off-title">{{ t('login.off.title') }}</p>
         <p class="login__off-text">
           {{ missing().before }}@for (p of missing().vars; track $index) {@if (p.type === 'element') {<code class="sp-code">{{ p.value }}</code>} @else {<span>{{ p.value }}</span>}}{{ missing().after }}
+        </p>
+        <p class="login__off-text login__off-oidc">
+          {{ missingOidc().before }}@for (p of missingOidc().vars; track $index) {@if (p.type === 'element') {<code class="sp-code">{{ p.value }}</code>} @else {<span>{{ p.value }}</span>}}{{ missingOidc().after }}
         </p>
       </div>
     }

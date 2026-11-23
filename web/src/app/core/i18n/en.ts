@@ -35,17 +35,30 @@ export const en: Record<Key, string> = {
   'login.lede.github': 'Sign in with your GitHub account in {org}.',
   'login.lede.dev': 'This server is in development mode.',
   'login.github': 'Sign in with GitHub',
+  'login.lede.oidc': 'Sign in with your {name} account.',
+  'login.lede.choose': 'Choose an account to sign in with.',
+  'login.oidc': 'Sign in with {name}',
   'login.dev': 'Sign in as dev',
   'login.devNote':
     'Development mode lets you in without GitHub and only works when listening on 127.0.0.1 or localhost.',
   'login.off.title': 'Sign-in is not configured',
   'login.off.text': 'The server is missing {vars}. The API and the MCP still work with tokens.',
+  'login.off.oidc':
+    'To sign in with an OIDC provider, the server needs {vars}, plus SESSION_SECRET.',
   'login.error.org':
     'Your GitHub account is not an active member of the organization. Ask whoever manages it for access.',
   'login.error.state': 'The sign-in attempt expired or didn’t start here. Try again.',
   'login.error.denied': 'You cancelled access on GitHub.',
   'login.error.github': 'GitHub didn’t respond as expected. Try again in a moment.',
   'login.error.config': 'GitHub sign-in is not configured on this server.',
+  'login.error.domain':
+    'Your account isn’t on a domain with access to this server. Use your work account or ask whoever runs it for access.',
+  'login.error.group':
+    'Your account isn’t in any group with access to this server. Ask whoever runs it for access.',
+  'login.error.oidc': '{name} didn’t respond as expected. Try again in a moment.',
+  'login.error.oidcDenied': 'You cancelled access on {name}.',
+  'login.error.save': 'Couldn’t save who you are. Try again in a moment.',
+  'login.error.oidcConfig': 'OIDC sign-in is not configured on this server.',
   'login.error.other': 'Couldn’t sign you in. Try again.',
 
   'status.open': 'Open',

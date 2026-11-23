@@ -14,11 +14,13 @@ import (
 )
 
 // Register añade /auth/session, /auth/github/login, /auth/github/callback,
-// /auth/dev/login y /auth/logout.
+// /auth/oidc/login, /auth/oidc/callback, /auth/dev/login y /auth/logout.
 func (a *Auth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/session", a.handleSession)
 	mux.HandleFunc("GET /auth/github/login", a.handleGitHubLogin)
 	mux.HandleFunc("GET /auth/github/callback", a.handleGitHubCallback)
+	mux.HandleFunc("GET /auth/oidc/login", a.handleOIDCLogin)
+	mux.HandleFunc("GET /auth/oidc/callback", a.handleOIDCCallback)
 	mux.HandleFunc("GET /auth/dev/login", a.handleDevLogin)
 	mux.HandleFunc("POST /auth/logout", a.handleLogout)
 }
@@ -27,6 +29,8 @@ type sessionJSON struct {
 	User    *userJSON `json:"user"`
 	Methods []string  `json:"methods"`
 	Org     string    `json:"org,omitempty"`
+	// OIDCName es el nombre del botón de OIDC.
+	OIDCName string `json:"oidc_name,omitempty"`
 }
 
 type userJSON struct {
@@ -38,6 +42,9 @@ func (a *Auth) handleSession(w http.ResponseWriter, r *http.Request) {
 	out := sessionJSON{Methods: a.methods()}
 	if a.github {
 		out.Org = a.cfg.Org
+	}
+	if a.oidc != nil {
+		out.OIDCName = a.oidc.cfg.Name
 	}
 	if s, ok := a.session(r); ok {
 		out.User = &userJSON{Login: s.Login, Name: s.Name}
@@ -136,12 +143,17 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = user.Login
 	}
-	if err := a.setSession(w, user.Login, name); err != nil {
+	login, ok := a.savePerson(ctx, store.Person{Login: user.Login, Name: name, AvatarURL: &user.AvatarURL,
+		Provider: store.LoginGitHub, Subject: user.Login})
+	if !ok {
+		toLogin(w, r, "save")
+		return
+	}
+	if err := a.setSession(w, login, name); err != nil {
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
-	a.savePerson(ctx, store.Person{Login: user.Login, Name: name, AvatarURL: &user.AvatarURL})
-	a.log.Info("login", "login", user.Login)
+	a.log.Info("login", "provider", store.LoginGitHub, "login", login)
 	http.Redirect(w, r, st.Next, http.StatusFound)
 }
 
@@ -203,11 +215,15 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := a.setSession(w, devLogin, devName); err != nil {
+	login, ok := a.savePerson(r.Context(), store.Person{Login: devLogin, Name: devName, Provider: store.LoginDev, Subject: devLogin})
+	if !ok {
+		toLogin(w, r, "save")
+		return
+	}
+	if err := a.setSession(w, login, devName); err != nil {
 		http.Error(w, "error interno", http.StatusInternalServerError)
 		return
 	}
-	a.savePerson(r.Context(), store.Person{Login: devLogin, Name: devName})
 	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusFound)
 }
 

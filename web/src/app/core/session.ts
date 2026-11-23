@@ -3,12 +3,14 @@ import { Injectable, inject, signal } from '@angular/core';
 import { type CanActivateFn, Router } from '@angular/router';
 import { catchError, firstValueFrom, throwError } from 'rxjs';
 
-export type LoginMethod = 'github' | 'dev';
+export type LoginMethod = 'github' | 'oidc' | 'dev';
 
 export interface SessionInfo {
   user: { login: string; name: string } | null;
   methods: LoginMethod[];
   org?: string;
+  /** El nombre del proveedor OIDC, para su botón. */
+  oidc_name?: string;
 }
 
 @Injectable({ providedIn: 'root' })

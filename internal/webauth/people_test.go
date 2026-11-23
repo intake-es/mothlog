@@ -14,16 +14,21 @@ type savedPeople struct {
 	mu   sync.Mutex
 	got  []store.Person
 	fail bool
+	// login es el que devuelve la base; sin él, el que llega.
+	login func(store.Person) string
 }
 
-func (s *savedPeople) SavePerson(_ context.Context, p store.Person) error {
+func (s *savedPeople) SaveIdentity(_ context.Context, p store.Person) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.fail {
-		return errors.New("la base no responde")
+		return "", errors.New("la base no responde")
 	}
 	s.got = append(s.got, p)
-	return nil
+	if s.login != nil {
+		return s.login(p), nil
+	}
+	return p.Login, nil
 }
 
 func TestLoginSavesPerson(t *testing.T) {

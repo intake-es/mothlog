@@ -12,13 +12,27 @@ import (
 	"github.com/intake-es/intake-errors/internal/search"
 )
 
-// Person es alguien que ha entrado en la interfaz.
+// Person es alguien que ha entrado en la interfaz. Login es como se la nombra
+// en los asignados y en el historial; Provider y Subject, quién es de verdad.
 type Person struct {
 	Login       string    `json:"login"`
 	Name        string    `json:"name"`
 	AvatarURL   *string   `json:"avatar_url"`
+	Provider    string    `json:"provider"`
+	Subject     string    `json:"-"`
 	LastLoginAt time.Time `json:"last_login_at"`
 }
+
+// Por dónde entra cada persona, en people.provider.
+const (
+	LoginGitHub = "github"
+	LoginOIDC   = "oidc"
+	LoginDev    = "dev"
+)
+
+// maxLoginSuffix es cuántos sufijos se prueban antes de rendirse si el login
+// ya es de otras personas.
+const maxLoginSuffix = 50
 
 // Assignee es quien lleva un issue: una persona o un token. Active es false
 // si el token se ha revocado; la asignación conserva el nombre.
@@ -66,11 +80,26 @@ func scanIssueWithAssignee(r pgx.Row) (Issue, error) {
 	return i, err
 }
 
-// SavePerson guarda o pone al día a quien entra en la interfaz.
+// SavePerson guarda o pone al día a quien entra en la interfaz. Sin
+// Provider, es de GitHub, y sin Subject, Subject es el login.
 func (s *Store) SavePerson(ctx context.Context, p Person) error {
+	_, err := s.SaveIdentity(ctx, p)
+	return err
+}
+
+// SaveIdentity guarda o pone al día a quien entra por (Provider, Subject) y
+// devuelve su login. La primera vez toma p.Login si nadie lo tiene, sin
+// mirar mayúsculas; si ya es de otra persona, p.Login~2, p.Login~3...
+func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 	p.Login = strings.TrimSpace(p.Login)
 	if p.Login == "" {
-		return fmt.Errorf("%w: la persona necesita un login", ErrInvalid)
+		return "", fmt.Errorf("%w: la persona necesita un login", ErrInvalid)
+	}
+	if p.Provider == "" {
+		p.Provider = LoginGitHub
+	}
+	if p.Subject == "" {
+		p.Subject = p.Login
 	}
 	if strings.TrimSpace(p.Name) == "" {
 		p.Name = p.Login
@@ -78,20 +107,46 @@ func (s *Store) SavePerson(ctx context.Context, p Person) error {
 	if p.AvatarURL != nil && *p.AvatarURL == "" {
 		p.AvatarURL = nil
 	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO people (login, name, avatar_url) VALUES ($1, $2, $3)
-		ON CONFLICT (login) DO UPDATE SET name = EXCLUDED.name, avatar_url = EXCLUDED.avatar_url, last_login_at = now()`,
-		p.Login, p.Name, p.AvatarURL)
-	if err != nil {
-		return fmt.Errorf("guardar persona: %w", err)
+	for n := 1; n <= maxLoginSuffix; n++ {
+		var login string
+		err := s.pool.QueryRow(ctx, `
+			UPDATE people SET name = $3, avatar_url = $4, last_login_at = now()
+			WHERE provider = $1 AND subject = $2 RETURNING login`,
+			p.Provider, p.Subject, p.Name, p.AvatarURL).Scan(&login)
+		if err == nil {
+			return login, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("guardar persona: %w", err)
+		}
+		candidate := p.Login
+		if n > 1 {
+			candidate = fmt.Sprintf("%s~%d", p.Login, n)
+		}
+		err = s.pool.QueryRow(ctx, `
+			INSERT INTO people (login, name, avatar_url, provider, subject)
+			SELECT $1, $2, $3, $4, $5 WHERE NOT EXISTS (SELECT 1 FROM people WHERE lower(login) = lower($1))
+			ON CONFLICT DO NOTHING RETURNING login`,
+			candidate, p.Name, p.AvatarURL, p.Provider, p.Subject).Scan(&login)
+		if err == nil {
+			return login, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("guardar persona: %w", err)
+		}
 	}
-	return nil
+	return "", fmt.Errorf("guardar persona: %q y sus %d variantes ya son de otras personas", p.Login, maxLoginSuffix)
 }
 
 // ensurePerson guarda a alguien con sesión que entró antes de que se
-// guardaran las personas, sin tocar a quien ya está.
+// guardaran las personas, sin tocar a quien ya está. Esas sesiones son de
+// GitHub o del modo de desarrollo: las de OIDC no entran sin guardarse.
 func (s *Store) ensurePerson(ctx context.Context, q Querier, login string) error {
-	_, err := q.Exec(ctx, `INSERT INTO people (login, name) VALUES ($1, $1) ON CONFLICT (login) DO NOTHING`, login)
+	provider := LoginGitHub
+	if login == "dev" {
+		provider = LoginDev
+	}
+	_, err := q.Exec(ctx, `INSERT INTO people (login, name, provider, subject) VALUES ($1, $1, $2, $1) ON CONFLICT DO NOTHING`, login, provider)
 	if err != nil {
 		return fmt.Errorf("guardar persona: %w", err)
 	}
@@ -100,13 +155,13 @@ func (s *Store) ensurePerson(ctx context.Context, q Querier, login string) error
 
 // People son las personas que han entrado, por nombre.
 func (s *Store) People(ctx context.Context) ([]Person, error) {
-	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, last_login_at FROM people ORDER BY lower(name), login`)
+	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, provider, last_login_at FROM people ORDER BY lower(name), login`)
 	if err != nil {
 		return nil, fmt.Errorf("listar personas: %w", err)
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Person, error) {
 		var p Person
-		return p, r.Scan(&p.Login, &p.Name, &p.AvatarURL, &p.LastLoginAt)
+		return p, r.Scan(&p.Login, &p.Name, &p.AvatarURL, &p.Provider, &p.LastLoginAt)
 	})
 }
 

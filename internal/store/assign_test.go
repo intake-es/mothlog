@@ -267,3 +267,75 @@ func TestSearchAssigned(t *testing.T) {
 		t.Errorf("assigned:me sin saber quién: %v", err)
 	}
 }
+
+func TestPeopleFromSeveralProviders(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	p, err := s.CreateProject(ctx, "web", randomHex(t, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	save := func(person Person) string {
+		t.Helper()
+		login, err := s.SaveIdentity(ctx, person)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return login
+	}
+	if got := save(Person{Login: "ana", Name: "Ana de GitHub"}); got != "ana" {
+		t.Fatalf("GitHub = %q", got)
+	}
+	// Otra persona, de OIDC, con el mismo nombre (sin mirar mayúsculas) no se mezcla.
+	if got := save(Person{Login: "Ana", Name: "Ana de OIDC", Provider: LoginOIDC, Subject: "sub-1"}); got != "Ana~2" {
+		t.Fatalf("OIDC con el login de otra = %q", got)
+	}
+	if got := save(Person{Login: "ana", Provider: LoginOIDC, Subject: "sub-2"}); got != "ana~3" {
+		t.Fatalf("la tercera = %q", got)
+	}
+	// Al volver, se la reconoce por el sub aunque cambie el correo, y se pone al día.
+	if got := save(Person{Login: "ana.nueva@example.com", Name: "Ana Nueva", Provider: LoginOIDC, Subject: "sub-1"}); got != "Ana~2" {
+		t.Fatalf("de vuelta = %q", got)
+	}
+	if got := save(Person{Login: "ana", Name: "Ana de GitHub"}); got != "ana" {
+		t.Fatalf("GitHub de vuelta = %q", got)
+	}
+	// El mismo sub en otro proveedor es otra persona.
+	if got := save(Person{Login: "sub-1", Provider: LoginGitHub, Subject: "sub-1"}); got != "sub-1" {
+		t.Fatalf("mismo sub en GitHub = %q", got)
+	}
+
+	people, err := s.People(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byLogin := map[string]Person{}
+	for _, p := range people {
+		byLogin[p.Login] = p
+	}
+	if len(people) != 4 || byLogin["ana"].Provider != LoginGitHub || byLogin["Ana~2"].Provider != LoginOIDC ||
+		byLogin["Ana~2"].Name != "Ana Nueva" || byLogin["ana~3"].Provider != LoginOIDC {
+		t.Fatalf("personas = %+v", people)
+	}
+
+	var issue int64
+	if err := s.pool.QueryRow(ctx, `INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		VALUES ($1, 'fp', 'TypeError', now(), now(), 1) RETURNING id`, p.ID).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	oidcAna := Actor{Name: "Ana~2", Kind: ActorUser}
+	got, err := s.AssignIssue(ctx, issue, &oidcAna, AssignChange{Actor: &oidcAna, Source: SourceUI})
+	if err != nil || got.Assignee == nil || got.Assignee.Name != "Ana~2" || got.Assignee.DisplayName != "Ana Nueva" {
+		t.Fatalf("asignar = %+v, %v", got.Assignee, err)
+	}
+	for viewer, want := range map[string]int{"Ana~2": 1, "ana": 0, "ana~3": 0} {
+		page, err := s.ListIssues(ctx, IssueFilter{Query: "assigned:me", Viewer: &Actor{Name: viewer, Kind: ActorUser}})
+		if err != nil || len(page.Issues) != want {
+			t.Errorf("assigned:me como %s = %d, %v", viewer, len(page.Issues), err)
+		}
+	}
+	h, err := s.History(ctx, issue, nil)
+	if err != nil || len(h) != 1 || h[0].Author == nil || h[0].Author.Name != "Ana~2" {
+		t.Errorf("historial = %+v, %v", h, err)
+	}
+}

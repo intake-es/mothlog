@@ -36,7 +36,12 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `SMTP_FROM` | remitente de esos correos, como `intake-errors <avisos@ejemplo.com>` | obligatoria con `SMTP_URL` |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |
 | `GITHUB_ORG` | org cuyos miembros activos pueden entrar | vacía |
-| `SESSION_SECRET` | firma la cookie de sesión; 32 caracteres o más, obligatoria con GitHub | vacía |
+| `SESSION_SECRET` | firma la cookie de sesión; 32 caracteres o más, obligatoria con GitHub u OIDC | vacía |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | el proveedor OIDC del login de la interfaz ([Entrar con OIDC](#entrar-con-oidc)); el secreto puede faltar si el cliente es público | vacías: sin OIDC |
+| `OIDC_ALLOWED_DOMAINS` | dominios del correo verificado que pueden entrar, separados por comas | vacía |
+| `OIDC_ALLOWED_GROUPS`, `OIDC_GROUPS_CLAIM` | grupos que pueden entrar, separados por comas, y el claim donde vienen | vacía, `groups` |
+| `OIDC_ALLOW_ANY` | `1` deja entrar a cualquiera con cuenta en el emisor; sin esto ni límites, no arranca con OIDC | vacía |
+| `OIDC_SCOPES`, `OIDC_NAME` | scopes que se piden y nombre del botón («Entrar con …») | `openid email profile`, `SSO` |
 | `UPTIME_ALLOW_PRIVATE` | `1` deja a los [monitores de disponibilidad](#monitores-de-disponibilidad) pedir a redes privadas y a loopback (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7, ::1); las de metadatos y link-local nunca | vacía: solo direcciones públicas |
 | `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
 
@@ -58,7 +63,35 @@ Sin compilar la web, `go build` y `go test` funcionan y `/` es una página que e
 
 Para entrar hace falta una OAuth App de GitHub con callback `<PUBLIC_URL>/auth/github/callback`. `/auth/github/login` pide el scope `read:org` con un `state` en una cookie firmada, y el callback deja entrar solo si `GET /user/memberships/orgs/<GITHUB_ORG>` dice `active`. La sesión es una cookie firmada con HMAC (`SESSION_SECRET`): `HttpOnly`, `SameSite=Lax`, `Secure` si `PUBLIC_URL` es https, de 7 días, sin tabla; `POST /auth/logout` la borra. Del usuario de GitHub solo se guarda en la cookie el login y el nombre; el token de GitHub no se guarda.
 
-La cookie vale para `/api/0/` y `/mcp` igual que un token (los tokens siguen igual), y en lo que cambia algo exige que `Origin` sea el de `PUBLIC_URL`; si no, 403. Sin las variables de GitHub ni `UI_DEV_LOGIN`, la interfaz dice que el login no está configurado.
+La cookie vale para `/api/0/` y `/mcp` igual que un token (los tokens siguen igual), y en lo que cambia algo exige que `Origin` sea el de `PUBLIC_URL`; si no, 403. Sin las variables de GitHub, de OIDC ni `UI_DEV_LOGIN`, la interfaz dice que el login no está configurado.
+
+### Entrar con OIDC
+
+Además de GitHub, o en su lugar, se puede entrar con cualquier proveedor OIDC. Se da de alta en él una aplicación web con redirect `<PUBLIC_URL>/auth/oidc/callback` y se configura así:
+
+```sh
+OIDC_ISSUER=https://idp.example.com        # su /.well-known/openid-configuration dice el resto
+OIDC_CLIENT_ID=intake-errors
+OIDC_CLIENT_SECRET=...
+OIDC_NAME="SSO del equipo"                 # el botón dice «Entrar con SSO del equipo»
+OIDC_ALLOWED_DOMAINS=example.com           # o, por grupo:
+# OIDC_ALLOWED_GROUPS=ingenieria,soporte
+# OIDC_GROUPS_CLAIM=groups                 # el claim donde el proveedor manda los grupos
+# OIDC_SCOPES="openid email profile groups"
+```
+
+`/auth/oidc/login` manda al proveedor con el flujo de código, PKCE (`S256`), `state` y `nonce`, guardados en una cookie firmada de 10 minutos. El callback canjea el código y comprueba el `id_token`: la firma con las claves del emisor (`jwks_uri`, RS*, PS*, ES* o EdDSA; nunca `none` ni HS*), `iss`, `aud`, `exp` y el `nonce`. Las claves se guardan una hora, y un `kid` que no está hace que se vuelvan a pedir, como mucho una vez por minuto, para seguir una rotación. Si el `id_token` no trae el correo o los grupos, se piden a `userinfo`.
+
+Quién entra:
+
+- Con `OIDC_ALLOWED_DOMAINS`, solo un correo con `email_verified` y de uno de esos dominios exactos (`example.com` no deja pasar `mail.example.com`).
+- Con `OIDC_ALLOWED_GROUPS`, solo quien trae alguno de esos grupos en `OIDC_GROUPS_CLAIM`, tal cual, con mayúsculas.
+- Con los dos, hay que cumplir los dos.
+- Sin ninguno, el binario no arranca, salvo con `OIDC_ALLOW_ANY=1`, que deja entrar a cualquiera con cuenta en el emisor.
+
+De quien entra se guarda en `people` el proveedor, su `sub`, el login que se enseña (el correo si viene con `email_verified`; si no, el `preferred_username` o, sin él, el `sub`), el nombre y la foto; no se guarda ningún token del proveedor. A la siguiente vez se le reconoce por el `sub`, aunque cambie de correo. Si ese login ya es de otra persona (de GitHub o de OIDC, sin mirar mayúsculas), la nueva queda como `login~2`, para que los asignados, el historial y `assigned:me` no las mezclen. De quien no pasa, el registro apunta solo el motivo, el `sub` y el dominio del correo.
+
+Con GitHub y OIDC configurados, la pantalla de entrada enseña los dos botones. El emisor se lee al primer intento de entrar, no al arrancar: si no responde, la pantalla lo dice y GitHub sigue funcionando. Con OIDC configurado, si no se puede guardar a la persona no se entra, tampoco con GitHub, porque su login podría ser el de otra.
 
 Para probar en local:
 

@@ -33,17 +33,30 @@ export const es = {
   'login.lede.github': 'Entra con tu cuenta de GitHub de {org}.',
   'login.lede.dev': 'Este servidor está en modo de desarrollo.',
   'login.github': 'Entrar con GitHub',
+  'login.lede.oidc': 'Entra con tu cuenta de {name}.',
+  'login.lede.choose': 'Elige con qué cuenta entrar.',
+  'login.oidc': 'Entrar con {name}',
   'login.dev': 'Entrar como dev',
   'login.devNote':
     'El modo de desarrollo deja entrar sin GitHub y solo funciona escuchando en 127.0.0.1 o localhost.',
   'login.off.title': 'El login no está configurado',
   'login.off.text': 'Faltan {vars} en el servidor. La API y el MCP con tokens siguen funcionando.',
+  'login.off.oidc':
+    'Para entrar con un proveedor OIDC, hacen falta {vars}, además de SESSION_SECRET.',
   'login.error.org':
     'Tu cuenta de GitHub no es miembro activo de la organización. Pide acceso a quien la administra.',
   'login.error.state': 'El intento de entrar caducó o no venía de aquí. Vuelve a probar.',
   'login.error.denied': 'Has cancelado el acceso en GitHub.',
   'login.error.github': 'GitHub no ha respondido como se esperaba. Vuelve a probar en un momento.',
   'login.error.config': 'El login con GitHub no está configurado en este servidor.',
+  'login.error.domain':
+    'Tu cuenta no es de ningún dominio con acceso a este servidor. Entra con la del trabajo o pide acceso a quien lo administra.',
+  'login.error.group':
+    'Tu cuenta no está en ningún grupo con acceso a este servidor. Pide acceso a quien lo administra.',
+  'login.error.oidc': '{name} no ha respondido como se esperaba. Vuelve a probar en un momento.',
+  'login.error.oidcDenied': 'Has cancelado el acceso en {name}.',
+  'login.error.save': 'No se ha podido guardar quién eres. Vuelve a probar en un momento.',
+  'login.error.oidcConfig': 'El login con OIDC no está configurado en este servidor.',
   'login.error.other': 'No se ha podido entrar. Vuelve a probar.',
 
   'status.open': 'Abierto',

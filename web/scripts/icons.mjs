@@ -66,6 +66,7 @@ const ICONS = {
     'play',
     'pencil-simple',
     'pulse',
+    'key',
   ],
   fill: ['bug'],
   duotone: ['check-circle', 'lock-key', 'magnifying-glass', 'warning-circle', 'heartbeat', 'pulse'],

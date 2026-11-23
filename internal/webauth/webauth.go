@@ -1,6 +1,6 @@
 // Package webauth es el login de la interfaz: GitHub, limitado a los miembros
-// activos de una org, o el modo de desarrollo, con la sesión en una cookie
-// firmada con HMAC.
+// activos de una org, un proveedor OIDC, limitado por dominio del correo o por
+// grupo, o el modo de desarrollo, con la sesión en una cookie firmada con HMAC.
 package webauth
 
 import (
@@ -39,6 +39,7 @@ type Config struct {
 	PublicURL     string
 	ListenAddr    string
 	DevLogin      bool
+	OIDC          OIDCConfig
 
 	// GitHubURL y GitHubAPIURL apuntan a github.com por defecto; los tests los cambian.
 	GitHubURL    string
@@ -48,10 +49,11 @@ type Config struct {
 }
 
 // LoadConfig lee GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_ORG,
-// SESSION_SECRET y UI_DEV_LOGIN.
+// SESSION_SECRET, UI_DEV_LOGIN y las OIDC_*.
 func LoadConfig(getenv func(string) string, listenAddr, publicURL string) Config {
 	dev := strings.TrimSpace(getenv("UI_DEV_LOGIN"))
 	return Config{
+		OIDC:          loadOIDCConfig(getenv),
 		ClientID:      strings.TrimSpace(getenv("GITHUB_CLIENT_ID")),
 		ClientSecret:  strings.TrimSpace(getenv("GITHUB_CLIENT_SECRET")),
 		Org:           strings.TrimSpace(getenv("GITHUB_ORG")),
@@ -72,24 +74,32 @@ type Auth struct {
 	origins []string
 	secure  bool
 	people  PeopleSaver
+	oidc    *oidcProvider
 }
 
-// PeopleSaver guarda a quien entra, para poder asignarle issues.
+// PeopleSaver guarda a quien entra, para poder asignarle issues, y devuelve
+// con qué login se la nombra.
 type PeopleSaver interface {
-	SavePerson(ctx context.Context, p store.Person) error
+	SaveIdentity(ctx context.Context, p store.Person) (string, error)
 }
 
 // SavePeople hace que cada login guarde a la persona en people.
 func (a *Auth) SavePeople(people PeopleSaver) { a.people = people }
 
-// savePerson no impide entrar si falla: solo se pierde poder elegirla al asignar.
-func (a *Auth) savePerson(ctx context.Context, p store.Person) {
+// savePerson devuelve el login de la sesión. Si no se puede guardar, con
+// GitHub o en desarrollo se entra igual con el login de siempre (solo se
+// pierde poder elegirla al asignar), salvo que haya OIDC: entonces ese login
+// podría ser el de otra persona y no se entra.
+func (a *Auth) savePerson(ctx context.Context, p store.Person) (string, bool) {
 	if a.people == nil {
-		return
+		return p.Login, true
 	}
-	if err := a.people.SavePerson(ctx, p); err != nil {
-		a.log.Error("login: guardar la persona", "login", p.Login, "err", err)
+	login, err := a.people.SaveIdentity(ctx, p)
+	if err != nil {
+		a.log.Error("login: guardar la persona", "provider", p.Provider, "login", p.Login, "err", err)
+		return p.Login, a.oidc == nil
 	}
+	return login, true
 }
 
 // New valida la configuración. Sin GitHub ni modo de desarrollo, la interfaz
@@ -123,15 +133,23 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 		return nil, errors.New("el login con GitHub necesita GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET y GITHUB_ORG juntas")
 	}
 
+	if cfg.OIDC.configured() {
+		p, err := newOIDCProvider(cfg.OIDC, cfg.HTTPClient, cfg.Now)
+		if err != nil {
+			return nil, err
+		}
+		a.oidc = p
+	}
+
 	if cfg.DevLogin && !loopback(cfg.ListenAddr) {
 		return nil, fmt.Errorf("UI_DEV_LOGIN=1 solo vale con LISTEN_ADDR en 127.0.0.1 o localhost, no en %q", cfg.ListenAddr)
 	}
-	if !a.github && !cfg.DevLogin {
+	if !a.enabled() {
 		return a, nil
 	}
 
 	public := cfg.PublicURL
-	if public == "" && !a.github {
+	if public == "" && !a.github && a.oidc == nil {
 		public = "http://" + cfg.ListenAddr
 	}
 	u, err := url.Parse(public)
@@ -151,6 +169,8 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 		a.secret = []byte(cfg.SessionSecret)
 	case a.github:
 		return nil, errors.New("el login con GitHub necesita SESSION_SECRET, de 32 caracteres o más")
+	case a.oidc != nil:
+		return nil, errors.New("el login con OIDC necesita SESSION_SECRET, de 32 caracteres o más")
 	case cfg.SessionSecret != "":
 		return nil, errors.New("SESSION_SECRET debe tener 32 caracteres o más")
 	default:
@@ -161,6 +181,9 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 	}
 	if cfg.DevLogin {
 		log.Warn("UI_DEV_LOGIN=1: la interfaz deja entrar como dev sin GitHub", "addr", cfg.ListenAddr)
+	}
+	if a.oidc != nil && a.oidc.cfg.AllowAny {
+		log.Warn("OIDC_ALLOW_ANY=1: entra cualquiera con cuenta en el emisor", "issuer", a.oidc.cfg.Issuer)
 	}
 	return a, nil
 }
@@ -178,13 +201,16 @@ func (a *Auth) methods() []string {
 	if a.github {
 		m = append(m, "github")
 	}
+	if a.oidc != nil {
+		m = append(m, "oidc")
+	}
 	if a.cfg.DevLogin {
 		m = append(m, "dev")
 	}
 	return m
 }
 
-func (a *Auth) enabled() bool { return a.github || a.cfg.DevLogin }
+func (a *Auth) enabled() bool { return a.github || a.oidc != nil || a.cfg.DevLogin }
 
 // Authenticator reconoce la cookie de sesión. En las peticiones que cambian
 // algo exige además que Origin sea el de PUBLIC_URL.

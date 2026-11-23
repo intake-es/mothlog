@@ -619,3 +619,91 @@ func TestMigrationDigest(t *testing.T) {
 		t.Fatalf("volver a subir: %v", err)
 	}
 }
+
+func TestMigrationOIDC(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 19); err != nil {
+		t.Fatal(err)
+	}
+	var issue int64
+	if err := pool.QueryRow(ctx, `
+		WITH p AS (INSERT INTO projects (name, public_key) VALUES ('web', 'clave-web') RETURNING id)
+		INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		SELECT id, 'fp', 'TypeError', now(), now(), 1 FROM p RETURNING id`).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO people (login, name, avatar_url) VALUES ('ana', 'Ana', 'https://avatars.example.com/ana'), ('luis', 'luis', NULL), ('dev', 'Modo desarrollo', NULL);
+		UPDATE issues SET assignee = 'ana', assignee_kind = 'user', assigned_at = now();
+		INSERT INTO issue_assignment_changes (issue_id, author, author_kind, source, to_name, to_kind)
+		SELECT id, 'luis', 'user', 'ui', 'ana', 'user' FROM issues`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.UpTo(ctx, 20); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := pool.Query(ctx, `SELECT login || ' ' || provider || ' ' || subject FROM people ORDER BY login`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || !slices.Equal(got, []string{"ana github ana", "dev dev dev", "luis github luis"}) {
+		t.Fatalf("personas tras migrar = %v, %v", got, err)
+	}
+
+	// Lo de antes sigue: la persona de GitHub vuelve con su login, su
+	// asignación, su historial y assigned:me.
+	s := &Store{pool: pool}
+	if login, err := s.SaveIdentity(ctx, Person{Login: "ana", Name: "Ana", Provider: LoginGitHub, Subject: "ana"}); err != nil || login != "ana" {
+		t.Fatalf("ana de GitHub vuelve como %q, %v", login, err)
+	}
+	if login, err := s.SaveIdentity(ctx, Person{Login: "ana", Provider: LoginOIDC, Subject: "00u1"}); err != nil || login != "ana~2" {
+		t.Fatalf("ana de OIDC = %q, %v", login, err)
+	}
+	page, err := s.ListIssues(ctx, IssueFilter{Query: "assigned:me", Viewer: &Actor{Name: "ana", Kind: ActorUser}})
+	if err != nil || len(page.Issues) != 1 || page.Issues[0].Assignee == nil || page.Issues[0].Assignee.Name != "ana" {
+		t.Fatalf("assigned:me = %+v, %v", page.Issues, err)
+	}
+	if page, err := s.ListIssues(ctx, IssueFilter{Query: "assigned:me", Viewer: &Actor{Name: "ana~2", Kind: ActorUser}}); err != nil || len(page.Issues) != 0 {
+		t.Errorf("la de OIDC ve como suyos los de GitHub: %d, %v", len(page.Issues), err)
+	}
+	h, err := s.History(ctx, issue, nil)
+	if err != nil || len(h) != 1 || h[0].Author == nil || h[0].Author.Name != "luis" || h[0].Assignee.Name != "ana" {
+		t.Errorf("historial = %+v, %v", h, err)
+	}
+	for _, bad := range []string{
+		`INSERT INTO people (login, name, provider, subject) VALUES ('eve', 'Eve', 'saml', 'eve')`,
+		`INSERT INTO people (login, name, provider, subject) VALUES ('eve', 'Eve', 'oidc', '')`,
+		`INSERT INTO people (login, name, provider, subject) VALUES ('eve', 'Eve', 'oidc', '00u1')`,
+		`INSERT INTO people (login, name) VALUES ('eve', 'Eve')`,
+	} {
+		if _, err := pool.Exec(ctx, bad); err == nil {
+			t.Errorf("no debería caber: %s", bad)
+		}
+	}
+
+	if _, err := p.DownTo(ctx, 19); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	var exists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'people' AND column_name IN ('provider', 'subject') AND table_schema = current_schema())`).Scan(&exists); err != nil || exists {
+		t.Errorf("tras bajar siguen las columnas: %v, %v", exists, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+}

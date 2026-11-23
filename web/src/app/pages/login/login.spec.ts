@@ -35,6 +35,25 @@ describe('LoginPage', () => {
     expect(el.querySelector('.login__off-title')?.textContent).toBe('El login no está configurado');
     expect(el.textContent).toContain('GITHUB_CLIENT_ID');
     expect(el.querySelector('a.btn')).toBeNull();
+    expect(el.querySelector('.login__off-oidc')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'Para entrar con un proveedor OIDC, hacen falta OIDC_ISSUER, OIDC_CLIENT_ID y OIDC_ALLOWED_DOMAINS u OIDC_ALLOWED_GROUPS, además de SESSION_SECRET.',
+    );
+    expect([...el.querySelectorAll('.login__off-oidc code')].map((c) => c.textContent)).toEqual([
+      'OIDC_ISSUER',
+      'OIDC_CLIENT_ID',
+      'OIDC_ALLOWED_DOMAINS',
+      'OIDC_ALLOWED_GROUPS',
+    ]);
+  });
+
+  it('OIDC sin configurar tiene su propio aviso', async () => {
+    const el = await render(
+      { user: null, methods: ['github'], org: 'example-org' },
+      { error: 'oidc_config' },
+    );
+    expect(el.querySelector('[role=alert]')?.textContent?.trim()).toBe(
+      'El login con OIDC no está configurado en este servidor.',
+    );
   });
 
   it('con GitHub enlaza al login conservando a dónde volver', async () => {
@@ -63,6 +82,53 @@ describe('LoginPage', () => {
     expect(el.textContent).toContain('modo de desarrollo');
   });
 
+  it('solo con OIDC, un botón con el nombre del proveedor', async () => {
+    const el = await render(
+      { user: null, methods: ['oidc'], oidc_name: 'Acme SSO' },
+      { next: '/issues/42' },
+    );
+    const buttons = el.querySelectorAll<HTMLAnchorElement>('a.btn');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0].classList).toContain('btn--primary');
+    expect(buttons[0].textContent?.trim()).toBe('Entrar con Acme SSO');
+    expect(buttons[0].getAttribute('href')).toBe('/auth/oidc/login?next=%2Fissues%2F42');
+    expect(el.querySelector('.login__lede')?.textContent?.trim()).toBe(
+      'Entra con tu cuenta de Acme SSO.',
+    );
+  });
+
+  it('con GitHub y OIDC, un botón por cada uno', async () => {
+    const el = await render({
+      user: null,
+      methods: ['github', 'oidc'],
+      org: 'example-org',
+      oidc_name: 'Acme SSO',
+    });
+    const buttons = [...el.querySelectorAll<HTMLAnchorElement>('a.btn')];
+    expect(buttons.map((a) => a.getAttribute('href'))).toEqual([
+      '/auth/github/login',
+      '/auth/oidc/login',
+    ]);
+    expect(buttons.map((a) => a.classList.contains('btn--primary'))).toEqual([true, false]);
+    expect(buttons[1].textContent?.trim()).toBe('Entrar con Acme SSO');
+    expect(el.querySelector('.login__lede')?.textContent?.trim()).toBe(
+      'Elige con qué cuenta entrar.',
+    );
+  });
+
+  for (const [error, text] of [
+    ['domain', 'no es de ningún dominio con acceso'],
+    ['group', 'no está en ningún grupo con acceso'],
+    ['oidc', 'Acme SSO no ha respondido'],
+    ['oidc_denied', 'Has cancelado el acceso en Acme SSO.'],
+    ['save', 'No se ha podido guardar quién eres'],
+  ]) {
+    it(`explica el rechazo ${error} de OIDC con el nombre del proveedor`, async () => {
+      const el = await render({ user: null, methods: ['oidc'], oidc_name: 'Acme SSO' }, { error });
+      expect(el.querySelector('[role=alert]')?.textContent).toContain(text);
+    });
+  }
+
   describe('en inglés', () => {
     beforeEach(() => lang.set('en'));
 
@@ -72,7 +138,10 @@ describe('LoginPage', () => {
       expect(el.querySelector('.login__off-text')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
         'The server is missing GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_ORG, and SESSION_SECRET. The API and the MCP still work with tokens.',
       );
-      expect(el.querySelectorAll('.login__off-text code').length).toBe(4);
+      expect(el.querySelectorAll('.login__off-text:not(.login__off-oidc) code').length).toBe(4);
+      expect(el.querySelector('.login__off-oidc')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        'To sign in with an OIDC provider, the server needs OIDC_ISSUER, OIDC_CLIENT_ID, and OIDC_ALLOWED_DOMAINS or OIDC_ALLOWED_GROUPS, plus SESSION_SECRET.',
+      );
       expect(spanishLeft(el)).toEqual([]);
     });
 
@@ -90,6 +159,47 @@ describe('LoginPage', () => {
       expect(el.textContent).toContain('Sign in as dev');
       expect(el.textContent).toContain('Development mode lets you in without GitHub');
       expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('con GitHub y OIDC, los dos botones y el rechazo por dominio', async () => {
+      const el = await render(
+        { user: null, methods: ['github', 'oidc'], org: 'example-org', oidc_name: 'Acme SSO' },
+        { error: 'domain' },
+      );
+      expect([...el.querySelectorAll('a.btn')].map((a) => a.textContent?.trim())).toEqual([
+        'Sign in with GitHub',
+        'Sign in with Acme SSO',
+      ]);
+      expect(el.querySelector('.login__lede')?.textContent?.trim()).toBe(
+        'Choose an account to sign in with.',
+      );
+      expect(el.querySelector('[role=alert]')?.textContent).toContain(
+        'isn’t on a domain with access',
+      );
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('solo con OIDC, el botón y los rechazos', async () => {
+      const el = await render(
+        { user: null, methods: ['oidc'], oidc_name: 'Acme SSO' },
+        { error: 'group' },
+      );
+      expect(el.querySelector('a.btn--primary')?.textContent?.trim()).toBe('Sign in with Acme SSO');
+      expect(el.querySelector('.login__lede')?.textContent?.trim()).toBe(
+        'Sign in with your Acme SSO account.',
+      );
+      expect(el.querySelector('[role=alert]')?.textContent).toContain('isn’t in any group');
+      expect(spanishLeft(el)).toEqual([]);
+    });
+
+    it('el rechazo en el proveedor lleva su nombre', async () => {
+      const el = await render(
+        { user: null, methods: ['oidc'], oidc_name: 'Acme SSO' },
+        { error: 'oidc_denied' },
+      );
+      expect(el.querySelector('[role=alert]')?.textContent?.trim()).toBe(
+        'You cancelled access on Acme SSO.',
+      );
     });
 
     it('en español, la lista de variables lleva «y»', async () => {
