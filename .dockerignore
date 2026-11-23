@@ -6,3 +6,4 @@ tools
 web/node_modules
 web/.angular
 internal/ui/dist/app
+dist

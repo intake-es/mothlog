@@ -116,6 +116,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
+		return printVersion(os.Stdout)
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err

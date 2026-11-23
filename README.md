@@ -2,12 +2,67 @@
 
 Recibe los envíos de los SDK de Sentry (solo cambia el DSN), los agrupa en issues y avisa a Slack y Linear.
 
-## Arrancar
+## Instalar
 
-Hace falta Go 1.27 y Docker para el Postgres local.
+### Probarlo con docker compose
 
 ```sh
-make run    # levanta Postgres 16 con docker compose y arranca el servicio en :8080
+curl -fsSLO https://raw.githubusercontent.com/intake-es/intake-errors/main/docker-compose.yml
+docker compose up
+```
+
+Levanta intake-errors (la imagen `latest`) y su Postgres y aplica las migraciones al arrancar. En http://localhost:8000 se entra sin login, como `dev` (`UI_DEV_LOGIN=1`): **no es para producción**, y por eso solo escucha en el `127.0.0.1` de la máquina. Para mandarle errores, se crea un proyecto y su DSN se pone en el SDK:
+
+```sh
+docker compose exec intake-errors /intake-errors projects create demo   # imprime http://<clave>@localhost:8000/1
+```
+
+`INTAKE_ERRORS_PORT` cambia el puerto (8000) e `INTAKE_ERRORS_IMAGE`, la imagen. `docker compose down -v` lo para y borra los datos.
+
+Si la imagen no se puede descargar (antes de la primera versión, o mientras el paquete de ghcr sea privado), compose la construye con el `Dockerfile`, así que hasta entonces hay que lanzarlo desde una copia del repositorio. La imagen construida queda en local con la etiqueta `latest`; `docker compose pull` la cambia por la publicada.
+
+`UI_DEV_LOGIN` solo vale escuchando en loopback, así que el servicio escucha en `127.0.0.1` dentro de la red de un proxy (Caddy), que lo publica en el `127.0.0.1:8000` de la máquina. La red es la del proxy y no la del servicio para que, si el servicio se reinicia, vuelva a entrar en ella.
+
+### Con el binario
+
+Cada versión publica en GitHub Releases un `.tar.gz` para Linux y macOS, amd64 y arm64, con la web ya compilada dentro, y `checksums.txt` con sus SHA-256:
+
+```sh
+v=1.0.0; os=linux; arch=amd64   # o darwin, arm64
+curl -fsSLO https://github.com/intake-es/intake-errors/releases/download/v$v/intake-errors_${v}_${os}_${arch}.tar.gz
+curl -fsSLO https://github.com/intake-es/intake-errors/releases/download/v$v/checksums.txt
+sha256sum --ignore-missing -c checksums.txt   # en macOS, shasum -a 256 --ignore-missing -c
+tar -xzf intake-errors_${v}_${os}_${arch}.tar.gz intake-errors
+./intake-errors version
+DATABASE_URL=postgres://... PUBLIC_URL=https://errors.example.com ./intake-errors
+```
+
+Necesita Postgres 16; la configuración es la de la tabla de [Arrancar](#arrancar).
+
+### Con Docker
+
+```sh
+docker run -p 8000:8000 -e DATABASE_URL=postgres://... -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/intake-errors:latest
+```
+
+La imagen es multiarquitectura (amd64 y arm64), distroless, sin shell y sin root, y escucha en el 8000. Hay una etiqueta por versión (`ghcr.io/intake-es/intake-errors:1.0.0`) y `latest`, la última que no es prerelease. Más en [Desplegar](#desplegar).
+
+### Publicar una versión
+
+Empujar un tag `v*` (`git tag v1.0.0 && git push origin v1.0.0`) lanza `.github/workflows/release.yml`: GoReleaser compila la web y los cuatro binarios, con la versión, el commit y la fecha dentro (`intake-errors version`), y publica la versión en GitHub, con sus notas a partir de los commits, y la imagen en `ghcr.io`. Un paquete nuevo de ghcr sale privado: después de la primera publicación hay que hacerlo público en los ajustes del paquete (Package settings → Change visibility), o `docker pull` y el compose de arriba fallan con `denied` a quien no tenga acceso. Para probarlo en local sin publicar nada:
+
+```sh
+go run github.com/goreleaser/goreleaser/v2@v2.20.3 release --snapshot --clean
+```
+
+Deja en `dist/` los `.tar.gz` y `checksums.txt`, y en Docker una imagen por arquitectura, con `-amd64` y `-arm64` al final de la etiqueta.
+
+## Arrancar
+
+Para desarrollar hace falta Go 1.27 y Docker para el Postgres local.
+
+```sh
+make run    # levanta el Postgres 16 de desarrollo (docker compose up -d --wait db) y arranca el servicio en :8080
 make test   # go test ./...
 make lint   # go vet, gofmt y golangci-lint
 ```
@@ -384,7 +439,7 @@ El primer evento de un issue nuevo y el de una regresión se guardan siempre, au
 
 Las cifras de lo descartado se cuentan en memoria y se guardan cada 10 segundos y al parar, por proyecto, motivo y día (UTC); si el proceso muere sin parar, se pierden las de esos últimos segundos.
 
-Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de `docker compose`:
+Los tests de `internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert` y de los subcomandos usan Postgres solo si existe `INTAKE_ERRORS_TEST_DATABASE_URL`; cada test crea su propio esquema y lo borra al acabar. Con el Postgres de desarrollo (`docker compose up -d --wait db`, el servicio `db` del perfil `dev`, en el 5433):
 
 ```sh
 INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...

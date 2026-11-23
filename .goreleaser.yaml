@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: intake-errors
+
+before:
+  hooks:
+    - npm --prefix web ci --no-audit --no-fund
+    - npm --prefix web run build
+
+builds:
+  - id: intake-errors
+    main: ./cmd/intake-errors
+    binary: intake-errors
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .FullCommit }} -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+dockers_v2:
+  - id: intake-errors
+    ids: [intake-errors]
+    dockerfile: Dockerfile.release
+    images:
+      - ghcr.io/{{ tolower (envOrDefault "GITHUB_REPOSITORY_OWNER" "intake-es") }}/intake-errors
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.title: intake-errors
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.created: "{{ .CommitDate }}"
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge "
+  groups:
+    - title: Novedades
+      regexp: '^feat(\(.+\))?!?:'
+      order: 0
+    - title: Correcciones
+      regexp: '^fix(\(.+\))?!?:'
+      order: 1
+    - title: Otros cambios
+      order: 999
+
+release:
+  draft: false
+  prerelease: auto

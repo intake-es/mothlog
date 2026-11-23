@@ -1,6 +1,61 @@
+# `docker compose up` levanta intake-errors y su Postgres para probarlo en
+# http://localhost:8000. Entra sin login (UI_DEV_LOGIN=1) y las claves son de
+# ejemplo: NO es para producción.
+#
+# El Postgres de desarrollo y de los tests es `db` (perfil dev), en 127.0.0.1:5433:
+# `docker compose up -d --wait db` o `make run`.
+
 services:
+  intake-errors:
+    image: ${INTAKE_ERRORS_IMAGE:-ghcr.io/intake-es/intake-errors:latest}
+    # Si no puede descargar la imagen, la construye desde el código (hace falta el repositorio).
+    build: .
+    # UI_DEV_LOGIN solo vale escuchando en loopback: comparte la red del proxy,
+    # que lo publica solo en el 127.0.0.1 del anfitrión. Al revés, si se
+    # reiniciara intake-errors, el proxy se quedaría en una red que ya no existe.
+    network_mode: service:proxy
+    environment:
+      DATABASE_URL: postgres://intake_errors:intake_errors@postgres:5432/intake_errors?sslmode=disable
+      LISTEN_ADDR: 127.0.0.1:8000
+      PUBLIC_URL: http://localhost:${INTAKE_ERRORS_PORT:-8000}
+      UI_DEV_LOGIN: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      proxy:
+        condition: service_started
+        restart: true
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    command: caddy reverse-proxy --from :8080 --to 127.0.0.1:8000
+    ports:
+      - "127.0.0.1:${INTAKE_ERRORS_PORT:-8000}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: intake_errors
+      POSTGRES_PASSWORD: intake_errors
+      POSTGRES_DB: intake_errors
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U intake_errors"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
   db:
     image: postgres:16
+    profiles: [dev]
     environment:
       POSTGRES_USER: intake_errors
       POSTGRES_PASSWORD: intake_errors
@@ -17,3 +72,4 @@ services:
 
 volumes:
   db:
+  postgres:
