@@ -98,6 +98,8 @@ Al arrancar aplica las migraciones de `migrations/`. Configuración por entorno:
 | `OIDC_ALLOW_ANY` | `1` deja entrar a cualquiera con cuenta en el emisor; sin esto ni límites, no arranca con OIDC | vacía |
 | `OIDC_SCOPES`, `OIDC_NAME` | scopes que se piden y nombre del botón («Entrar con …») | `openid email profile`, `SSO` |
 | `UPTIME_ALLOW_PRIVATE` | `1` deja a los [monitores de disponibilidad](#monitores-de-disponibilidad) pedir a redes privadas y a loopback (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 100.64.0.0/10, fc00::/7, ::1); las de metadatos y link-local nunca | vacía: solo direcciones públicas |
+| `INGEST_BATCH_MAX`, `INGEST_BATCH_WAIT` | eventos por lote como mucho y lo más que espera un lote a los envíos que ya se están leyendo ([Lotes y rendimiento](#lotes-y-rendimiento)) | `100`, `2ms` |
+| `PPROF_ADDR` | dirección donde servir `net/http/pprof`, aparte del puerto público; solo para medir | vacía: sin pprof |
 | `METRICS_TOKEN` | token de `GET /metrics` ([Métricas](#métricas)); sin él, la ruta no existe y no se cuenta nada | vacío |
 | `UI_DEV_LOGIN` | `1` entra en la interfaz como `dev` sin GitHub; solo con `LISTEN_ADDR` en `127.0.0.1` o `localhost` | vacía |
 
@@ -430,6 +432,23 @@ Cuánto se ahorra, medido con Postgres 16 tras `VACUUM FULL` (`pg_total_relation
 Son eventos de los mismos SDK y aplicaciones que el diccionario, el mejor caso. Con eventos de otra aplicación, zstd sin diccionario deja el JSON en un 32 % de su tamaño (frente al `jsonb`, que Postgres ya comprime con pglz por encima de 2 KB) y el diccionario quita un 10-20 % más.
 
 Los eventos guardados antes de esta versión siguen en `events.data` (`jsonb`). Al arrancar, el servicio los convierte en segundo plano, por lotes de 200 en una transacción cada uno, sin bloquear el arranque; las réplicas se reparten las filas con `FOR UPDATE SKIP LOCKED`, y si se para a medias, lo convertido queda y lo demás se convierte al arrancar otra vez. Mientras quede algún evento sin convertir, se repite cada hora, para recoger lo que guarde en `jsonb` una réplica de la versión anterior durante un despliegue gradual o lo que deje bloqueado una que muere; acaba cuando ya no queda ninguno, también contando los que tiene bloqueados otra réplica. Mientras tanto se leen los dos formatos. El espacio de lo convertido se reutiliza para eventos nuevos tras el `VACUUM` automático; para devolverlo al disco hace falta `VACUUM FULL events` (bloquea la tabla) o `pg_repack`. Cuando `SELECT count(*) FROM events WHERE data IS NOT NULL` dé 0 en todas las instalaciones, una migración posterior puede quitar la columna `data` y, con ella, lo que aún la lee.
+
+### Lotes y rendimiento
+
+Los eventos de los envíos que llegan mientras se escribe un lote van juntos en el siguiente, en una transacción: se buscan los repetidos, se bloquean los issues (una vez cada uno, por orden de id) y las releases en una ida y vuelta a Postgres; se decide cada evento en memoria y en su orden, igual que uno a uno (agrupado, regresión, tope, muestreo); y los eventos, los contadores de cada issue, los recuentos por release y entorno, las etiquetas y los usuarios se escriben de una vez en otra. Los avisos se encolan evento a evento dentro de la misma transacción. La respuesta espera a que su lote se confirme: un 200 sigue queriendo decir guardado. Si el lote falla, sus eventos se guardan uno a uno, así que el malo falla solo. Un lote lleva como mucho `INGEST_BATCH_MAX` eventos (los de un envío nunca se separan) y espera hasta `INGEST_BATCH_WAIT` solo si hay otro envío a medias de leer; con un envío solo, se escribe en el acto.
+
+`make carga` mide la ingesta: construye la imagen del `Dockerfile`, la arranca con `--cpus=0.25 --memory=256m` junto a un Postgres 16 en otro contenedor, sube los source maps de los fixtures y manda envíos hechos con `testdata/envelopes` con ids nuevos: un 45 % de cuatro errores calientes, un 20 % de una cola de 5.000 errores distintos, un 15 % del error del navegador con source maps, un 5 % de check-ins y un 15 % de sesiones. Va por pasos de concurrencia (`-concurrencia 1,4,16,64`, 20 s cada uno) o a un ritmo fijo (`-ritmo 300`), y deja en `carga-salida/` `informe.md` e `informe.json` con los eventos por segundo aceptados, las latencias p50, p95 y p99, los códigos, la CPU y lo que el cgroup la ha frenado, la RSS media y máxima, el pool, en qué esperan las conexiones con Postgres (`pg_stat_activity`), un perfil de CPU por paso (`cpu-*.pprof` y su `go tool pprof -top`) y la comprobación de que lo guardado cuadra con lo aceptado. Borra los contenedores, la red y la imagen que ha construido al acabar, también con Ctrl-C; con `-conservar-imagen` la deja, para repetir la medida con `-construir=false`. Necesita docker en la misma máquina, porque lee la memoria y la CPU del proceso desde `/proc` y su cgroup. Otro código: `make carga CARGA='-ref origin/main -salida carga-main'`.
+
+Medido el 2026-11-23 en un AMD Ryzen 7 9700X (WSL2, kernel 6.6, docker 29.9, 16 CPU), con la misma orden, pasos de 20 s:
+
+| Concurrencia | Antes: eventos/s | p99 | RSS máx | Con lotes: eventos/s | p99 | RSS máx |
+|---|---|---|---|---|---|---|
+| 1 | 130 | 54 ms | 45 MB | 142 | 51 ms | 46 MB |
+| 4 | 172 | 88 ms | 46 MB | 214 | 80 ms | 47 MB |
+| 16 | 193 | 322 ms | 52 MB | 284 | 99 ms | 54 MB |
+| 64 | 195 | 703 ms | 56 MB | 323 | 298 ms | 59 MB |
+
+Con 0,25 vCPU y por debajo de 50 MB aguanta 214 eventos por segundo (antes, 172); al máximo, 323 (antes, 195). En todos los pasos la CPU está en su tope del 25 %. Antes, el 41 % del perfil era guardar el evento, casi todo escribir en el socket de Postgres (unas diez sentencias por evento), y con concurrencia las transacciones esperaban el cerrojo de la fila del issue caliente (`Lock:tuple` y `Lock:transactionid`, de 7 a 9 conexiones de media) con el pool agotado (929 s de espera a 64). Con lotes, escribir los lotes es el 4 % del perfil (el 10 % con preparar cada evento: source maps, huella y zstd) y lo que más pesa es leer el JSON del evento (31 %) y las dos lecturas de la base de cada envío, el proyecto y sus filtros (20 %); las esperas de cerrojos bajan a una conexión. No ha hecho falta ningún índice. Por encima de unos 16 envíos a la vez, la RSS pasa de 50 MB, antes y después: crece con los envíos en vuelo, no con los lotes.
 
 ### Filtros, tope y muestreo
 

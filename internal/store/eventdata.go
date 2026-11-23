@@ -205,3 +205,35 @@ func InsertEvent(ctx context.Context, q execQuerier, e NewEvent) (int64, error) 
 	}
 	return id, nil
 }
+
+// InsertEventsQuery es la sentencia que guarda varios eventos ya codificados,
+// en su orden, para mandarla en un pgx.Batch. Los que ya estaban en su
+// proyecto no se guardan ni cuentan en las filas afectadas.
+func InsertEventsQuery(es []NewEvent) (string, []any) {
+	n := len(es)
+	issues, projects := make([]int64, n), make([]int64, n)
+	ids, releases, envs := make([]string, n), make([]string, n), make([]string, n)
+	occurred, received := make([]time.Time, n), make([]time.Time, n)
+	data := make([][]byte, n)
+	labels, idents, orgs, summaries := make([]string, n), make([]string, n), make([]string, n), make([]string, n)
+	for i, e := range es {
+		ev, enc := e.Event, e.Encoded
+		issues[i], projects[i], ids[i] = e.IssueID, e.ProjectID, ev.ID
+		occurred[i], received[i] = ev.Timestamp, e.ReceivedAt
+		releases[i], envs[i] = ev.Release, ev.Environment
+		data[i] = enc.Data
+		labels[i], idents[i], orgs[i], summaries[i] = enc.UserLabel, enc.UserIdent, enc.OrganizationID, enc.Summary
+	}
+	return `
+		INSERT INTO events (issue_id, project_id, event_id, occurred_at, received_at, release, environment,
+			data_zstd, user_label, user_ident, organization_id, summary)
+		SELECT issue_id, project_id, event_id, occurred_at, received_at, NULLIF(release, ''), NULLIF(environment, ''),
+			data_zstd, NULLIF(user_label, ''), NULLIF(user_ident, ''), NULLIF(organization_id, ''), NULLIF(summary, '')
+		FROM unnest($1::bigint[], $2::bigint[], $3::uuid[], $4::timestamptz[], $5::timestamptz[], $6::text[], $7::text[],
+			$8::bytea[], $9::text[], $10::text[], $11::text[], $12::text[])
+			WITH ORDINALITY AS e(issue_id, project_id, event_id, occurred_at, received_at, release, environment,
+				data_zstd, user_label, user_ident, organization_id, summary, n)
+		ORDER BY n
+		ON CONFLICT (project_id, event_id) DO NOTHING`,
+		[]any{issues, projects, ids, occurred, received, releases, envs, data, labels, idents, orgs, summaries}
+}

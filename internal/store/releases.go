@@ -551,3 +551,40 @@ func (s *Store) ReleaseProjects(ctx context.Context, version string) ([]Project,
 	}
 	return ps, nil
 }
+
+// TrackedEvents son los eventos de un issue con la misma release y entorno,
+// para contarlos de una vez con TrackEventsQuery.
+type TrackedEvents struct {
+	ProjectID, IssueID   int64
+	Release, Environment string
+	Count                int64
+	First, Last          time.Time
+	Regressed            bool
+}
+
+// TrackEventsQuery es TrackEvent para muchos eventos en una sola sentencia,
+// para mandarla en un pgx.Batch. No puede haber dos con el mismo issue,
+// release y entorno.
+func TrackEventsQuery(ts []TrackedEvents) (string, []any) {
+	n := len(ts)
+	issues, projects, counts := make([]int64, n), make([]int64, n), make([]int64, n)
+	releases, envs := make([]string, n), make([]string, n)
+	first, last := make([]time.Time, n), make([]time.Time, n)
+	regressed := make([]bool, n)
+	for i, t := range ts {
+		issues[i], projects[i], counts[i] = t.IssueID, t.ProjectID, t.Count
+		releases[i], envs[i] = t.Release, t.Environment
+		first[i], last[i], regressed[i] = t.First, t.Last, t.Regressed
+	}
+	return `
+		INSERT INTO issue_stats (issue_id, project_id, release, environment, first_seen, last_seen, event_count, regressed_at)
+		SELECT issue_id, project_id, release, environment, first_seen, last_seen, n, CASE WHEN regressed THEN now() END
+		FROM unnest($1::bigint[], $2::bigint[], $3::text[], $4::text[], $5::timestamptz[], $6::timestamptz[], $7::bigint[], $8::boolean[])
+			AS t(issue_id, project_id, release, environment, first_seen, last_seen, n, regressed)
+		ON CONFLICT (issue_id, release, environment) DO UPDATE SET
+			event_count = issue_stats.event_count + EXCLUDED.event_count,
+			first_seen = LEAST(issue_stats.first_seen, EXCLUDED.first_seen),
+			last_seen = GREATEST(issue_stats.last_seen, EXCLUDED.last_seen),
+			regressed_at = COALESCE(EXCLUDED.regressed_at, issue_stats.regressed_at)`,
+		[]any{issues, projects, releases, envs, first, last, counts, regressed}
+}

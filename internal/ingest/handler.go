@@ -99,6 +99,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	// El lote que se está escribiendo puede esperar un poco a este envío.
+	arrived := h.ingester.batch.announce()
+	defer arrived()
 	projectID, err := strconv.ParseInt(r.PathValue("project_id"), 10, 64)
 	if err != nil {
 		fail(w, http.StatusNotFound, "proyecto no encontrado")
@@ -205,6 +208,10 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		events = kept
 	}
 
+	if len(events) == 0 {
+		arrived()
+	}
+
 	// Los check-ins cuentan en el mismo límite por minuto que los eventos.
 	if n := len(events) + len(checkIns); n > 0 {
 		if ok, wait := h.limiter.AllowUpTo(project.ID, n, perMinute); !ok {
@@ -227,18 +234,20 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	start := time.Now()
+	results, errs := h.ingester.ingestEvents(ctx, project.ID, events, lim, arrived)
 	respID := headerID
+	if len(events) > 0 {
+		respID = events[0].ID
+	}
+	failed := false
 	for i, ev := range events {
-		start := time.Now()
-		res, err := h.ingester.IngestWith(ctx, project.ID, ev, lim)
-		if err != nil {
+		if err := errs[i]; err != nil {
 			h.log.ErrorContext(ctx, "guardar evento", "proyecto", project.ID, "event_id", ev.ID, "err", err)
-			fail(w, http.StatusInternalServerError, "error interno")
-			return
+			failed = true
+			continue
 		}
-		if i == 0 {
-			respID = ev.ID
-		}
+		res := results[i]
 		switch {
 		case res.Duplicate:
 			h.metrics.Dropped(project.ID, metrics.DropDuplicate, 1)
@@ -249,6 +258,10 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		}
 		h.log.DebugContext(ctx, "evento", "proyecto", project.ID, "event_id", ev.ID, "issue", res.IssueID,
 			"resultado", res.Outcome.String(), "repetido", res.Duplicate, "descartado", res.Dropped, "duración", time.Since(start))
+	}
+	if failed {
+		fail(w, http.StatusInternalServerError, "error interno")
+		return
 	}
 	for _, in := range checkIns {
 		res, err := h.checkIns.CheckIn(ctx, project.ID, in)

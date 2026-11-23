@@ -43,6 +43,7 @@ type config struct {
 	GitHubWebhookSecret string
 	// MetricsToken protege /metrics; sin él, la ruta no existe.
 	MetricsToken string
+	Batch        ingest.BatchOptions
 }
 
 func loadConfig() (config, error) {
@@ -86,6 +87,15 @@ func loadConfig() (config, error) {
 	}
 	if c.RetentionDays, err = positiveEnv("RETENTION_DAYS", 90); err != nil {
 		return c, err
+	}
+	c.Batch = ingest.DefaultBatchOptions()
+	if c.Batch.MaxEvents, err = positiveEnv("INGEST_BATCH_MAX", c.Batch.MaxEvents); err != nil {
+		return c, err
+	}
+	if v := os.Getenv("INGEST_BATCH_WAIT"); v != "" {
+		if c.Batch.MaxWait, err = time.ParseDuration(v); err != nil || c.Batch.MaxWait < 0 {
+			return c, fmt.Errorf("INGEST_BATCH_WAIT debe ser una duración como 2ms: %q", v)
+		}
 	}
 	return c, nil
 }
@@ -140,6 +150,9 @@ func run(args []string) error {
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
+	if addr := os.Getenv("PPROF_ADDR"); addr != "" {
+		go servePprof(addr, log)
+	}
 
 	auth, err := webauth.New(webauth.LoadConfig(os.Getenv, cfg.Addr, cfg.PublicURL), log)
 	if err != nil {
@@ -174,6 +187,7 @@ func run(args []string) error {
 	go alerts.Run(ctx)
 	go digest.NewScheduler(db, log, cfg.PublicURL).Run(ctx, digest.TickInterval)
 	ingester := ingest.NewIngester(db.Pool(), maps, alerts, log)
+	ingester.SetBatching(cfg.Batch)
 	drops := ingest.NewDrops(db)
 	go drops.Run(ctx, 10*time.Second, log)
 	monitors := monitor.New(db, alerts, log)

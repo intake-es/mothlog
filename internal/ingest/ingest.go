@@ -65,6 +65,7 @@ type Ingester struct {
 	now      func() time.Time
 	random   func() float64
 	hashKey  atomic.Pointer[[]byte]
+	batch    *batcher
 }
 
 // NewIngester acepta enricher y notifier nil: entonces no hacen nada.
@@ -75,7 +76,9 @@ func NewIngester(pool *pgxpool.Pool, enricher Enricher, notifier Notifier, log *
 	if notifier == nil {
 		notifier = NopNotifier{}
 	}
-	return &Ingester{pool: pool, enricher: enricher, notifier: notifier, log: log, now: time.Now, random: mrand.Float64}
+	in := &Ingester{pool: pool, enricher: enricher, notifier: notifier, log: log, now: time.Now, random: mrand.Float64}
+	in.batch = newBatcher(in)
+	return in
 }
 
 // Limits son el tope y el muestreo de los eventos de issues que ya existen.
@@ -115,10 +118,47 @@ func (in *Ingester) Ingest(ctx context.Context, projectID int64, ev *event.Event
 	return in.IngestWith(ctx, projectID, ev, DefaultLimits())
 }
 
-// IngestWith guarda un evento y actualiza su issue en una sola transacción.
-// Pasado el tope o fuera de la muestra, el issue cuenta el evento pero el
-// evento no se guarda.
+// IngestWith guarda un evento y actualiza su issue. Va en el lote de los que
+// llegan a la vez, y vuelve cuando el lote está confirmado. Pasado el tope o
+// fuera de la muestra, el issue cuenta el evento pero el evento no se guarda.
 func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.Event, lim Limits) (Result, error) {
+	res, errs := in.ingestEvents(ctx, projectID, []*event.Event{ev}, lim, nil)
+	return res[0], errs[0]
+}
+
+// ingestEvents guarda los eventos de un envío en el mismo lote, y da el
+// resultado o el error de cada uno. arrived, si no es nil, se llama al
+// entrar en la cola.
+func (in *Ingester) ingestEvents(ctx context.Context, projectID int64, evs []*event.Event, lim Limits, arrived func()) ([]Result, []error) {
+	res, errs := make([]Result, len(evs)), make([]error, len(evs))
+	items := make([]*pending, 0, len(evs))
+	for i, ev := range evs {
+		it, err := in.prepare(ctx, projectID, ev, lim)
+		if err != nil {
+			errs[i] = err
+			continue
+		}
+		items = append(items, it)
+	}
+	if len(items) > 0 {
+		in.batch.submit(items, arrived)
+	} else if arrived != nil {
+		arrived()
+	}
+	j := 0
+	for i := range evs {
+		if errs[i] != nil {
+			continue
+		}
+		res[i], errs[i] = items[j].res, items[j].err
+		j++
+	}
+	return res, errs
+}
+
+// prepare hace lo de cada evento que no toca la base: el id, la fecha, los
+// source maps, la huella y la codificación.
+func (in *Ingester) prepare(ctx context.Context, projectID int64, ev *event.Event, lim Limits) (*pending, error) {
 	if lim.PerIssuePerHour <= 0 {
 		lim.PerIssuePerHour = store.DefaultEventsPerIssuePerHour
 	}
@@ -133,21 +173,25 @@ func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.E
 	if err := in.enricher.Enrich(ctx, projectID, ev); err != nil {
 		in.log.WarnContext(ctx, "enriquecer evento", "proyecto", projectID, "event_id", ev.ID, "err", err)
 	}
-	g := Group(ev)
 	data, err := store.EncodeEvent(ev)
 	if err != nil {
-		return Result{}, err
+		return nil, err
 	}
+	return &pending{ctx: ctx, projectID: projectID, ev: ev, g: Group(ev), data: data, now: now, lim: lim}, nil
+}
 
+// ingestOne guarda un evento solo en su transacción: es lo que se hace con
+// los de un lote que ha fallado.
+func (in *Ingester) ingestOne(ctx context.Context, it *pending) (Result, error) {
 	var res Result
-	err = pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
+	err := pgx.BeginFunc(ctx, in.pool, func(tx pgx.Tx) error {
 		var err error
-		res, err = in.save(ctx, tx, projectID, ev, g, data, now, lim)
+		res, err = in.save(ctx, tx, it.projectID, it.ev, it.g, it.data, it.now, it.lim)
 		if err != nil {
 			return err
 		}
-		res.ProjectID = projectID
-		if err := in.notifier.IssueChanged(ctx, tx, ev, res); err != nil {
+		res.ProjectID = it.projectID
+		if err := in.notifier.IssueChanged(ctx, tx, it.ev, res); err != nil {
 			return fmt.Errorf("avisar: %w", err)
 		}
 		return nil
