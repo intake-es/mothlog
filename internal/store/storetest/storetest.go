@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -130,10 +131,29 @@ func (db *DB) AddIssue(t testing.TB, i Issue) int64 {
 	return id
 }
 
-// AddEvent guarda ev como lo guardaría la ingesta: el evento normalizado en
-// data, su release y sus recuentos por release y entorno. Le pone un
+// AddEvent guarda ev como lo guardaría la ingesta: el evento normalizado y
+// comprimido, su release y sus recuentos por release y entorno. Le pone un
 // event_id nuevo y la fecha at; el issue no cambia.
 func (db *DB) AddEvent(t testing.TB, projectID, issueID int64, ev event.Event, at time.Time) int64 {
+	t.Helper()
+	ev.ID = RandomHex(t, 16)
+	ev.Timestamp = at.UTC()
+	enc, err := store.EncodeEvent(&ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	id, err := store.InsertEvent(ctx, db.Pool(), store.NewEvent{IssueID: issueID, ProjectID: projectID, Event: &ev, ReceivedAt: time.Now(), Encoded: enc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.track(t, projectID, issueID, ev, at)
+	return id
+}
+
+// AddLegacyEvent es AddEvent con el evento en events.data, como se guardaba
+// antes de comprimirlo.
+func (db *DB) AddLegacyEvent(t testing.TB, projectID, issueID int64, ev event.Event, at time.Time) int64 {
 	t.Helper()
 	ev.ID = RandomHex(t, 16)
 	ev.Timestamp = at.UTC()
@@ -149,6 +169,33 @@ func (db *DB) AddEvent(t testing.TB, projectID, issueID int64, ev event.Event, a
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.track(t, projectID, issueID, ev, at)
+	return id
+}
+
+// MakeLegacy deja los eventos con esos ids como se guardaban antes: el mismo
+// evento en events.data y sin lo comprimido ni sus columnas.
+func (db *DB) MakeLegacy(t testing.TB, ids ...int64) {
+	t.Helper()
+	ctx := context.Background()
+	for _, id := range ids {
+		e, err := db.Event(ctx, strconv.FormatInt(id, 10))
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(e.Event)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Pool().Exec(ctx, `UPDATE events SET data = $2, data_zstd = NULL, user_label = NULL,
+			user_ident = NULL, organization_id = NULL, summary = NULL WHERE id = $1`, id, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func (db *DB) track(t testing.TB, projectID, issueID int64, ev event.Event, at time.Time) {
+	t.Helper()
 	ctx := context.Background()
 	if ev.Release != "" {
 		if _, _, err := store.EnsureRelease(ctx, db.Pool(), projectID, ev.Release, time.Now()); err != nil {
@@ -158,7 +205,6 @@ func (db *DB) AddEvent(t testing.TB, projectID, issueID int64, ev event.Event, a
 	if err := store.TrackEvent(ctx, db.Pool(), projectID, issueID, ev.Release, ev.Environment, at, false); err != nil {
 		t.Fatal(err)
 	}
-	return id
 }
 
 func testdata() string {

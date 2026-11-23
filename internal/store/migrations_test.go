@@ -784,3 +784,74 @@ func TestMigrationImport(t *testing.T) {
 		t.Fatalf("volver a subir: %v", err)
 	}
 }
+
+// Los eventos que había se leen igual tras la migración, y bajarla no puede
+// perder los que ya se han convertido.
+func TestMigrationCompressedEvents(t *testing.T) {
+	ctx := context.Background()
+	u := testSchemaURL(t)
+	pool, err := pgxpool.New(ctx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 21); err != nil {
+		t.Fatal(err)
+	}
+	var project, issue int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('api', 'clave-api') RETURNING id`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		VALUES ($1, 'fp', 'KeyError', now(), now(), 1) RETURNING id`, project).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO events (issue_id, project_id, event_id, occurred_at, data)
+		VALUES ($1, $2, gen_random_uuid(), now(), '{"level": "error", "user": {"id": "u1"}, "exceptions": [{"type": "KeyError", "value": "x"}]}')`,
+		issue, project); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ApplyVersion(ctx, 22, true); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{pool: pool}
+	check := func() {
+		t.Helper()
+		e, err := s.LatestEvent(ctx, issue)
+		if err != nil || e == nil || e.Event.User.ID != "u1" || e.Event.Exceptions[0].Type != "KeyError" {
+			t.Fatalf("evento = %+v, %v", e, err)
+		}
+		page, err := s.IssueEvents(ctx, issue, "", 10)
+		if err != nil || len(page.Events) != 1 || page.Events[0].User != "u1" || page.Events[0].Message != "KeyError: x" {
+			t.Fatalf("lista = %+v, %v", page, err)
+		}
+	}
+	check()
+	if _, err := pool.Exec(ctx, `INSERT INTO events (issue_id, project_id, event_id, occurred_at) VALUES ($1, $2, gen_random_uuid(), now())`,
+		issue, project); pgCode(err) != "23514" {
+		t.Errorf("un evento sin datos: err = %v", err)
+	}
+
+	// Sin nada convertido, se puede bajar y volver a subir.
+	if _, err := p.ApplyVersion(ctx, 22, false); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	if _, err := p.ApplyVersion(ctx, 22, true); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.ConvertLegacyEvents(ctx, DefaultConvertOptions(nil)); err != nil || n != 1 {
+		t.Fatalf("convertidos %d, %v", n, err)
+	}
+	check()
+	if _, err := p.ApplyVersion(ctx, 22, false); err == nil {
+		t.Fatal("baja la migración con eventos convertidos")
+	}
+	check()
+}

@@ -2,8 +2,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -24,9 +22,9 @@ func (in *Ingester) ImportEvent(ctx context.Context, projectID, issueID int64, e
 	if ev.Timestamp.IsZero() {
 		return false, fmt.Errorf("%w: el evento %s no tiene fecha", event.ErrInvalid, ev.ID)
 	}
-	data, err := json.Marshal(ev)
+	data, err := store.EncodeEvent(ev)
 	if err != nil {
-		return false, fmt.Errorf("serializar evento: %w", err)
+		return false, err
 	}
 	now := in.now().UTC()
 	created := false
@@ -36,18 +34,9 @@ func (in *Ingester) ImportEvent(ctx context.Context, projectID, issueID int64, e
 				return err
 			}
 		}
-		var id int64
-		err := tx.QueryRow(ctx, `
-			INSERT INTO events (issue_id, project_id, event_id, occurred_at, received_at, release, environment, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-			ON CONFLICT (project_id, event_id) DO NOTHING
-			RETURNING id`,
-			issueID, projectID, ev.ID, ev.Timestamp, now, nullable(ev.Release), nullable(ev.Environment), data).Scan(&id)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("guardar evento: %w", err)
+		id, err := store.InsertEvent(ctx, tx, store.NewEvent{IssueID: issueID, ProjectID: projectID, Event: ev, ReceivedAt: now, Encoded: data})
+		if err != nil || id == 0 {
+			return err
 		}
 		created = true
 		if err := store.TrackEvent(ctx, tx, projectID, issueID, ev.Release, ev.Environment, ev.Timestamp, false); err != nil {

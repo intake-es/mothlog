@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -135,9 +134,9 @@ func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.E
 		in.log.WarnContext(ctx, "enriquecer evento", "proyecto", projectID, "event_id", ev.ID, "err", err)
 	}
 	g := Group(ev)
-	data, err := json.Marshal(ev)
+	data, err := store.EncodeEvent(ev)
 	if err != nil {
-		return Result{}, fmt.Errorf("serializar evento: %w", err)
+		return Result{}, err
 	}
 
 	var res Result
@@ -162,7 +161,7 @@ func (in *Ingester) IngestWith(ctx context.Context, projectID int64, ev *event.E
 	return res, nil
 }
 
-func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *event.Event, g Grouping, data []byte, now time.Time, lim Limits) (Result, error) {
+func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *event.Event, g Grouping, data store.EncodedEvent, now time.Time, lim Limits) (Result, error) {
 	res := Result{}
 	hour := now.Truncate(time.Hour)
 	// newRelease: la release la crea este evento, así que no se sabe si es
@@ -273,18 +272,12 @@ func (in *Ingester) save(ctx context.Context, tx pgx.Tx, projectID int64, ev *ev
 		return res, in.recordTags(ctx, tx, res.IssueID, ev)
 	}
 
-	var eventRow int64
-	err = tx.QueryRow(ctx, `
-		INSERT INTO events (issue_id, project_id, event_id, occurred_at, received_at, release, environment, data)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		ON CONFLICT (project_id, event_id) DO NOTHING
-		RETURNING id`,
-		res.IssueID, projectID, ev.ID, ev.Timestamp, now, nullable(ev.Release), nullable(ev.Environment), data).Scan(&eventRow)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return res, errDuplicate
-	}
+	eventRow, err := store.InsertEvent(ctx, tx, store.NewEvent{IssueID: res.IssueID, ProjectID: projectID, Event: ev, ReceivedAt: now, Encoded: data})
 	if err != nil {
-		return res, fmt.Errorf("guardar evento: %w", err)
+		return res, err
+	}
+	if eventRow == 0 {
+		return res, errDuplicate
 	}
 	return res, in.recordTags(ctx, tx, res.IssueID, ev)
 }

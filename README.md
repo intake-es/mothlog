@@ -414,6 +414,23 @@ Cada issue cuenta, con cada evento, los valores de sus etiquetas y su última ve
 
 Cada hora se borran los eventos de más de `RETENTION_DAYS` días y los issues que se quedan sin eventos.
 
+### Cómo se guarda un evento
+
+Cada evento se guarda normalizado (lo que devuelven `GET /api/0/events/{id}/` y `get_event`) en JSON comprimido con zstd en `events.data_zstd`. Lo poco que se consulta por SQL va en columnas propias: `user_label` (el usuario que se enseña: id, email, username o IP, el primero que haya), `user_ident` (el usuario como lo cuenta el resumen), `organization_id` y `summary` (el «Tipo: valor» o el mensaje de la lista de eventos). Lo demás (traza, breadcrumbs, contexts) solo lo lee Go, entero, así que ninguna consulta depende de `jsonb` ni de funciones de Postgres para leer el evento.
+
+Se comprime con un diccionario de zstd hecho con los eventos de `testdata/envelopes` (`internal/store/zstd-dict-1.jsonl`, dentro del binario). Cada evento lleva en su cabecera el id del diccionario con que se comprimió: para cambiarlo se añade otro con un id nuevo y se deja el de antes, que sigue leyendo los eventos viejos; un test impide modificar uno ya usado. Hay un solo codificador y un solo decodificador por proceso, con dos estados que se reutilizan (unos 3,5 MB en total).
+
+Cuánto se ahorra, medido con Postgres 16 tras `VACUUM FULL` (`pg_total_relation_size('events')`, con sus índices):
+
+| Eventos | Antes (`jsonb`) | Ahora | Ahorro |
+|---|---|---|---|
+| Los 10 de los fixtures | 128 KiB (tabla y TOAST: 48 KiB) | 96 KiB (16 KiB) | 25 % (67 % sin los índices, que con tan pocas filas son páginas mínimas) |
+| 5.010 generados a partir de los fixtures | 12,0 MiB (`jsonb`: 9,8 MiB) | 2,6 MiB (zstd: 0,6 MiB) | 79 % |
+
+Son eventos de los mismos SDK y aplicaciones que el diccionario, el mejor caso. Con eventos de otra aplicación, zstd sin diccionario deja el JSON en un 32 % de su tamaño (frente al `jsonb`, que Postgres ya comprime con pglz por encima de 2 KB) y el diccionario quita un 10-20 % más.
+
+Los eventos guardados antes de esta versión siguen en `events.data` (`jsonb`). Al arrancar, el servicio los convierte en segundo plano, por lotes de 200 en una transacción cada uno, sin bloquear el arranque; las réplicas se reparten las filas con `FOR UPDATE SKIP LOCKED`, y si se para a medias, lo convertido queda y lo demás se convierte al arrancar otra vez. Mientras quede algún evento sin convertir, se repite cada hora, para recoger lo que guarde en `jsonb` una réplica de la versión anterior durante un despliegue gradual o lo que deje bloqueado una que muere; acaba cuando ya no queda ninguno, también contando los que tiene bloqueados otra réplica. Mientras tanto se leen los dos formatos. El espacio de lo convertido se reutiliza para eventos nuevos tras el `VACUUM` automático; para devolverlo al disco hace falta `VACUUM FULL events` (bloquea la tabla) o `pg_repack`. Cuando `SELECT count(*) FROM events WHERE data IS NOT NULL` dé 0 en todas las instalaciones, una migración posterior puede quitar la columna `data` y, con ella, lo que aún la lee.
+
 ### Filtros, tope y muestreo
 
 Cada proyecto tiene su configuración, con `projects filters` o con `/api/0/projects/{id}/filters`. Por defecto no filtra nada, guarda como mucho 100 eventos por issue y hora, no muestrea y usa `RATE_LIMIT_PER_MINUTE`.

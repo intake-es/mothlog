@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/sentryimport/fake"
 	"github.com/intake-es/intake-errors/internal/store"
@@ -212,15 +211,11 @@ func TestImportAllAndAgain(t *testing.T) {
 	}
 
 	// El evento guardado es el de la ingesta: la traza con el código y las etiquetas.
-	var data []byte
-	if err := e.db.Pool().QueryRow(context.Background(), `
-		SELECT data FROM events WHERE issue_id = $1 ORDER BY occurred_at DESC LIMIT 1`, zero.id).Scan(&data); err != nil {
-		t.Fatal(err)
+	latest, err := e.db.LatestEvent(context.Background(), zero.id)
+	if err != nil || latest == nil {
+		t.Fatalf("último evento: %v, %v", latest, err)
 	}
-	var ev event.Event
-	if err := json.Unmarshal(data, &ev); err != nil {
-		t.Fatal(err)
-	}
+	ev := latest.Event
 	if ev.ID != "7ce73bbc4d29462b9aafeebea37d4014" || ev.Release != "fixture-release-1" || ev.Environment != "production" ||
 		len(ev.Exceptions) != 1 || ev.Request == nil || ev.SDK.Name == "" {
 		t.Fatalf("evento = %+v", ev)

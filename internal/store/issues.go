@@ -356,19 +356,31 @@ type StoredEvent struct {
 	Event      event.Event `json:"event"`
 }
 
-const storedEventColumns = `id, issue_id, project_id, replace(event_id::text, '-', ''), occurred_at, received_at, data`
+const storedEventColumns = `id, issue_id, project_id, replace(event_id::text, '-', ''), occurred_at, received_at, data_zstd, data`
 
 func scanStoredEvent(r pgx.Row) (StoredEvent, error) {
 	var e StoredEvent
-	var data []byte
-	if err := r.Scan(&e.ID, &e.IssueID, &e.ProjectID, &e.EventID, &e.OccurredAt, &e.ReceivedAt, &data); err != nil {
+	var compressed, legacy []byte
+	if err := r.Scan(&e.ID, &e.IssueID, &e.ProjectID, &e.EventID, &e.OccurredAt, &e.ReceivedAt, &compressed, &legacy); err != nil {
 		return e, err
 	}
-	if err := json.Unmarshal(data, &e.Event); err != nil {
+	var err error
+	if e.Event, err = decodeStored(compressed, legacy); err != nil {
 		return e, fmt.Errorf("evento %d: %w", e.ID, err)
 	}
 	return e, nil
 }
+
+// Lo que se leía de events.data en SQL, solo para los eventos que aún no se
+// han convertido. Se va cuando se quite la columna data.
+const (
+	legacyUserLabel = `COALESCE(NULLIF(e.data->'user'->>'id', ''), NULLIF(e.data->'user'->>'email', ''),
+		NULLIF(e.data->'user'->>'username', ''), NULLIF(e.data->'user'->>'ip_address', ''))`
+	legacyOrganizationID = `(e.data->'tags'->>'organization_id')`
+	legacySummary        = `CASE WHEN jsonb_array_length(COALESCE(e.data->'exceptions', '[]')) > 0
+		THEN concat_ws(': ', NULLIF(e.data->'exceptions'->-1->>'type', ''), NULLIF(e.data->'exceptions'->-1->>'value', ''))
+		ELSE e.data->>'message' END`
+)
 
 // Event busca por el id interno o por el event_id del SDK (32 hex o UUID).
 func (s *Store) Event(ctx context.Context, ref string) (StoredEvent, error) {
@@ -470,9 +482,8 @@ func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now tim
 		FROM events e CROSS JOIN LATERAL (VALUES
 			('environment', e.environment),
 			('release', e.release),
-			('user', COALESCE(NULLIF(e.data->'user'->>'id', ''), NULLIF(e.data->'user'->>'email', ''),
-			                  NULLIF(e.data->'user'->>'username', ''), NULLIF(e.data->'user'->>'ip_address', ''))),
-			('organization_id', e.data->'tags'->>'organization_id')
+			('user', COALESCE(e.user_label, `+legacyUserLabel+`)),
+			('organization_id', COALESCE(e.organization_id, `+legacyOrganizationID+`))
 		) AS v(key, value)
 		WHERE e.issue_id = $1 AND v.value <> '' AND ($2 = '' OR e.environment = $2)
 		GROUP BY v.key, v.value
@@ -576,16 +587,13 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 		afterID = c.ID
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, replace(event_id::text, '-', ''), occurred_at, received_at,
-			COALESCE(release, ''), COALESCE(environment, ''),
-			COALESCE(NULLIF(data->'user'->>'id', ''), NULLIF(data->'user'->>'email', ''),
-			         NULLIF(data->'user'->>'username', ''), NULLIF(data->'user'->>'ip_address', ''), ''),
-			CASE WHEN jsonb_array_length(COALESCE(data->'exceptions', '[]')) > 0
-				THEN concat_ws(': ', NULLIF(data->'exceptions'->-1->>'type', ''), NULLIF(data->'exceptions'->-1->>'value', ''))
-				ELSE COALESCE(data->>'message', '') END
-		FROM events
-		WHERE issue_id = $1 AND (occurred_at, id) < ($2, $3) AND ($5 = '' OR environment = $5)
-		ORDER BY occurred_at DESC, id DESC LIMIT $4`, issueID, after, afterID, limit+1, env)
+		SELECT e.id, replace(e.event_id::text, '-', ''), e.occurred_at, e.received_at,
+			COALESCE(e.release, ''), COALESCE(e.environment, ''),
+			COALESCE(e.user_label, `+legacyUserLabel+`, ''),
+			COALESCE(e.summary, `+legacySummary+`, '')
+		FROM events e
+		WHERE e.issue_id = $1 AND (e.occurred_at, e.id) < ($2, $3) AND ($5 = '' OR e.environment = $5)
+		ORDER BY e.occurred_at DESC, e.id DESC LIMIT $4`, issueID, after, afterID, limit+1, env)
 	if err != nil {
 		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
 	}

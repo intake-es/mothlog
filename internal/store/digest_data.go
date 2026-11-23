@@ -143,7 +143,11 @@ type DigestTotals struct {
 }
 
 // userIdent es el usuario de un evento guardado, como lo cuenta la ingesta.
-const userIdent = `CASE
+const userIdent = `COALESCE(e.user_ident, ` + legacyUserIdent + `)`
+
+// legacyUserIdent es userIdent leído de events.data, para los eventos aún sin
+// convertir. Se va cuando se quite la columna data.
+const legacyUserIdent = `CASE
 	WHEN COALESCE(e.data->'user'->>'id', '') <> '' THEN 'id:' || (e.data->'user'->>'id')
 	WHEN btrim(COALESCE(e.data->'user'->>'email', ''), E' \t\n\r') <> '' THEN 'email:' || lower(btrim(e.data->'user'->>'email', E' \t\n\r'))
 	WHEN COALESCE(e.data->'user'->>'username', '') <> '' THEN 'username:' || (e.data->'user'->>'username')

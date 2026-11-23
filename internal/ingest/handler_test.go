@@ -659,7 +659,11 @@ func TestPurgeSkipsIssueBeingIngested(t *testing.T) {
 	}
 	ev.ID = newHexID()
 	ev.Timestamp = old
-	if _, err := ing.save(ctx, tx, 1, ev, Group(ev), []byte(`{}`), time.Now(), DefaultLimits()); err != nil {
+	enc, err := store.EncodeEvent(ev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ing.save(ctx, tx, 1, ev, Group(ev), enc, time.Now(), DefaultLimits()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -692,10 +696,36 @@ func TestStoredEventKeepsDebugMeta(t *testing.T) {
 		f := loadFixture(t, name)
 		e.sendOK(t, f, f.body)
 	}
-	if n := e.count(t, `SELECT count(*) FROM events WHERE jsonb_array_length(data->'debug_meta'->'images') = 2 AND release = 'prueba-inject'`); n != 1 {
-		t.Errorf("%d eventos con debug_meta", n)
+	rows, err := e.s.Pool().Query(context.Background(), `SELECT id::text FROM events ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if n := e.count(t, `SELECT count(*) FROM events WHERE data ? 'debug_meta'`); n != 1 {
-		t.Errorf("%d eventos con debug_meta; el de upload no lo trae", n)
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	withMeta, injected := 0, 0
+	for _, id := range ids {
+		ev, err := e.s.Event(context.Background(), id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(ev.Event.DebugMeta) == 0 {
+			continue
+		}
+		withMeta++
+		var meta struct{ Images []json.RawMessage }
+		if err := json.Unmarshal(ev.Event.DebugMeta, &meta); err != nil {
+			t.Fatal(err)
+		}
+		if len(meta.Images) == 2 && ev.Event.Release == "prueba-inject" {
+			injected++
+		}
+	}
+	if injected != 1 {
+		t.Errorf("%d eventos con debug_meta", injected)
+	}
+	if withMeta != 1 {
+		t.Errorf("%d eventos con debug_meta; el de upload no lo trae", withMeta)
 	}
 }

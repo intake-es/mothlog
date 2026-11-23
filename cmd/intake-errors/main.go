@@ -163,6 +163,7 @@ func run(args []string) error {
 	go maps.RunRetention(ctx, time.Duration(cfg.RetentionDays)*24*time.Hour, time.Hour)
 
 	go ingest.RunRetention(ctx, db.Pool(), cfg.RetentionDays, log)
+	go db.RunEventConversion(ctx, log, time.Minute, time.Hour)
 	alerts, err := alert.New(db, log, cfg.Alerts)
 	if err != nil {
 		return err
