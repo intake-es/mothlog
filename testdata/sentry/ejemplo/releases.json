@@ -1,0 +1,90 @@
+[
+ {
+  "id": 301,
+  "version": "fixture-release-1",
+  "shortVersion": "fixture-release-1",
+  "status": "open",
+  "ref": null,
+  "url": null,
+  "dateCreated": "2026-11-01T09:00:00.000000Z",
+  "dateReleased": "2026-11-01T09:10:00.000000Z",
+  "data": {},
+  "newGroups": 4,
+  "owner": null,
+  "commitCount": 0,
+  "lastCommit": null,
+  "deployCount": 2,
+  "lastDeploy": {
+   "id": "53",
+   "environment": "production",
+   "dateStarted": null,
+   "dateFinished": "2026-11-01T09:20:00.000000Z",
+   "name": null,
+   "url": null
+  },
+  "authors": [],
+  "projects": [
+   {
+    "id": 4501001,
+    "slug": "api",
+    "name": "api",
+    "platform": "python",
+    "platforms": [
+     "python"
+    ],
+    "hasHealthData": true,
+    "newGroups": 0
+   },
+   {
+    "id": 4501002,
+    "slug": "web",
+    "name": "web",
+    "platform": "javascript-browser",
+    "platforms": [
+     "javascript-browser"
+    ],
+    "hasHealthData": true,
+    "newGroups": 0
+   }
+  ],
+  "firstEvent": "2026-11-01T09:12:00.000000Z",
+  "lastEvent": "2026-11-22T15:37:49.873000Z",
+  "currentProjectMeta": {},
+  "userAgent": null
+ },
+ {
+  "id": 290,
+  "version": "api@0.9.0",
+  "shortVersion": "0.9.0",
+  "status": "open",
+  "ref": null,
+  "url": null,
+  "dateCreated": "2026-09-15T12:00:00.000000Z",
+  "dateReleased": null,
+  "data": {},
+  "newGroups": 1,
+  "owner": null,
+  "commitCount": 0,
+  "lastCommit": null,
+  "deployCount": 0,
+  "lastDeploy": null,
+  "authors": [],
+  "projects": [
+   {
+    "id": 4501001,
+    "slug": "api",
+    "name": "api",
+    "platform": "python",
+    "platforms": [
+     "python"
+    ],
+    "hasHealthData": true,
+    "newGroups": 0
+   }
+  ],
+  "firstEvent": "2026-09-15T12:05:00.000000Z",
+  "lastEvent": "2026-10-30T18:00:00.000000Z",
+  "currentProjectMeta": {},
+  "userAgent": null
+ }
+]

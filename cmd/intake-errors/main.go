@@ -126,6 +126,8 @@ func run(args []string) error {
 			return projects(cfg, args[1:], os.Stdout)
 		case "tokens", "releases":
 			return runCommand(args, os.Stdout)
+		case "import":
+			return importCommand(cfg, args[1:], os.Stdout, os.Stderr)
 		}
 		return fmt.Errorf("comando desconocido %q\n%s", args[0], usage)
 	}

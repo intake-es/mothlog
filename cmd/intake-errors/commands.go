@@ -27,7 +27,9 @@ const usage = `uso:
   intake-errors projects rules <nombre> [<orden> …]  lista, crea, edita, borra y prueba sus reglas de aviso
   intake-errors tokens create <nombre>  crea un token de la API y lo imprime una sola vez
   intake-errors tokens list             lista los tokens
-  intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre`
+  intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre
+  intake-errors import sentry --url <servidor> --org <slug> [--project <slug>…] [--since <fecha>] [--events <N>] [--dry-run]
+                                        importa de Sentry, con el token en SENTRY_IMPORT_TOKEN`
 
 func runCommand(args []string, out io.Writer) error {
 	if args[0] != "tokens" && args[0] != "releases" {

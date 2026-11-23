@@ -1,0 +1,55 @@
+[
+ {
+  "id": "7101",
+  "shareId": null,
+  "shortId": "WEB-1",
+  "title": "TypeError: Cannot read properties of undefined (reading 'reduce')",
+  "culprit": "https://app.example.com/chunk-Z554BZQ6.js in a",
+  "permalink": "https://ejemplo.sentry.io/issues/7101/",
+  "logger": null,
+  "level": "error",
+  "status": "unresolved",
+  "statusDetails": {},
+  "substatus": "ongoing",
+  "isPublic": false,
+  "platform": "javascript-browser",
+  "project": {
+   "id": "4501002",
+   "name": "web",
+   "slug": "web",
+   "platform": "javascript-browser"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "TypeError",
+   "value": "Cannot read properties of undefined (reading 'reduce')",
+   "in_app_frame_mix": "mixed",
+   "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+   "function": "a"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "5",
+  "userCount": 2,
+  "firstSeen": "2026-10-29T17:06:59.114Z",
+  "lastSeen": "2026-11-19T16:59:59.114Z",
+  "stats": {
+   "24h": [
+    [
+     1795104000,
+     1
+    ]
+   ]
+  }
+ }
+]

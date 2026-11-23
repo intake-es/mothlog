@@ -1,0 +1,21 @@
+{
+ "fixture-release-1": [
+  {
+   "id": "52",
+   "environment": "staging",
+   "dateStarted": "2026-11-01T09:05:00.000000Z",
+   "dateFinished": "2026-11-01T09:06:00.000000Z",
+   "name": "fixture-release-1 a staging",
+   "url": null
+  },
+  {
+   "id": "53",
+   "environment": "production",
+   "dateStarted": null,
+   "dateFinished": "2026-11-01T09:20:00.000000Z",
+   "name": null,
+   "url": null
+  }
+ ],
+ "api@0.9.0": []
+}

@@ -1,0 +1,316 @@
+[
+ {
+  "id": "7005",
+  "shareId": null,
+  "shortId": "API-5",
+  "title": "KeyError: 'oeste'",
+  "culprit": "app in sincronizar_stock_estricto",
+  "permalink": "https://ejemplo.sentry.io/issues/7005/",
+  "logger": null,
+  "level": "error",
+  "status": "unresolved",
+  "statusDetails": {},
+  "substatus": "ongoing",
+  "isPublic": false,
+  "platform": "python",
+  "project": {
+   "id": "4501001",
+   "name": "api",
+   "slug": "api",
+   "platform": "python"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "7",
+  "userCount": 1,
+  "firstSeen": "2026-10-27T15:37:49.873Z",
+  "lastSeen": "2026-11-22T14:55:49.873Z",
+  "stats": {
+   "24h": [
+    [
+     1795356000,
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "7003",
+  "shareId": null,
+  "shortId": "API-3",
+  "title": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')",
+  "culprit": "",
+  "permalink": "https://ejemplo.sentry.io/issues/7003/",
+  "logger": null,
+  "level": "error",
+  "status": "ignored",
+  "statusDetails": {
+   "ignoreCount": null,
+   "ignoreUntil": null
+  },
+  "substatus": "archived_until_escalating",
+  "isPublic": false,
+  "platform": "python",
+  "project": {
+   "id": "4501001",
+   "name": "api",
+   "slug": "api",
+   "platform": "python"
+  },
+  "type": "default",
+  "metadata": {
+   "title": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "12",
+  "userCount": 0,
+  "firstSeen": "2026-10-30T17:05:55.327Z",
+  "lastSeen": "2026-11-19T17:05:55.327Z",
+  "stats": {
+   "24h": [
+    [
+     1795107600,
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "7004",
+  "shareId": null,
+  "shortId": "API-4",
+  "title": "pagos.reembolso_rechazado",
+  "culprit": "",
+  "permalink": "https://ejemplo.sentry.io/issues/7004/",
+  "logger": null,
+  "level": "error",
+  "status": "resolved",
+  "statusDetails": {
+   "inNextRelease": true
+  },
+  "substatus": null,
+  "isPublic": false,
+  "platform": "python",
+  "project": {
+   "id": "4501001",
+   "name": "api",
+   "slug": "api",
+   "platform": "python"
+  },
+  "type": "default",
+  "metadata": {
+   "title": "pagos.reembolso_rechazado"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "3",
+  "userCount": 0,
+  "firstSeen": "2026-10-30T17:05:55.068Z",
+  "lastSeen": "2026-11-19T17:05:55.068Z",
+  "stats": {
+   "24h": [
+    [
+     1795107600,
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "7002",
+  "shareId": null,
+  "shortId": "API-2",
+  "title": "ValidationError: 1 validation error for Pedido\ncantidad\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='doce', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.14/v/int_parsing",
+  "culprit": "app in importar",
+  "permalink": "https://ejemplo.sentry.io/issues/7002/",
+  "logger": null,
+  "level": "error",
+  "status": "resolved",
+  "statusDetails": {
+   "inRelease": "fixture-release-1"
+  },
+  "substatus": null,
+  "isPublic": false,
+  "platform": "python",
+  "project": {
+   "id": "4501001",
+   "name": "api",
+   "slug": "api",
+   "platform": "python"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "ValidationError",
+   "value": "1 validation error for Pedido\ncantidad\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='doce', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.14/v/int_parsing",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "importar"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "9",
+  "userCount": 0,
+  "firstSeen": "2026-10-29T17:05:54.263Z",
+  "lastSeen": "2026-11-19T16:58:54.263Z",
+  "stats": {
+   "24h": [
+    [
+     1795104000,
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "7001",
+  "shareId": null,
+  "shortId": "API-1",
+  "title": "ZeroDivisionError: division by zero",
+  "culprit": "app in media",
+  "permalink": "https://ejemplo.sentry.io/issues/7001/",
+  "logger": null,
+  "level": "error",
+  "status": "unresolved",
+  "statusDetails": {},
+  "substatus": "ongoing",
+  "isPublic": false,
+  "platform": "python",
+  "project": {
+   "id": "4501001",
+   "name": "api",
+   "slug": "api",
+   "platform": "python"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "ZeroDivisionError",
+   "value": "division by zero",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "media"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "42",
+  "userCount": 0,
+  "firstSeen": "2026-10-28T17:05:53.945Z",
+  "lastSeen": "2026-11-19T16:51:53.945Z",
+  "stats": {
+   "24h": [
+    [
+     1795104000,
+     1
+    ]
+   ]
+  }
+ },
+ {
+  "id": "7006",
+  "shareId": null,
+  "shortId": "API-6",
+  "title": "OperationalError: server closed the connection unexpectedly",
+  "culprit": "pedidos.db in conectar",
+  "permalink": "https://ejemplo.sentry.io/issues/7006/",
+  "logger": null,
+  "level": "error",
+  "status": "unresolved",
+  "statusDetails": {},
+  "substatus": "ongoing",
+  "isPublic": false,
+  "platform": "python",
+  "project": {
+   "id": "4501001",
+   "name": "api",
+   "slug": "api",
+   "platform": "python"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "OperationalError",
+   "value": "server closed the connection unexpectedly"
+  },
+  "numComments": 0,
+  "assignedTo": null,
+  "isBookmarked": false,
+  "isSubscribed": false,
+  "subscriptionDetails": null,
+  "hasSeen": true,
+  "annotations": [],
+  "issueType": "error",
+  "issueCategory": "error",
+  "priority": "high",
+  "priorityLockedAt": null,
+  "isUnhandled": true,
+  "count": "128",
+  "userCount": 4,
+  "firstSeen": "2026-08-02T10:00:00.000Z",
+  "lastSeen": "2026-08-02T10:00:00.000Z",
+  "stats": {
+   "24h": [
+    [
+     1785664800,
+     1
+    ]
+   ]
+  }
+ }
+]

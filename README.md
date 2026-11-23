@@ -565,6 +565,37 @@ Las versiones antiguas (probado con 1.77.3, `sentry-cli releases files <release>
 
 La organización se acepta tal cual y el proyecto se busca por nombre (404 si no existe). Con un token que no vale, 401.
 
+## Importar desde Sentry
+
+Para no empezar de cero al venir de Sentry (sentry.io o uno propio), `import sentry` trae por su API los proyectos, los issues con sus últimos eventos y las releases con sus despliegues:
+
+```sh
+export SENTRY_IMPORT_TOKEN=...   # un token de la organización con permiso de lectura (org:read, project:read, event:read)
+intake-errors import sentry --url https://sentry.io --org mi-org --dry-run
+intake-errors import sentry --url https://sentry.io --org mi-org [--project api --project web] [--since 2026-06-01] [--events 5]
+```
+
+El token va solo en `SENTRY_IMPORT_TOKEN`, nunca en la línea de órdenes, y solo se manda en la cabecera `Authorization` al servidor de `--url`: si una página de la API apunta a otro servidor, no se sigue. No sale en el progreso, en el informe ni en los errores.
+
+Qué se trae:
+
+- **Proyectos**: todos los de la organización o los de `--project` (por slug, se puede repetir). Uno que no existe aquí se crea con el mismo nombre; si ya hay uno con ese nombre, se usa tal cual. El DSN nuevo sale en `projects list`.
+- **Releases** de cada proyecto, con su fecha de creación y de publicación, y sus **despliegues** por entorno. Los despliegues importados no resuelven nada: lo que resolvieron allí ya viene en el estado de cada issue.
+- **Issues**, también los resueltos y los ignorados: título, culprit, tipo, nivel, contador, usuarios, primera y última vez y estado. `unresolved` es abierto, `ignored` es silenciado y `resolved` es resuelto; resuelto en una release guarda esa release (un evento de ella o de una posterior lo reabre) y resuelto en la siguiente, la del último evento. El cambio de estado queda en el historial con origen `import`.
+- **Eventos**: los `--events` últimos de cada issue (5 si no se dice), pasados a la forma del SDK y leídos como en la ingesta, así que el detalle, la traza con el código, los breadcrumbs, las etiquetas y el `context.md` salen igual que con un evento recibido.
+
+`--since` deja fuera los issues vistos por última vez y las releases creadas antes de esa fecha (`2026-06-01` o `2026-06-01T10:00:00Z`). Un issue del que Sentry ya no guarda ningún evento se salta, porque sin eventos la retención lo borraría. Como los eventos importados cuentan desde que se importan, se quedan `RETENTION_DAYS` días aunque sean más viejos.
+
+Se respeta el límite de la API: con un 429 se espera lo que diga `Retry-After` (o `X-Sentry-Rate-Limit-Reset`), y si `X-Sentry-Rate-Limit-Remaining` llega a 0, hasta que el límite se reinicia. Se pagina con la cabecera `Link` y el progreso sale por la salida de errores.
+
+**Repetir la orden** no duplica nada: de cada proyecto, issue, release y despliegue se guarda de dónde viene (servidor, organización e id en Sentry, en `import_origins`) y qué se trajo. Al repetir, solo cambia lo que ha cambiado allí desde la última vez: el título, el nivel o el estado solo si cambiaron en Sentry, para no pisar lo que se haya cambiado aquí; el contador suma lo que ha crecido allí, porque aquí puede llevar además los eventos de la ingesta. Los eventos que ya estaban se dejan como están.
+
+**Los eventos nuevos se agrupan con lo importado**: la huella de cada issue importado se saca de su último evento como lo haría la ingesta, así que un evento nuevo del mismo error va a él y lo reabre o lo cuenta como cualquier otro. No se puede cuando ya hay aquí otro issue con esa huella (por ejemplo, si el proyecto ya recibía eventos), y entonces el informe lo dice. Tampoco coincidirá si el SDK pone un `fingerprint` propio, que la API de Sentry no devuelve, ni para los errores del navegador si aquí no están subidos los source maps, porque Sentry devuelve la traza ya traducida.
+
+`--dry-run` hace lo mismo sin escribir nada (las lecturas van en transacciones de solo lectura) y dice qué crearía y qué actualizaría. Al acabar, el informe cuenta los proyectos, releases, despliegues, issues y eventos creados, actualizados, sin cambios y saltados, y lista los issues que no se agrupan, los saltados y los errores de la API, que no paran la importación.
+
+Qué no se trae: los adjuntos, los replays, las transacciones y el rendimiento, los perfiles, el historial de comentarios y de actividad, quién está asignado, las reglas de aviso, los monitores de cron y de disponibilidad, los source maps y los eventos más allá de los `--events` últimos (el contador sí es el de Sentry).
+
 ## Fixtures
 
-`testdata/envelopes/` son envíos grabados de sentry-python 2.75.0 y `@sentry/browser` 11.15.0 desde dos apps de ejemplo (una de FastAPI y una página TypeScript compilada con esbuild), `testdata/sourcemaps/` el build de la página con sus mapas y `testdata/sentry-cli/` las subidas de ese build con sentry-cli 3.8.2; los check-ins de crons son de sentry-python y de `sentry-cli monitors run`. `tools/sentry-cli/prueba.sh` es la prueba de punta a punta con `sentry-cli` de verdad. Las apps, cómo regrabarlos y qué debe pasar con cada envío están en [`tools/fixtures/README.md`](tools/fixtures/README.md); `internal/event/fixtures_test.go` sigue esa tabla.
+`testdata/envelopes/` son envíos grabados de sentry-python 2.75.0 y `@sentry/browser` 11.15.0 desde dos apps de ejemplo (una de FastAPI y una página TypeScript compilada con esbuild), `testdata/sourcemaps/` el build de la página con sus mapas y `testdata/sentry-cli/` las subidas de ese build con sentry-cli 3.8.2; los check-ins de crons son de sentry-python y de `sentry-cli monitors run`. `testdata/sentry/` son las respuestas sintéticas de una API de Sentry para la importación, sacadas de esos envíos con `tools/sentry-falso/generar.py`; `go run ./tools/sentry-falso` las sirve para probarla a mano. `tools/sentry-cli/prueba.sh` es la prueba de punta a punta con `sentry-cli` de verdad. Las apps, cómo regrabarlos y qué debe pasar con cada envío están en [`tools/fixtures/README.md`](tools/fixtures/README.md); `internal/event/fixtures_test.go` sigue esa tabla.

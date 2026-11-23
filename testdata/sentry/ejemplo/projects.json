@@ -1,0 +1,101 @@
+[
+ {
+  "id": "4501001",
+  "slug": "api",
+  "name": "api",
+  "platform": "python",
+  "dateCreated": "2025-03-10T08:00:00.000000Z",
+  "isBookmarked": false,
+  "isMember": true,
+  "features": [
+   "releases",
+   "minidump"
+  ],
+  "firstEvent": "2025-03-10T08:30:00.000000Z",
+  "firstTransactionEvent": false,
+  "access": [
+   "project:read",
+   "event:read"
+  ],
+  "hasAccess": true,
+  "hasMinifiedStackTrace": false,
+  "hasMonitors": false,
+  "hasProfiles": false,
+  "hasReplays": false,
+  "hasSessions": true,
+  "isInternal": false,
+  "isPublic": false,
+  "avatar": {
+   "avatarType": "letter_avatar",
+   "avatarUuid": null
+  },
+  "color": "#3f70bf",
+  "status": "active"
+ },
+ {
+  "id": "4501002",
+  "slug": "web",
+  "name": "web",
+  "platform": "javascript-browser",
+  "dateCreated": "2025-03-10T08:00:00.000000Z",
+  "isBookmarked": false,
+  "isMember": true,
+  "features": [
+   "releases",
+   "minidump"
+  ],
+  "firstEvent": "2025-03-10T08:30:00.000000Z",
+  "firstTransactionEvent": false,
+  "access": [
+   "project:read",
+   "event:read"
+  ],
+  "hasAccess": true,
+  "hasMinifiedStackTrace": true,
+  "hasMonitors": false,
+  "hasProfiles": false,
+  "hasReplays": false,
+  "hasSessions": true,
+  "isInternal": false,
+  "isPublic": false,
+  "avatar": {
+   "avatarType": "letter_avatar",
+   "avatarUuid": null
+  },
+  "color": "#3f70bf",
+  "status": "active"
+ },
+ {
+  "id": "4501003",
+  "slug": "sin-errores",
+  "name": "sin-errores",
+  "platform": "python",
+  "dateCreated": "2025-03-10T08:00:00.000000Z",
+  "isBookmarked": false,
+  "isMember": true,
+  "features": [
+   "releases",
+   "minidump"
+  ],
+  "firstEvent": "2025-03-10T08:30:00.000000Z",
+  "firstTransactionEvent": false,
+  "access": [
+   "project:read",
+   "event:read"
+  ],
+  "hasAccess": true,
+  "hasMinifiedStackTrace": false,
+  "hasMonitors": false,
+  "hasProfiles": false,
+  "hasReplays": false,
+  "hasSessions": true,
+  "isInternal": false,
+  "isPublic": false,
+  "avatar": {
+   "avatarType": "letter_avatar",
+   "avatarUuid": null
+  },
+  "color": "#3f70bf",
+  "status": "active"
+ }
+]

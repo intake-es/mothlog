@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -702,6 +703,82 @@ func TestMigrationOIDC(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
 		WHERE table_name = 'people' AND column_name IN ('provider', 'subject') AND table_schema = current_schema())`).Scan(&exists); err != nil || exists {
 		t.Errorf("tras bajar siguen las columnas: %v, %v", exists, err)
+	}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("volver a subir: %v", err)
+	}
+}
+
+func TestMigrationImport(t *testing.T) {
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, testSchemaURL(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 20); err != nil {
+		t.Fatal(err)
+	}
+	def := func() string {
+		var s string
+		if err := pool.QueryRow(ctx, `SELECT pg_get_constraintdef(oid) FROM pg_constraint
+			WHERE conrelid = 'issue_status_changes'::regclass AND conname = 'issue_status_changes_source_check'`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	before := def()
+	var project, issue int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('api', 'clave-api') RETURNING id`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		VALUES ($1, 'fp', 'KeyError', now(), now(), 1) RETURNING id`, project).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ApplyVersion(ctx, 21, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, ok := range []string{
+		`INSERT INTO issue_status_changes (issue_id, source, from_status, to_status) VALUES (%[2]d, 'import', 'open', 'silenced')`,
+		`INSERT INTO issue_status_changes (issue_id, source, from_status, to_status) VALUES (%[2]d, 'ui', 'silenced', 'open')`,
+		`INSERT INTO import_origins (source, server, org, kind, external_id, issue_id) VALUES ('sentry', 'https://sentry.example.com', 'org', 'issue', '7', %[2]d)`,
+		`INSERT INTO import_origins (source, server, org, kind, external_id, project_id) VALUES ('sentry', 'https://sentry.example.com', 'org', 'project', '1', %[1]d)`,
+	} {
+		if _, err := pool.Exec(ctx, fmt.Sprintf(ok, project, issue)); err != nil {
+			t.Errorf("debería caber: %s: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{
+		`INSERT INTO issue_status_changes (issue_id, source, from_status, to_status) VALUES (%[2]d, 'otro', 'open', 'silenced')`,
+		`INSERT INTO import_origins (source, server, org, kind, external_id, issue_id) VALUES ('sentry', 'https://sentry.example.com', 'org', 'issue', '7', %[2]d)`,
+		`INSERT INTO import_origins (source, server, org, kind, external_id, project_id) VALUES ('sentry', 's', 'org', 'issue', '8', %[1]d)`,
+		`INSERT INTO import_origins (source, server, org, kind, external_id, issue_id) VALUES ('otro', 's', 'org', 'issue', '9', %[2]d)`,
+	} {
+		if _, err := pool.Exec(ctx, fmt.Sprintf(bad, project, issue)); err == nil {
+			t.Errorf("no debería caber: %s", bad)
+		}
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM issues WHERE id = $1`, issue); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM import_origins WHERE kind = 'issue'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("borrar el issue deja %d orígenes: %v", n, err)
+	}
+
+	if _, err := p.ApplyVersion(ctx, 21, false); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	if after := def(); after != before {
+		t.Errorf("la condición no vuelve a ser la de antes:\n%s\n---\n%s", after, before)
 	}
 	if _, err := p.Up(ctx); err != nil {
 		t.Fatalf("volver a subir: %v", err)

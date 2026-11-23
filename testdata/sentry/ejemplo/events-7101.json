@@ -1,0 +1,670 @@
+[
+ {
+  "id": "2d681da2d9754eef94766ae1d05a5d2b",
+  "groupID": "7101",
+  "eventID": "2d681da2d9754eef94766ae1d05a5d2b",
+  "projectID": "4501002",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "TypeError",
+       "value": "Cannot read properties of undefined (reading 'reduce')",
+       "mechanism": {
+        "type": "auto.browser.browserapierrors.addEventListener",
+        "handled": false,
+        "data": {
+         "handler": "<anonymous>",
+         "target": "EventTarget"
+        }
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "https://app.example.com/main-3TO43VUM.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "HTMLButtonElement.r",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 15,
+          "colNo": 14711,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/main-3TO43VUM.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "HTMLButtonElement.<anonymous>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 15,
+          "colNo": 31889,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "l",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 492,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "Object.emit",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 226,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "<anonymous>",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "Array.map",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": null,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "?",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 242,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "c",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 442,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "a",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 383,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   },
+   {
+    "type": "request",
+    "data": {
+     "apiTarget": null,
+     "method": null,
+     "url": "https://app.example.com/",
+     "query": [],
+     "fragment": null,
+     "data": null,
+     "headers": [
+      [
+       "User-Agent",
+       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36"
+      ]
+     ],
+     "cookies": [],
+     "env": null,
+     "inferredContentType": null
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "TypeError: Cannot read properties of undefined (reading 'reduce')",
+  "location": "https://app.example.com/chunk-Z554BZQ6.js in a",
+  "user": null,
+  "contexts": {
+   "trace": {
+    "trace_id": "5f3f0a83e1cd4a39b5989025f5f2189b",
+    "span_id": "aa85be424f28140f",
+    "type": "trace"
+   },
+   "culture": {
+    "locale": "es-ES",
+    "timezone": "Europe/Madrid",
+    "calendar": "gregory",
+    "type": "culture"
+   }
+  },
+  "sdk": {
+   "name": "sentry.javascript.browser",
+   "version": "11.15.0"
+  },
+  "context": {
+   "arguments": [
+    {
+     "type": "click",
+     "target": "[HTMLElement: body > button#enviar]",
+     "currentTarget": "[HTMLElement: body > button#enviar]",
+     "detail": 1,
+     "isTrusted": true
+    }
+   ]
+  },
+  "packages": {},
+  "type": "error",
+  "metadata": {
+   "type": "TypeError",
+   "value": "Cannot read properties of undefined (reading 'reduce')",
+   "in_app_frame_mix": "mixed",
+   "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+   "function": "a"
+  },
+  "tags": [
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "auto.browser.browserapierrors.addEventListener"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "url",
+    "value": "https://app.example.com/"
+   }
+  ],
+  "platform": "javascript",
+  "dateReceived": "2026-11-19T16:59:59.294Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "https://app.example.com/chunk-Z554BZQ6.js in a",
+  "dateCreated": "2026-11-19T16:59:59.114Z",
+  "fingerprints": [
+   "2bdf1017f9dfba6676f3a2363743cd0c"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-19T16:59:59.114Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501002,
+     "slug": "web",
+     "name": "web"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "b324c60530f6d830d1f4779b31f7690b",
+  "groupID": "7101",
+  "eventID": "b324c60530f6d830d1f4779b31f7690b",
+  "projectID": "4501002",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "TypeError",
+       "value": "Cannot read properties of undefined (reading 'reduce')",
+       "mechanism": {
+        "type": "auto.browser.browserapierrors.addEventListener",
+        "handled": false,
+        "data": {
+         "handler": "<anonymous>",
+         "target": "EventTarget"
+        }
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "https://app.example.com/main-3TO43VUM.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "HTMLButtonElement.r",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 15,
+          "colNo": 14711,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/main-3TO43VUM.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "HTMLButtonElement.<anonymous>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 15,
+          "colNo": 31889,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "l",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 492,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "Object.emit",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 226,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "<anonymous>",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "Array.map",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": null,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "?",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 242,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "c",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 442,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         },
+         {
+          "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+          "absPath": null,
+          "module": null,
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "a",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [],
+          "lineNo": 1,
+          "colNo": 383,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {}
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   },
+   {
+    "type": "request",
+    "data": {
+     "apiTarget": null,
+     "method": null,
+     "url": "https://app.example.com/",
+     "query": [],
+     "fragment": null,
+     "data": null,
+     "headers": [
+      [
+       "User-Agent",
+       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36"
+      ]
+     ],
+     "cookies": [],
+     "env": null,
+     "inferredContentType": null
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "TypeError: Cannot read properties of undefined (reading 'reduce')",
+  "location": "https://app.example.com/chunk-Z554BZQ6.js in a",
+  "user": null,
+  "contexts": {
+   "trace": {
+    "trace_id": "5f3f0a83e1cd4a39b5989025f5f2189b",
+    "span_id": "aa85be424f28140f",
+    "type": "trace"
+   },
+   "culture": {
+    "locale": "es-ES",
+    "timezone": "Europe/Madrid",
+    "calendar": "gregory",
+    "type": "culture"
+   }
+  },
+  "sdk": {
+   "name": "sentry.javascript.browser",
+   "version": "11.15.0"
+  },
+  "context": {
+   "arguments": [
+    {
+     "type": "click",
+     "target": "[HTMLElement: body > button#enviar]",
+     "currentTarget": "[HTMLElement: body > button#enviar]",
+     "detail": 1,
+     "isTrusted": true
+    }
+   ]
+  },
+  "packages": {},
+  "type": "error",
+  "metadata": {
+   "type": "TypeError",
+   "value": "Cannot read properties of undefined (reading 'reduce')",
+   "in_app_frame_mix": "mixed",
+   "filename": "https://app.example.com/chunk-Z554BZQ6.js",
+   "function": "a"
+  },
+  "tags": [
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "auto.browser.browserapierrors.addEventListener"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "url",
+    "value": "https://app.example.com/"
+   }
+  ],
+  "platform": "javascript",
+  "dateReceived": "2026-11-18T17:06:59.294Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "https://app.example.com/chunk-Z554BZQ6.js in a",
+  "dateCreated": "2026-11-18T17:06:59.114Z",
+  "fingerprints": [
+   "2bdf1017f9dfba6676f3a2363743cd0c"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-18T17:06:59.114Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501002,
+     "slug": "web",
+     "name": "web"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ }
+]

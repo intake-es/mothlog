@@ -1,0 +1,173 @@
+[
+ {
+  "id": "8734f940212a47d78c56f217b502c18f",
+  "groupID": "7003",
+  "eventID": "8734f940212a47d78c56f217b502c18f",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "message",
+    "data": {
+     "formatted": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')",
+     "message": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')",
+     "params": null
+    }
+   },
+   {
+    "type": "breadcrumbs",
+    "data": {
+     "values": [
+      {
+       "type": "http",
+       "timestamp": "2026-11-19T17:05:53.327Z",
+       "level": "info",
+       "message": null,
+       "category": "httplib",
+       "data": {
+        "method": "GET",
+        "url": "http://inventario.interno/stock/p_1042",
+        "status_code": 200
+       },
+       "event_id": null
+      },
+      {
+       "type": "default",
+       "timestamp": "2026-11-19T17:05:54.327Z",
+       "level": "info",
+       "message": "calculando la media del pedido",
+       "category": "pedidos",
+       "data": null,
+       "event_id": null
+      }
+     ]
+    }
+   }
+  ],
+  "dist": null,
+  "message": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')",
+  "title": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')",
+  "location": "",
+  "user": null,
+  "contexts": {
+   "trace": {
+    "trace_id": "8a1d9b20152648289bb8190a6704bc21",
+    "span_id": "9eed752ba57c0cd9",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "tarea"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "default",
+  "metadata": {
+   "title": "task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura' worker=2fb81653 try=4 duration_ms=146906 error=TimeoutError('timed out')"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "logger",
+    "value": "worker"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-19T17:05:55.507Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "",
+  "dateCreated": "2026-11-19T17:05:55.327Z",
+  "fingerprints": [
+   "2561c86a7a47c054836b0a653ac19dde"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-19T17:05:55.327Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ }
+]

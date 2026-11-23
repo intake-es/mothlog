@@ -1,0 +1,2400 @@
+[
+ {
+  "id": "7d274e0bc6ba43e985c20a5bd97e0c93",
+  "groupID": "7005",
+  "eventID": "7d274e0bc6ba43e985c20a5bd97e0c93",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   },
+   {
+    "type": "breadcrumbs",
+    "data": {
+     "values": [
+      {
+       "type": "http",
+       "timestamp": "2026-11-22T14:55:47.873Z",
+       "level": "info",
+       "message": null,
+       "category": "httplib",
+       "data": {
+        "method": "GET",
+        "url": "http://inventario.interno/stock/p_1042",
+        "status_code": 200
+       },
+       "event_id": null
+      },
+      {
+       "type": "default",
+       "timestamp": "2026-11-22T14:55:48.873Z",
+       "level": "info",
+       "message": "calculando la media del pedido",
+       "category": "pedidos",
+       "data": null,
+       "event_id": null
+      }
+     ]
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-22T14:55:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-22T14:55:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-22T14:55:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "f57a0b376d492a747fa16c413a145e35",
+  "groupID": "7005",
+  "eventID": "f57a0b376d492a747fa16c413a145e35",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-21T15:02:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-21T15:02:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-21T15:02:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "7ded2046bd1532607de3ced663a036e9",
+  "groupID": "7005",
+  "eventID": "7ded2046bd1532607de3ced663a036e9",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   },
+   {
+    "type": "breadcrumbs",
+    "data": {
+     "values": [
+      {
+       "type": "http",
+       "timestamp": "2026-11-20T15:09:47.873Z",
+       "level": "info",
+       "message": null,
+       "category": "httplib",
+       "data": {
+        "method": "GET",
+        "url": "http://inventario.interno/stock/p_1042",
+        "status_code": 200
+       },
+       "event_id": null
+      },
+      {
+       "type": "default",
+       "timestamp": "2026-11-20T15:09:48.873Z",
+       "level": "info",
+       "message": "calculando la media del pedido",
+       "category": "pedidos",
+       "data": null,
+       "event_id": null
+      }
+     ]
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-20T15:09:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-20T15:09:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-20T15:09:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "e4be15f6e77346b8a420f0ed7407ff87",
+  "groupID": "7005",
+  "eventID": "e4be15f6e77346b8a420f0ed7407ff87",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-19T15:16:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-19T15:16:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-19T15:16:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "26b96552cb47f057ddc244f8a1131bd4",
+  "groupID": "7005",
+  "eventID": "26b96552cb47f057ddc244f8a1131bd4",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   },
+   {
+    "type": "breadcrumbs",
+    "data": {
+     "values": [
+      {
+       "type": "http",
+       "timestamp": "2026-11-18T15:23:47.873Z",
+       "level": "info",
+       "message": null,
+       "category": "httplib",
+       "data": {
+        "method": "GET",
+        "url": "http://inventario.interno/stock/p_1042",
+        "status_code": 200
+       },
+       "event_id": null
+      },
+      {
+       "type": "default",
+       "timestamp": "2026-11-18T15:23:48.873Z",
+       "level": "info",
+       "message": "calculando la media del pedido",
+       "category": "pedidos",
+       "data": null,
+       "event_id": null
+      }
+     ]
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-18T15:23:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-18T15:23:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-18T15:23:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "49c66ccc2d7fce1f2ae42319b0af9d25",
+  "groupID": "7005",
+  "eventID": "49c66ccc2d7fce1f2ae42319b0af9d25",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-17T15:30:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-17T15:30:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-17T15:30:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ },
+ {
+  "id": "fdeb51a350301306bbf40d04e7bdf92d",
+  "groupID": "7005",
+  "eventID": "fdeb51a350301306bbf40d04e7bdf92d",
+  "projectID": "4501001",
+  "size": 6543,
+  "entries": [
+   {
+    "type": "exception",
+    "data": {
+     "values": [
+      {
+       "type": "KeyError",
+       "value": "'oeste'",
+       "mechanism": {
+        "type": "excepthook",
+        "handled": false
+       },
+       "threadId": null,
+       "module": null,
+       "stacktrace": {
+        "frames": [
+         {
+          "filename": "grabar.py",
+          "absPath": "/srv/api/grabar.py",
+          "module": "__main__",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "<module>",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            38,
+            "    sentry_sdk.end_session()"
+           ],
+           [
+            39,
+            "elif caso == \"sesion-crash\":"
+           ],
+           [
+            40,
+            "    sentry_sdk.set_user({\"id\": \"u_luis\"})"
+           ],
+           [
+            41,
+            "    sentry_sdk.start_session()"
+           ],
+           [
+            42,
+            "    try:"
+           ],
+           [
+            43,
+            "        sincronizar_stock_estricto(\"oeste\")"
+           ],
+           [
+            44,
+            "    except KeyError as exc:"
+           ],
+           [
+            45,
+            "        event, hint = event_from_exception("
+           ],
+           [
+            46,
+            "            exc, client_options=sentry_sdk.get_client().options, mechanism={\"type\": \"excepthook\", \"handled\": False}"
+           ],
+           [
+            47,
+            "        )"
+           ],
+           [
+            48,
+            "        sentry_sdk.capture_event(event, hint=hint)"
+           ]
+          ],
+          "lineNo": 43,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "__name__": "'__main__'",
+           "__doc__": "None",
+           "__package__": "None",
+           "__loader__": "<_frozen_importlib_external.SourceFileLoader object at 0x7a4fed3744d0>",
+           "__spec__": "None",
+           "__builtins__": "<module 'builtins' (built-in)>",
+           "__file__": "'/srv/api/grabar.py'",
+           "__cached__": "None",
+           "logging": "<module 'logging' from '/usr/lib/python3.14/logging/__init__.py'>",
+           "random": "<module 'random' from '/usr/lib/python3.14/random.py'>"
+          }
+         },
+         {
+          "filename": "app.py",
+          "absPath": "/srv/api/app.py",
+          "module": "app",
+          "package": null,
+          "platform": null,
+          "instructionAddr": null,
+          "symbolAddr": null,
+          "function": "sincronizar_stock_estricto",
+          "rawFunction": null,
+          "symbol": null,
+          "context": [
+           [
+            97,
+            "        return 0"
+           ],
+           [
+            98,
+            ""
+           ],
+           [
+            99,
+            ""
+           ],
+           [
+            100,
+            "def sincronizar_stock_estricto(almacen: str) -> int:"
+           ],
+           [
+            101,
+            "    existencias = {\"norte\": 4, \"sur\": 9}"
+           ],
+           [
+            102,
+            "    return existencias[almacen]"
+           ],
+           [
+            103,
+            ""
+           ],
+           [
+            104,
+            ""
+           ],
+           [
+            105,
+            "def reembolsar(pedido_id: str) -> None:"
+           ],
+           [
+            106,
+            "    log.error(\"pagos.reembolso_rechazado\", pedido_id=pedido_id, status=502)"
+           ]
+          ],
+          "lineNo": 102,
+          "colNo": null,
+          "inApp": true,
+          "trust": null,
+          "errors": null,
+          "lock": null,
+          "sourceLink": null,
+          "vars": {
+           "almacen": "'oeste'",
+           "existencias": {
+            "norte": "4",
+            "sur": "9"
+           }
+          }
+         }
+        ],
+        "framesOmitted": null,
+        "registers": null,
+        "hasSystemFrames": false
+       },
+       "rawStacktrace": null
+      }
+     ],
+     "hasSystemFrames": true,
+     "excOmitted": null
+    }
+   },
+   {
+    "type": "breadcrumbs",
+    "data": {
+     "values": [
+      {
+       "type": "http",
+       "timestamp": "2026-11-16T15:37:47.873Z",
+       "level": "info",
+       "message": null,
+       "category": "httplib",
+       "data": {
+        "method": "GET",
+        "url": "http://inventario.interno/stock/p_1042",
+        "status_code": 200
+       },
+       "event_id": null
+      },
+      {
+       "type": "default",
+       "timestamp": "2026-11-16T15:37:48.873Z",
+       "level": "info",
+       "message": "calculando la media del pedido",
+       "category": "pedidos",
+       "data": null,
+       "event_id": null
+      }
+     ]
+    }
+   }
+  ],
+  "dist": null,
+  "message": "",
+  "title": "KeyError: 'oeste'",
+  "location": "app in sincronizar_stock_estricto",
+  "user": {
+   "id": "u_luis",
+   "email": null,
+   "username": null,
+   "ip_address": null,
+   "name": null,
+   "geo": null,
+   "data": null
+  },
+  "contexts": {
+   "trace": {
+    "trace_id": "66740e973d5941a28ed085b48e09c58a",
+    "span_id": "b98ed199d8bccfa1",
+    "parent_span_id": null,
+    "type": "trace"
+   },
+   "runtime": {
+    "name": "CPython",
+    "version": "3.14.2",
+    "build": "3.14.2 (main, Jan 14 2026, 19:38:07) [Clang 21.1.4 ]",
+    "type": "runtime"
+   }
+  },
+  "sdk": {
+   "name": "sentry.python.fastapi",
+   "version": "2.75.0"
+  },
+  "context": {
+   "sys.argv": [
+    "grabar.py",
+    "sesion-crash"
+   ]
+  },
+  "packages": {
+   "typing-inspection": "0.4.5",
+   "h11": "0.16.0",
+   "pydantic": "2.14.4",
+   "typing_extensions": "4.16.0",
+   "starlette": "1.10.0",
+   "annotated-types": "0.8.0",
+   "sentry-sdk": "2.75.0",
+   "opentelemetry-api": "1.45.2",
+   "annotated-doc": "0.0.7",
+   "urllib3": "2.8.0",
+   "certifi": "2026.10.23",
+   "httpcore": "1.0.9",
+   "anyio": "4.16.0",
+   "structlog": "26.1.0",
+   "fastapi": "0.165.0",
+   "idna": "3.20",
+   "httpx": "0.28.1",
+   "pydantic_core": "2.50.5"
+  },
+  "type": "error",
+  "metadata": {
+   "type": "KeyError",
+   "value": "'oeste'",
+   "in_app_frame_mix": "mixed",
+   "filename": "app.py",
+   "function": "sincronizar_stock_estricto"
+  },
+  "tags": [
+   {
+    "key": "component",
+    "value": "api"
+   },
+   {
+    "key": "environment",
+    "value": "production"
+   },
+   {
+    "key": "handled",
+    "value": "no"
+   },
+   {
+    "key": "level",
+    "value": "error"
+   },
+   {
+    "key": "mechanism",
+    "value": "excepthook"
+   },
+   {
+    "key": "release",
+    "value": "fixture-release-1"
+   },
+   {
+    "key": "runtime",
+    "value": "CPython 3.14.2"
+   },
+   {
+    "key": "runtime.name",
+    "value": "CPython"
+   },
+   {
+    "key": "server_name",
+    "value": "api-1"
+   },
+   {
+    "key": "user",
+    "value": "id:u_luis"
+   }
+  ],
+  "platform": "python",
+  "dateReceived": "2026-11-16T15:37:50.053Z",
+  "errors": [],
+  "occurrence": null,
+  "_meta": {},
+  "crashFile": null,
+  "culprit": "app in sincronizar_stock_estricto",
+  "dateCreated": "2026-11-16T15:37:49.873Z",
+  "fingerprints": [
+   "bd2b856d411816c87c5802decec498f2"
+  ],
+  "groupingConfig": {
+   "enhancements": "KLUv_SAYwQAAkwKRs25ld3N0eWxlOjIwMjMtMDEtMTGQ",
+   "id": "newstyle:2023-01-11"
+  },
+  "release": {
+   "id": 1,
+   "version": "fixture-release-1",
+   "shortVersion": "fixture-release-1",
+   "status": "open",
+   "dateCreated": "2026-11-01T09:00:00.000Z",
+   "dateReleased": null,
+   "firstEvent": "2026-11-01T09:12:00.000Z",
+   "lastEvent": "2026-11-16T15:37:49.873Z",
+   "newGroups": 0,
+   "projects": [
+    {
+     "id": 4501001,
+     "slug": "api",
+     "name": "api"
+    }
+   ]
+  },
+  "userReport": null,
+  "sdkUpdates": [],
+  "resolvedWith": [],
+  "nextEventID": null,
+  "previousEventID": null
+ }
+]
