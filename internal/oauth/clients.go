@@ -83,18 +83,19 @@ func loopback(host string) bool {
 }
 
 // redirectMatches: la URI tiene que ser una de las registradas, letra a letra;
-// con una IP de loopback puede cambiar el puerto (OAuth 2.1, sección 8.4.2).
+// en loopback (127.0.0.1, [::1] o localhost) puede cambiar el puerto, con el
+// mismo host que la registrada (OAuth 2.1, sección 8.4.2).
 func redirectMatches(registered []string, got string) bool {
 	if slices.Contains(registered, got) {
 		return true
 	}
 	g, err := url.Parse(got)
-	if err != nil || g.Scheme != "http" || net.ParseIP(g.Hostname()) == nil || !loopback(g.Hostname()) {
+	if err != nil || g.Scheme != "http" || !loopback(g.Hostname()) {
 		return false
 	}
 	for _, r := range registered {
 		u, err := url.Parse(r)
-		if err == nil && u.Scheme == g.Scheme && u.Hostname() == g.Hostname() && u.EscapedPath() == g.EscapedPath() &&
+		if err == nil && u.Scheme == g.Scheme && strings.EqualFold(u.Hostname(), g.Hostname()) && u.EscapedPath() == g.EscapedPath() &&
 			u.RawQuery == g.RawQuery && u.Fragment == "" && g.Fragment == "" && g.User == nil {
 			return true
 		}

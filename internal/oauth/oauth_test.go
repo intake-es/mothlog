@@ -253,8 +253,15 @@ func TestAuthorizeRejects(t *testing.T) {
 	toClient("resource de otra ruta", with("resource", h.base+"/api"), "invalid_target")
 	toClient("response_type token", with("response_type", "token"), "unsupported_response_type")
 
-	// En loopback por IP, el puerto puede cambiar (RFC 8252).
+	// En loopback, el puerto puede cambiar (RFC 8252), pero no el host.
 	h.startAuth(t, with("redirect_uri", "http://127.0.0.1:6666/cb"))
+	local := h.register(t, "http://localhost/cb")
+	q := h.authorizeQuery(local, "http://localhost:6666/cb")
+	h.startAuth(t, q)
+	q.Set("redirect_uri", "http://127.0.0.1:6666/cb")
+	toPanel("la IP en vez de localhost", q, "redirect")
+	q.Set("redirect_uri", "http://localhost:6666/otra")
+	toPanel("otra ruta en localhost", q, "redirect")
 	// Caducado el registro sin usar, el cliente ya no existe.
 	h.clock.add(25 * time.Hour)
 	toPanel("cliente caducado", h.authorizeQuery(id, redirect), "client")
@@ -517,6 +524,21 @@ func TestClientMetadataDocument(t *testing.T) {
 		if _, err := h.oa.fetchMetadata(ctx, id); !errors.Is(err, errClient) {
 			t.Errorf("%s: %v, quiero errClient", name, err)
 		}
+	}
+}
+
+// Un cliente de línea de órdenes declara localhost sin puerto y vuelve a uno libre.
+func TestClientMetadataLocalhostPort(t *testing.T) {
+	doc := `{"client_id":"%s/client.json","client_name":"CLI","redirect_uris":["http://localhost/callback","http://127.0.0.1/callback"],"token_endpoint_auth_method":"none"}`
+	md := metadataServer(t, func(base string) string { return strings.Replace(doc, "%s", base, 1) })
+	h := newHarness(t, md.Client())
+	cid := md.URL + "/client.json"
+	redirect := "http://localhost:62730/callback"
+
+	req := h.startAuth(t, h.authorizeQuery(cid, redirect))
+	_, c := h.approve(t, req, "ana", "read")
+	if code, tok := h.token(t, exchangeForm(cid, redirect, c, verifier)); code != http.StatusOK || tok.Access == "" {
+		t.Fatalf("canje = %d %+v", code, tok)
 	}
 }
 
