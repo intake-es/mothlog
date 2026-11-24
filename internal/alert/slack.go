@@ -274,6 +274,9 @@ func (s *slack) send(ctx context.Context, p *pending) error {
 }
 
 func oneLine(s string) string {
-	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	s = strings.TrimSpace(s)
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
 	return strings.TrimSpace(s)
 }

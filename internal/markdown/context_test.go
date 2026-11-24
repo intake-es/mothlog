@@ -39,7 +39,7 @@ func TestContextCollapsesLibraryFrames(t *testing.T) {
 		t.Errorf("sin pasar del tamaño quita fotogramas:\n%s", full)
 	}
 	var b strings.Builder
-	writeFrames(&b, frames, "#####", true)
+	writeFrames(&b, style{}, frames, "#####", true)
 	want := "- (2 fotogramas de librerías, sin poner)\n\n##### `src/c.ts:3` en `c` (app)\n\n```\n> 3 | c()\n```\n\n- (1 fotograma de librerías, sin poner)\n"
 	if b.String() != want {
 		t.Errorf("fotogramas recogidos =\n%s\nquiero\n%s", b.String(), want)

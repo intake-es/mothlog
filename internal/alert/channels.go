@@ -23,7 +23,8 @@ type discord struct {
 	client *http.Client
 }
 
-var discordEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "'", "|", `\|`, ">", `\>`, "@", "@\u200b")
+var discordEscaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "~", `\~`, "`", "'", "|", `\|`, ">", `\>`, "@", "@\u200b",
+	"[", `\[`, "]", `\]`, "(", `\(`, ")", `\)`)
 
 type discordEmbed struct {
 	Title       string         `json:"title"`
@@ -77,7 +78,8 @@ type telegram struct {
 	client *http.Client
 }
 
-func telegramText(p *pending) string {
+// telegramText es el aviso para Telegram y si va en HTML.
+func telegramText(p *pending) (text string, isHTML bool) {
 	s := summarize(p)
 	e := html.EscapeString
 	var b strings.Builder
@@ -99,18 +101,18 @@ func telegramText(p *pending) string {
 		}
 		b.WriteString(`<a href="` + e(p.link) + `">` + label + `</a>`)
 	}
-	text := b.String()
+	text = b.String()
 	if len([]rune(text)) > maxTelegramText {
 		// Cortar el HTML podría dejar una etiqueta abierta: mejor sin formato.
-		return truncate(s.text(p.link), maxTelegramText)
+		return truncate(s.text(p.link), maxTelegramText), false
 	}
-	return text
+	return text, true
 }
 
 func (t *telegram) send(ctx context.Context, p *pending) error {
-	text := telegramText(p)
+	text, isHTML := telegramText(p)
 	payload := map[string]any{"chat_id": t.chat, "text": text, "link_preview_options": map[string]bool{"is_disabled": true}}
-	if strings.HasPrefix(text, "<b>") {
+	if isHTML {
 		payload["parse_mode"] = "HTML"
 	}
 	return postJSON(ctx, t.client, "telegram", t.api+"/bot"+t.token+"/sendMessage", payload, nil)

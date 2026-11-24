@@ -127,6 +127,7 @@ Al arrancar aplica las migraciones de `migrations/` (con SQLite, las de `migrati
 | `GITHUB_TOKEN` | token de GitHub de las acciones de GitHub que no traen uno propio, y para cerrar y reabrir sus issues | vacío |
 | `GITHUB_WEBHOOK_SECRET` | secreto del webhook de GitHub; sin él, `/webhooks/github` rechaza todo | vacío |
 | `GITHUB_API_URL` | API de GitHub; solo para probar contra una falsa | `https://api.github.com` |
+| `TELEGRAM_API_URL` | API de bots de Telegram; solo para probar contra una falsa | `https://api.telegram.org` |
 | `SMTP_URL` | servidor de correo de las reglas que avisan por correo: `smtp://usuario:clave@host:587` (STARTTLS si el servidor lo ofrece) o `smtps://…:465` | vacío: sin correo |
 | `SMTP_FROM` | remitente de esos correos, como `intake-errors <avisos@ejemplo.com>` | obligatoria con `SMTP_URL` |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |

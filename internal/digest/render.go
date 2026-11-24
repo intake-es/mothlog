@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"unicode"
 )
 
 // Subject es el asunto del correo: el título y lo más importante del periodo.
@@ -41,23 +42,23 @@ var mdEscaper = strings.NewReplacer(`\`, `\\`, "[", `\[`, "]", `\]`, "*", `\*`, 
 // Markdown es el resumen en Markdown, para el webhook, el MCP y los agentes.
 func (d *Digest) Markdown() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s\n\n%s\n", mdEscaper.Replace(d.Title), d.Period)
+	fmt.Fprintf(&b, "# %s\n\n%s\n", mdEscaper.Replace(oneLine(d.Title)), oneLine(d.Period))
 	if d.Empty {
 		fmt.Fprintf(&b, "\n%s\n", d.lang.t("empty"))
 	}
 	for _, s := range d.Sections {
-		title := mdEscaper.Replace(s.Title)
+		title := mdEscaper.Replace(oneLine(s.Title))
 		if s.URL != "" {
-			title = "[" + title + "](" + s.URL + ")"
+			title = "[" + title + "](" + oneLine(s.URL) + ")"
 		}
 		fmt.Fprintf(&b, "\n## %s\n\n", title)
 		if s.Note != "" {
-			b.WriteString(s.Note + "\n\n")
+			b.WriteString(mdEscaper.Replace(oneLine(s.Note)) + "\n\n")
 		}
 		for _, st := range s.Stats {
-			fmt.Fprintf(&b, "- %s: **%s**", st.Label, st.Value)
+			fmt.Fprintf(&b, "- %s: **%s**", mdEscaper.Replace(oneLine(st.Label)), mdEscaper.Replace(oneLine(st.Value)))
 			if st.Detail != "" {
-				fmt.Fprintf(&b, " (%s)", st.Detail)
+				fmt.Fprintf(&b, " (%s)", mdEscaper.Replace(oneLine(st.Detail)))
 			}
 			b.WriteString("\n")
 		}
@@ -67,7 +68,7 @@ func (d *Digest) Markdown() string {
 		for _, it := range s.Items {
 			title := mdEscaper.Replace(oneLine(it.Title))
 			if it.URL != "" {
-				title = "[" + title + "](" + it.URL + ")"
+				title = "[" + title + "](" + oneLine(it.URL) + ")"
 			}
 			b.WriteString("- " + title)
 			if it.Detail != "" {
@@ -85,22 +86,22 @@ func (d *Digest) Markdown() string {
 // Text es el resumen en texto plano, la otra parte del correo.
 func (d *Digest) Text() string {
 	var b strings.Builder
-	b.WriteString(d.Title + "\n" + d.Period + "\n")
+	b.WriteString(oneLine(d.Title) + "\n" + oneLine(d.Period) + "\n")
 	if d.Empty {
 		b.WriteString("\n" + d.lang.t("empty") + "\n")
 	}
 	for _, s := range d.Sections {
-		b.WriteString("\n" + strings.ToUpper(s.Title) + "\n")
+		b.WriteString("\n" + strings.ToUpper(oneLine(s.Title)) + "\n")
 		if s.URL != "" {
-			b.WriteString(s.URL + "\n")
+			b.WriteString(oneLine(s.URL) + "\n")
 		}
 		if s.Note != "" {
-			b.WriteString(s.Note + "\n")
+			b.WriteString(oneLine(s.Note) + "\n")
 		}
 		for _, st := range s.Stats {
-			b.WriteString("  " + st.Label + ": " + st.Value)
+			b.WriteString("  " + oneLine(st.Label) + ": " + oneLine(st.Value))
 			if st.Detail != "" {
-				b.WriteString(" (" + st.Detail + ")")
+				b.WriteString(" (" + oneLine(st.Detail) + ")")
 			}
 			b.WriteString("\n")
 		}
@@ -110,7 +111,7 @@ func (d *Digest) Text() string {
 				b.WriteString("  " + oneLine(it.Detail) + "\n")
 			}
 			if it.URL != "" {
-				b.WriteString("  " + it.URL + "\n")
+				b.WriteString("  " + oneLine(it.URL) + "\n")
 			}
 		}
 	}
@@ -209,6 +210,15 @@ func (d *Digest) HTML() string {
 	return b.String()
 }
 
+// oneLine deja s en una línea, sin saltos ni caracteres de control: lo que
+// viene de un evento, como la versión de una release, no puede abrir otra
+// sección del resumen.
 func oneLine(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return ' '
+		}
+		return r
+	}, s)
 	return strings.Join(strings.Fields(s), " ")
 }

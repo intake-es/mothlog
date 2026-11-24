@@ -130,10 +130,17 @@ func (e *email) digestMessage(d *digest.Digest, now time.Time) []byte {
 	return []byte(m.String())
 }
 
+// lf deja todos los saltos en LF. Un CR suelto que llegue a SMTP lo
+// interpretan distinto el cliente y algunos servidores, y con un punto detrás
+// puede acabar el mensaje antes de tiempo.
+func lf(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
 // crlf deja los saltos en CRLF y parte las líneas de más de 998 bytes, que SMTP no admite.
 func crlf(s string) string {
 	var b strings.Builder
-	for line := range strings.SplitSeq(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(lf(s), "\n") {
 		for len(line) > 900 {
 			cut := strings.LastIndexAny(line[:900], " >")
 			for cut <= 0 || !utf8.RuneStart(line[cut+1]) {

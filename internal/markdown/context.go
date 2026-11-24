@@ -44,12 +44,22 @@ var levels = []level{
 // pasa de max bytes, quita breadcrumbs, fotogramas de librerías e historial
 // viejo, por ese orden, y lo dice al principio.
 func Context(c store.IssueContext, url string, max int) string {
+	return contextDoc(c, url, max, style{})
+}
+
+// ContextInert es Context para publicar en GitHub o Linear: además, las
+// menciones, los enlaces y el HTML que trae el evento quedan como texto.
+func ContextInert(c store.IssueContext, url string, max int) string {
+	return contextDoc(c, url, max, style{inert: true})
+}
+
+func contextDoc(c store.IssueContext, url string, max int, st style) string {
 	if max <= 0 {
 		max = MaxContextBytes
 	}
 	var out string
 	for _, l := range levels {
-		out = writeContext(c, url, l, max)
+		out = writeContext(c, url, l, max, st)
 		if len(out) <= max {
 			return out
 		}
@@ -68,11 +78,12 @@ func Context(c store.IssueContext, url string, max int) string {
 
 func kb(n int) string { return strconv.Itoa(n>>10) + " KB" }
 
-func writeContext(c store.IssueContext, url string, l level, max int) string {
+func writeContext(c store.IssueContext, url string, l level, max int, st style) string {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
+	t := st.text
 
-	w("# %s\n\n", oneLine(c.Title))
+	w("# %s\n\n", t(c.Title))
 	if len(l.note) > 0 {
 		w("> Recortado para no pasar de %s: %s. El evento entero, con `get_event`; el historial, con `list_comments`.\n\n",
 			kb(max), strings.Join(l.note, ", "))
@@ -85,15 +96,15 @@ func writeContext(c store.IssueContext, url string, l level, max int) string {
 	}
 	w("- Issue: %d\n", c.ID)
 	w("- Estado: %s\n", status)
-	w("- Nivel: %s\n", orNone(c.Level))
+	w("- Nivel: %s\n", orNone(t(c.Level)))
 	w("- Proyecto: %s\n", c.Project)
-	w("- Asignado: %s\n", assignee(c.Assignee))
+	w("- Asignado: %s\n", assignee(c.Assignee, st))
 	if c.Culprit != "" {
-		w("- Culprit: %s\n", oneLine(c.Culprit))
+		w("- Culprit: %s\n", t(c.Culprit))
 	}
 	scope := ""
-	if c.Environment != "" {
-		scope = " en " + c.Environment
+	if env := t(c.Environment); env != "" {
+		scope = " en " + env
 	}
 	w("- Eventos%s: %d; usuarios afectados: %d\n", scope, c.Count, c.UserCount)
 	w("- Primera vez%s: %s; última vez: %s\n", scope, ts(c.FirstSeen), ts(c.LastSeen))
@@ -102,13 +113,13 @@ func writeContext(c store.IssueContext, url string, l level, max int) string {
 	}
 
 	w("\n## Releases\n\n")
-	w("- Primera: %s\n", orNone(deref(c.FirstRelease)))
-	w("- Última: %s\n", orNone(deref(c.LastRelease)))
+	w("- Primera: %s\n", orNone(t(deref(c.FirstRelease))))
+	w("- Última: %s\n", orNone(t(deref(c.LastRelease))))
 	switch {
 	case c.Status == "resolved_next" && c.ResolvedInRelease != nil:
-		w("- Resuelto en la siguiente a: %s (pasa a resuelto al desplegarse una posterior)\n", *c.ResolvedInRelease)
+		w("- Resuelto en la siguiente a: %s (pasa a resuelto al desplegarse una posterior)\n", t(*c.ResolvedInRelease))
 	case c.FixedInRelease != nil:
-		w("- Resuelto con: %s\n", *c.FixedInRelease)
+		w("- Resuelto con: %s\n", t(*c.FixedInRelease))
 	default:
 		w("- Resuelto con: (ninguna)\n")
 	}
@@ -118,14 +129,14 @@ func writeContext(c store.IssueContext, url string, l level, max int) string {
 		w("(ninguno)\n")
 	}
 	for _, e := range c.Environments {
-		w("- %s: %d %s\n", e.Value, e.Count, plural(e.Count, "evento", "eventos"))
+		w("- %s: %d %s\n", t(e.Value), e.Count, plural(e.Count, "evento", "eventos"))
 	}
 
-	writeLinks(&b, c.Links)
-	writeContextTags(&b, c.Tags)
-	writeContextEvent(&b, c, l)
-	writeHistory(&b, c.History, l.history)
-	writeActions(&b, c)
+	writeLinks(&b, c.Links, st)
+	writeContextTags(&b, c.Tags, st)
+	writeContextEvent(&b, c, l, st)
+	writeHistory(&b, c.History, l.history, st)
+	writeActions(&b, c, st)
 	return b.String()
 }
 
@@ -139,29 +150,29 @@ var linkStates = map[string]string{
 	store.LinkOpen: "abierta", store.LinkClosed: "cerrada", store.LinkCanceled: "cancelada", store.LinkMerged: "mergeado",
 }
 
-func writeLinks(b *strings.Builder, links []store.IssueLink) {
+func writeLinks(b *strings.Builder, links []store.IssueLink, st style) {
 	if len(links) == 0 {
 		return
 	}
 	b.WriteString("\n## Enlaces\n\n")
 	for _, l := range links {
-		name := orNone(l.Identifier)
-		if l.Identifier == "" {
-			name = l.ExternalID
+		name := st.text(l.Identifier)
+		if name == "" {
+			name = st.text(l.ExternalID)
 		}
 		state := linkStates[l.State]
-		if l.StateName != "" && !strings.EqualFold(l.StateName, l.State) {
-			state = strings.TrimSpace(state + " (" + l.StateName + ")")
+		if sn := st.text(l.StateName); sn != "" && !strings.EqualFold(sn, l.State) {
+			state = strings.TrimSpace(state + " (" + sn + ")")
 		}
 		fmt.Fprintf(b, "- %s %s: %s", linkNames[l.Provider+"/"+l.Kind], name, orNone(state))
 		if l.URL != "" {
-			fmt.Fprintf(b, ", %s", l.URL)
+			fmt.Fprintf(b, ", %s", oneLine(l.URL))
 		}
 		b.WriteString("\n")
 	}
 }
 
-func writeContextTags(b *strings.Builder, t store.IssueTags) {
+func writeContextTags(b *strings.Builder, t store.IssueTags, st style) {
 	fmt.Fprintf(b, "\n## Etiquetas más frecuentes\n\n")
 	if len(t.Tags) == 0 {
 		b.WriteString("(ninguna)\n")
@@ -191,13 +202,13 @@ func writeContextTags(b *strings.Builder, t store.IssueTags) {
 			if j == contextTagValues {
 				break
 			}
-			vals = append(vals, fmt.Sprintf("%s %s %% (%d)", oneLine(v.Value), pct(v.Percent), v.Count))
+			vals = append(vals, fmt.Sprintf("%s %s %% (%d)", st.text(v.Value), pct(v.Percent), v.Count))
 		}
 		more := ""
 		if d.Distinct > len(vals) {
 			more = fmt.Sprintf("; %d valores distintos", d.Distinct)
 		}
-		fmt.Fprintf(b, "- %s: %s%s\n", d.Key, strings.Join(vals, ", "), more)
+		fmt.Fprintf(b, "- %s: %s%s\n", st.text(d.Key), strings.Join(vals, ", "), more)
 	}
 }
 
@@ -206,13 +217,15 @@ func pct(p float64) string {
 	return strings.TrimSuffix(s, ".0")
 }
 
-func writeContextEvent(b *strings.Builder, c store.IssueContext, l level) {
+func writeContextEvent(b *strings.Builder, c store.IssueContext, l level, st style) {
 	w := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
+	t := st.text
+	env := t(c.Environment)
 	se := c.LatestEvent
 	if se == nil {
 		w("\n## Evento\n\nEl issue no tiene eventos guardados")
-		if c.Environment != "" {
-			w(" en %s", c.Environment)
+		if env != "" {
+			w(" en %s", env)
 		}
 		w(".\n")
 		return
@@ -220,34 +233,17 @@ func writeContextEvent(b *strings.Builder, c store.IssueContext, l level) {
 	which := "el último"
 	if c.EventChosen {
 		which = "el pedido"
-	} else if c.Environment != "" {
-		which = "el último en " + c.Environment
+	} else if env != "" {
+		which = "el último en " + env
 	}
 	e := se.Event
 	w("\n## Evento (%s)\n\n", which)
-	w("- Id: %s (id interno %d), %s\n", se.EventID, se.ID, ts(se.OccurredAt))
-	w("- Release: %s\n", orNone(e.Release))
-	w("- Entorno: %s\n", orNone(e.Environment))
-	w("- Usuario: %s\n", user(e.User))
-	if e.Request != nil {
-		w("- Request: %s\n", strings.TrimSpace(e.Request.Method+" "+e.Request.URL))
-	} else {
-		w("- Request: (ninguna)\n")
-	}
-	if e.Transaction != "" {
-		w("- Transaction: %s\n", e.Transaction)
-	}
-	if e.Logger != "" {
-		w("- Logger: %s\n", e.Logger)
-	}
-	if e.ServerName != "" {
-		w("- Servidor: %s\n", e.ServerName)
-	}
-	w("- Plataforma y SDK: %s, %s %s\n", orNone(e.Platform), e.SDK.Name, e.SDK.Version)
+	w("- Id: %s (id interno %d), %s\n", t(se.EventID), se.ID, ts(se.OccurredAt))
+	writeEventFields(b, e, st)
 	if len(e.Tags) > 0 {
 		var tags []string
 		for _, k := range slices.Sorted(maps.Keys(e.Tags)) {
-			tags = append(tags, k+"="+oneLine(e.Tags[k]))
+			tags = append(tags, t(k)+"="+t(e.Tags[k]))
 		}
 		w("- Etiquetas: %s\n", strings.Join(tags, ", "))
 	}
@@ -258,22 +254,16 @@ func writeContextEvent(b *strings.Builder, c store.IssueContext, l level) {
 	if len(e.Exceptions) > 0 {
 		w("\n### Excepciones\n\nDe la causa a la que se lanzó; en cada una, los fotogramas van del más externo al que falló. Los de la aplicación llevan su código.\n")
 		for i, x := range e.Exceptions {
-			w("\n#### %d. %s\n\n", i+1, oneLine(excTitle(x)))
-			if m := x.Mechanism; m != nil {
-				handled := "sin saber si se manejó"
-				if m.Handled != nil {
-					handled = map[bool]string{true: "manejada", false: "no manejada"}[*m.Handled]
-				}
-				w("Mecanismo: %s, %s\n\n", orNone(m.Type), handled)
-			}
+			w("\n#### %d. %s\n\n", i+1, t(excTitle(x)))
+			writeMechanism(b, x.Mechanism, st)
 			if len(x.Frames) == 0 {
 				w("(sin fotogramas)\n")
 			}
-			writeFrames(b, x.Frames, "#####", l.libsCollapsed)
+			writeFrames(b, st, x.Frames, "#####", l.libsCollapsed)
 		}
 	}
 
-	crumbs := breadcrumbs(e.Breadcrumbs)
+	crumbs := breadcrumbs(e.Breadcrumbs, st)
 	total := len(crumbs)
 	if len(crumbs) > l.crumbs {
 		crumbs = crumbs[len(crumbs)-l.crumbs:]
@@ -304,33 +294,33 @@ var sourceNames = map[string]string{
 	store.SourceGitHub: "desde GitHub",
 }
 
-func actor(a *store.Actor) string {
+func actor(a *store.Actor, st style) string {
 	switch {
 	case a == nil:
 		return "intake-errors"
 	case a.Kind == store.ActorToken:
-		return a.Name + " (token)"
+		return st.text(a.Name) + " (token)"
 	}
-	return a.Name
+	return st.text(a.Name)
 }
 
-func assignee(a *store.Assignee) string {
+func assignee(a *store.Assignee, st style) string {
 	if a == nil {
 		return "(nadie)"
 	}
-	s := a.Name
+	s := st.text(a.Name)
 	switch {
 	case a.Kind == store.ActorToken && !a.Active:
 		s += " (token revocado)"
 	case a.Kind == store.ActorToken:
 		s += " (token)"
 	case a.DisplayName != "":
-		s += " (" + a.DisplayName + ")"
+		s += " (" + st.text(a.DisplayName) + ")"
 	}
 	return s
 }
 
-func writeHistory(b *strings.Builder, h []store.HistoryEntry, keep int) {
+func writeHistory(b *strings.Builder, h []store.HistoryEntry, keep int, st style) {
 	b.WriteString("\n## Historial\n\n")
 	if len(h) == 0 {
 		b.WriteString("(sin comentarios ni cambios de estado)\n")
@@ -344,18 +334,18 @@ func writeHistory(b *strings.Builder, h []store.HistoryEntry, keep int) {
 	for _, e := range h {
 		switch e.Type {
 		case "comment":
-			fmt.Fprintf(b, "- %s, %s comentó:\n", ts(e.At), actor(e.Author))
+			fmt.Fprintf(b, "- %s, %s comentó:\n", ts(e.At), actor(e.Author, st))
 			quote(b, e.Body)
 		case "assignment":
 			if e.Assignee == nil {
-				fmt.Fprintf(b, "- %s, %s %s: desasignó a %s\n", ts(e.At), actor(e.Author), sourceNames[e.Source], actor(e.Previous))
+				fmt.Fprintf(b, "- %s, %s %s: desasignó a %s\n", ts(e.At), actor(e.Author, st), sourceNames[e.Source], actor(e.Previous, st))
 			} else {
-				fmt.Fprintf(b, "- %s, %s %s: asignó a %s\n", ts(e.At), actor(e.Author), sourceNames[e.Source], actor(e.Assignee))
+				fmt.Fprintf(b, "- %s, %s %s: asignó a %s\n", ts(e.At), actor(e.Author, st), sourceNames[e.Source], actor(e.Assignee, st))
 			}
 		default:
-			fmt.Fprintf(b, "- %s, %s %s: %s → %s", ts(e.At), actor(e.Author), sourceNames[e.Source], e.From, e.To)
+			fmt.Fprintf(b, "- %s, %s %s: %s → %s", ts(e.At), actor(e.Author, st), sourceNames[e.Source], e.From, e.To)
 			if e.Release != nil {
-				fmt.Fprintf(b, " (release %s)", *e.Release)
+				fmt.Fprintf(b, " (release %s)", st.text(*e.Release))
 			}
 			b.WriteString("\n")
 			if e.Comment != nil {
@@ -366,14 +356,16 @@ func writeHistory(b *strings.Builder, h []store.HistoryEntry, keep int) {
 }
 
 // quote pone el comentario como cita dentro del punto de la lista, para que
-// sus títulos o listas no se mezclen con los del documento.
+// sus títulos o listas no se mezclen con los del documento. Un CR suelto
+// también acaba la línea en Markdown, así que cuenta como salto.
 func quote(b *strings.Builder, body string) {
+	body = strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\r", "\n")
 	for line := range strings.SplitSeq(strings.TrimRight(body, "\n"), "\n") {
 		b.WriteString(strings.TrimRight("  > "+line, " ") + "\n")
 	}
 }
 
-func writeActions(b *strings.Builder, c store.IssueContext) {
+func writeActions(b *strings.Builder, c store.IssueContext, st style) {
 	id := c.ID
 	w := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
 	w("\n## Qué puedes hacer\n\n")
@@ -381,7 +373,7 @@ func writeActions(b *strings.Builder, c store.IssueContext) {
 	w("- Asignártelo al ponerte con él: `assign_issue` con `{\"issue_id\": %d, \"assignee\": \"me\"}` (`POST /api/0/issues/%d/assignee`). Los tuyos, con `list_issues` y `assigned:me`.\n", id, id)
 	release := ""
 	if c.LatestEvent != nil {
-		release = c.LatestEvent.Event.Release
+		release = st.text(c.LatestEvent.Event.Release)
 	}
 	if release != "" {
 		w("- Cuando el arreglo esté hecho pero aún sin desplegar, marcarlo resuelto en la siguiente release: `set_issue_status` con `{\"issue_id\": %d, \"status\": \"resolved_next\", \"comment\": \"qué se arregló y dónde\"}` (`POST /api/0/issues/%d/status`). Pasa a resuelto al desplegarse una release posterior a %s; si vuelve a pasar en una posterior, se reabre como regresión.\n", id, id, release)

@@ -81,7 +81,7 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 	header("Content-Type", "text/plain; charset=utf-8")
 	header("Content-Transfer-Encoding", "8bit")
 	m.WriteString("\r\n")
-	m.WriteString(strings.ReplaceAll(body.String(), "\n", "\r\n"))
+	m.WriteString(strings.ReplaceAll(lf(body.String()), "\n", "\r\n"))
 	return []byte(m.String()), nil
 }
 

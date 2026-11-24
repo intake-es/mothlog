@@ -103,7 +103,7 @@ func (l *linear) create(ctx context.Context, p *pending) (linearRef, error) {
 	if link := p.link; link != "" {
 		fmt.Fprintf(&desc, "[Ver en intake-errors](%s)\n\n", link)
 	}
-	desc.WriteString(markdown.Issue(d))
+	desc.WriteString(markdown.IssueInert(d))
 
 	input := map[string]any{
 		"id":          p.createID,
@@ -191,7 +191,7 @@ func (l *linear) commentOnly(ctx context.Context, p *pending) (linearRef, error)
 
 func (l *linear) comment(ctx context.Context, p *pending, what string) error {
 	body := fmt.Sprintf("%s: release %s, %s.",
-		what, orNone(p.release, "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
+		what, orNone(markdown.InertText(p.release), "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
 	if link := p.link; link != "" {
 		body += fmt.Sprintf("\n\n[Ver en intake-errors](%s)", link)
 	}

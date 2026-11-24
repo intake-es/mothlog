@@ -66,9 +66,9 @@ func (d *Digest) Slack() SlackMessage {
 		msg.Blocks = append(msg.Blocks, SlackBlock{Type: "section", Text: &t})
 	}
 	for _, s := range d.Sections {
-		head := "*" + slackEsc(s.Title) + "*"
+		head := "*" + slackEsc(oneLine(s.Title)) + "*"
 		if s.URL != "" {
-			head = "*<" + s.URL + "|" + slackEsc(strings.ReplaceAll(s.Title, "|", "∣")) + ">*"
+			head = "*<" + s.URL + "|" + slackEsc(strings.ReplaceAll(oneLine(s.Title), "|", "∣")) + ">*"
 		}
 		if s.Note != "" {
 			head += "\n" + slackEsc(s.Note)

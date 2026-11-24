@@ -11,6 +11,7 @@ import (
 
 	"github.com/intake-es/intake-errors/internal/cron"
 	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/intake-errors/internal/markdown"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
@@ -260,13 +261,14 @@ func mapEsc(in []string) []string {
 func cronMarkdown(p *pending) string {
 	s := cronSummary(p)
 	var b strings.Builder
-	fmt.Fprintf(&b, "# %s: %s\n\n", s.What, s.Headline)
-	fmt.Fprintf(&b, "- Proyecto: %s\n- Monitor: `%s`\n- Horario: `%s`\n", p.project, p.cron.slug, scheduleText(p.cron))
-	if p.environment != "" {
-		fmt.Fprintf(&b, "- Entorno: %s\n", p.environment)
+	fmt.Fprintf(&b, "# %s: %s\n\n", s.What, markdown.InertText(s.Headline))
+	fmt.Fprintf(&b, "- Proyecto: %s\n- Monitor: %s\n- Horario: %s\n", p.project, markdown.CodeSpan(p.cron.slug),
+		markdown.CodeSpan(scheduleText(p.cron)))
+	if env := markdown.InertText(p.environment); env != "" {
+		fmt.Fprintf(&b, "- Entorno: %s\n", env)
 	}
 	for _, f := range s.Fields {
-		fmt.Fprintf(&b, "- %s: %s\n", f[0], f[1])
+		fmt.Fprintf(&b, "- %s: %s\n", f[0], markdown.InertText(f[1]))
 	}
 	if p.link != "" {
 		fmt.Fprintf(&b, "\n[Ver en intake-errors](%s)\n", p.link)

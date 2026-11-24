@@ -63,6 +63,7 @@ func loadConfig() (config, error) {
 			SMTPFrom:        os.Getenv("SMTP_FROM"),
 			GitHubToken:     os.Getenv("GITHUB_TOKEN"),
 			GitHubAPIURL:    os.Getenv("GITHUB_API_URL"),
+			TelegramAPIURL:  os.Getenv("TELEGRAM_API_URL"),
 		},
 		LinearWebhookSecret: os.Getenv("LINEAR_WEBHOOK_SECRET"),
 		GitHubWebhookSecret: os.Getenv("GITHUB_WEBHOOK_SECRET"),
