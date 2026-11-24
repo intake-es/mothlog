@@ -5,7 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/intake-es/intake-errors/internal/event"
 )
+
+// MaxAggregates es cuántos grupos puede traer un item sessions.
+const MaxAggregates = 1000
 
 // Estados de una sesión. unhandled es como cuentan los SDK del navegador una
 // sesión con un error sin capturar; aquí cuenta como crash.
@@ -21,6 +26,27 @@ const (
 type SessionAttrs struct {
 	Release     string `json:"release"`
 	Environment string `json:"environment"`
+}
+
+// clean deja la release y el entorno como los guarda la API. Sin release, o
+// con una release o un entorno que la API no aceptaría, la sesión no vale: no
+// se le quita el entorno porque sumaría en el de las sesiones sin él.
+func (a *SessionAttrs) clean(item string) error {
+	rel, err := event.CleanName(a.Release)
+	if err != nil {
+		return fmt.Errorf("%w: %s con release no válida: %v", ErrMalformed, item, err)
+	}
+	a.Release = rel
+	if strings.TrimSpace(a.Environment) == "" {
+		a.Environment = ""
+		return nil
+	}
+	env, err := event.CleanName(a.Environment)
+	if err != nil {
+		return fmt.Errorf("%w: %s con entorno no válido: %v", ErrMalformed, item, err)
+	}
+	a.Environment = env
+	return nil
 }
 
 // Session es un item session: el inicio, una actualización o el final de una
@@ -67,13 +93,13 @@ func ParseSession(payload []byte) (*Session, error) {
 		return nil, fmt.Errorf("%w: session: %v", ErrMalformed, err)
 	}
 	s.SID = strings.ToLower(strings.ReplaceAll(s.SID, "-", ""))
-	s.Attrs.Release = strings.TrimSpace(s.Attrs.Release)
-	s.Attrs.Environment = strings.TrimSpace(s.Attrs.Environment)
-	switch {
-	case s.SID == "":
+	if s.SID == "" {
 		return nil, fmt.Errorf("%w: session sin sid", ErrMalformed)
-	case s.Attrs.Release == "":
-		return nil, fmt.Errorf("%w: session sin release", ErrMalformed)
+	}
+	if err := s.Attrs.clean("session"); err != nil {
+		return nil, err
+	}
+	switch {
 	case s.Errors < 0:
 		return nil, fmt.Errorf("%w: session con errors negativo", ErrMalformed)
 	}
@@ -114,10 +140,11 @@ func ParseSessionAggregates(payload []byte) (*SessionAggregates, error) {
 	if err := json.Unmarshal(payload, &s); err != nil {
 		return nil, fmt.Errorf("%w: sessions: %v", ErrMalformed, err)
 	}
-	s.Attrs.Release = strings.TrimSpace(s.Attrs.Release)
-	s.Attrs.Environment = strings.TrimSpace(s.Attrs.Environment)
-	if s.Attrs.Release == "" {
-		return nil, fmt.Errorf("%w: sessions sin release", ErrMalformed)
+	if err := s.Attrs.clean("sessions"); err != nil {
+		return nil, err
+	}
+	if len(s.Aggregates) > MaxAggregates {
+		return nil, fmt.Errorf("%w: sessions con más de %d grupos", ErrMalformed, MaxAggregates)
 	}
 	for _, a := range s.Aggregates {
 		if a.Exited < 0 || a.Errored < 0 || a.Abnormal < 0 || a.Crashed < 0 || a.Unhandled < 0 {

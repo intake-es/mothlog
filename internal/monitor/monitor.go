@@ -15,11 +15,16 @@ import (
 	"time"
 
 	"github.com/intake-es/intake-errors/internal/cron"
+	"github.com/intake-es/intake-errors/internal/event"
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
 // ErrMalformed es un check-in que no se puede leer.
 var ErrMalformed = errors.New("check-in mal formado")
+
+// ErrEnvironment es un check-in con un entorno que la API no aceptaría. No se
+// le quita, como a la release, porque sin él contaría como de production.
+var ErrEnvironment = fmt.Errorf("%w: entorno no válido", ErrMalformed)
 
 type payload struct {
 	CheckInID     string         `json:"check_in_id"`
@@ -48,15 +53,25 @@ func Parse(data []byte) (store.CheckInInput, error) {
 		return store.CheckInInput{}, fmt.Errorf("%w: falta monitor_slug", ErrMalformed)
 	}
 	in := store.CheckInInput{
-		CheckInID:   normalizeID(p.CheckInID),
-		Slug:        p.MonitorSlug,
-		Status:      strings.ToLower(strings.TrimSpace(p.Status)),
-		Duration:    p.Duration,
-		Release:     strings.TrimSpace(p.Release),
-		Environment: strings.TrimSpace(p.Environment),
+		CheckInID: normalizeID(p.CheckInID),
+		Slug:      p.MonitorSlug,
+		Status:    strings.ToLower(strings.TrimSpace(p.Status)),
+		Duration:  p.Duration,
 	}
-	if in.Environment == "" {
-		in.Environment = "production"
+	if strings.TrimSpace(p.Release) != "" {
+		if rel, err := event.CleanName(p.Release); err == nil {
+			in.Release = rel
+		} else {
+			in.InvalidRelease = true
+		}
+	}
+	in.Environment = "production"
+	if strings.TrimSpace(p.Environment) != "" {
+		env, err := event.CleanName(p.Environment)
+		if err != nil {
+			return store.CheckInInput{}, fmt.Errorf("%w: %v", ErrEnvironment, err)
+		}
+		in.Environment = env
 	}
 	if c := p.MonitorConfig; c != nil && c.Schedule != nil {
 		in.Config = &store.MonitorConfig{Schedule: *c.Schedule, Timezone: strings.TrimSpace(c.Timezone),

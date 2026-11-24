@@ -524,6 +524,8 @@ func TestSetStatus(t *testing.T) {
 	e.db.AddEvent(t, p.ID, id, ev, now.Add(-time.Hour))
 	ev.Release = "r-nuevo"
 	e.db.AddEvent(t, p.ID, id, ev, now)
+	// Llega el último aunque su timestamp sea el más viejo: resolved_next se
+	// queda con su release, no con la del timestamp más alto, que pone el SDK.
 	ev.Release = "r-recibido-tarde"
 	e.db.AddEvent(t, p.ID, id, ev, now.Add(-2*time.Hour))
 
@@ -548,9 +550,9 @@ func TestSetStatus(t *testing.T) {
 		release string
 	}{
 		{"resolved", ""},
-		{"resolved_next", "r-nuevo"},
+		{"resolved_next", "r-recibido-tarde"},
 		{"silenced", ""},
-		{"resolved_next", "r-nuevo"},
+		{"resolved_next", "r-recibido-tarde"},
 		{"open", ""},
 	} {
 		code, is, b := set(tc.status)

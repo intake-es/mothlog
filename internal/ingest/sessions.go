@@ -12,6 +12,39 @@ import (
 	"github.com/intake-es/intake-errors/internal/store"
 )
 
+// MaxSessionReleases es cuántas releases puede tener un proyecto para que una
+// sesión cree otra. Los eventos y la API las crean sin este tope.
+const MaxSessionReleases = 10_000
+
+// SessionBudget es cuántas veces el límite por minuto de eventos tiene el de
+// sesiones, que va aparte: un navegador manda una o dos por página vista.
+const SessionBudget = 10
+
+// errSessionRelease es una sesión de una release nueva cuando el proyecto ya
+// tiene MaxSessionReleases: se descarta y se cuenta.
+var errSessionRelease = errors.New("el proyecto tiene demasiadas releases para crear otra desde una sesión")
+
+// sessionRelease crea la release de una sesión si cabe.
+func (in *Ingester) sessionRelease(ctx context.Context, tx db.Tx, projectID int64, release string, now time.Time) error {
+	var id int64
+	err := tx.QueryRow(ctx, `SELECT id FROM releases WHERE project_id = $1 AND version = $2`, projectID, release).Scan(&id)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, db.ErrNoRows) {
+		return fmt.Errorf("buscar release: %w", err)
+	}
+	var n int64
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM releases WHERE project_id = $1`, projectID).Scan(&n); err != nil {
+		return fmt.Errorf("contar releases: %w", err)
+	}
+	if n >= in.maxReleases {
+		return errSessionRelease
+	}
+	_, _, err = store.EnsureRelease(ctx, tx, projectID, release, now)
+	return err
+}
+
 // SessionStateTTL es cuánto se recuerda una sesión sin noticias suyas: lo que
 // llegue después de ella con init false ya no cuenta.
 const SessionStateTTL = 24 * time.Hour
@@ -84,7 +117,7 @@ func (in *Ingester) IngestSession(ctx context.Context, projectID int64, s *envel
 		next := upd
 		switch {
 		case err == nil:
-			if _, _, err := store.EnsureRelease(ctx, tx, projectID, release, now); err != nil {
+			if err := in.sessionRelease(ctx, tx, projectID, release, now); err != nil {
 				return err
 			}
 		case errors.Is(err, db.ErrNoRows):
@@ -177,7 +210,7 @@ func (in *Ingester) IngestSessionAggregates(ctx context.Context, projectID int64
 	now := in.now().UTC()
 	release, env := s.Attrs.Release, s.Attrs.Environment
 	return db.BeginFunc(ctx, in.pool, func(tx db.Tx) error {
-		if _, _, err := store.EnsureRelease(ctx, tx, projectID, release, now); err != nil {
+		if err := in.sessionRelease(ctx, tx, projectID, release, now); err != nil {
 			return err
 		}
 		hours := map[time.Time][4]int64{}
@@ -234,24 +267,71 @@ func PurgeSessions(ctx context.Context, pool db.DB, cutoff, now time.Time) (int6
 	return n, nil
 }
 
-func (h *Handler) sessions(ctx context.Context, projectID int64, items []envelope.Item, fl *Filter) {
+// sessionItem es un item session o sessions ya leído.
+type sessionItem struct {
+	one *envelope.Session
+	agg *envelope.SessionAggregates
+}
+
+// cost es lo que gasta del límite de sesiones: un item session, uno; un item
+// sessions, uno por grupo, porque cada grupo puede crear un usuario.
+func (s sessionItem) cost() int {
+	if s.agg != nil {
+		return max(1, len(s.agg.Aggregates))
+	}
+	return 1
+}
+
+func sessionsCost(items []sessionItem) int {
+	n := 0
+	for _, s := range items {
+		n += s.cost()
+	}
+	return n
+}
+
+func (s sessionItem) attrs() envelope.SessionAttrs {
+	if s.one != nil {
+		return s.one.Attrs
+	}
+	return s.agg.Attrs
+}
+
+// parseSessions lee los items session y sessions; los que no se pueden leer o
+// no valen se cuentan como descartados.
+func (h *Handler) parseSessions(ctx context.Context, projectID int64, items []envelope.Item) []sessionItem {
+	var out []sessionItem
 	for _, it := range items {
+		var s sessionItem
 		var err error
 		if it.Header.Type == envelope.TypeSession {
-			var s *envelope.Session
-			if s, err = envelope.ParseSession(it.Payload); err == nil && !fl.DropSession(s.Attrs.Release, s.Attrs.Environment) {
-				err = h.ingester.IngestSession(ctx, projectID, s)
-			}
+			s.one, err = envelope.ParseSession(it.Payload)
 		} else {
-			var s *envelope.SessionAggregates
-			if s, err = envelope.ParseSessionAggregates(it.Payload); err == nil && !fl.DropSession(s.Attrs.Release, s.Attrs.Environment) {
-				err = h.ingester.IngestSessionAggregates(ctx, projectID, s)
-			}
+			s.agg, err = envelope.ParseSessionAggregates(it.Payload)
 		}
-		// Una sesión que no se puede leer o guardar no tumba los eventos del envío.
-		switch {
-		case errors.Is(err, envelope.ErrMalformed):
+		if err != nil {
+			h.dropOther(projectID, store.DropSessionInvalid, 1)
 			h.log.DebugContext(ctx, "sesión ignorada", "proyecto", projectID, "err", err)
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func (h *Handler) sessions(ctx context.Context, projectID int64, items []sessionItem) {
+	for _, s := range items {
+		var err error
+		if s.one != nil {
+			err = h.ingester.IngestSession(ctx, projectID, s.one)
+		} else {
+			err = h.ingester.IngestSessionAggregates(ctx, projectID, s.agg)
+		}
+		// Una sesión que no se puede guardar no tumba los eventos del envío.
+		switch {
+		case errors.Is(err, errSessionRelease):
+			h.dropOther(projectID, store.DropSessionReleaseLimit, 1)
+			h.log.DebugContext(ctx, "sesión descartada", "proyecto", projectID, "err", err)
 		case err != nil:
 			h.log.ErrorContext(ctx, "guardar sesión", "proyecto", projectID, "err", err)
 		}

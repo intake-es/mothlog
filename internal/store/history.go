@@ -285,8 +285,9 @@ func changeStatusTx(ctx context.Context, tx db.Tx, id int64, status string, by S
 	}
 	var release *string
 	if status == "resolved_next" {
+		// El último en llegar, no el de timestamp más alto: esa hora la pone el SDK.
 		err := tx.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
-			WHERE issue_id = $1 ORDER BY occurred_at DESC, id DESC LIMIT 1`, id).Scan(&release)
+			WHERE issue_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1`, id).Scan(&release)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
 			return false, fmt.Errorf("release del último evento: %w", err)
 		}

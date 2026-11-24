@@ -43,10 +43,12 @@ type Handler struct {
 	projects Projects
 	ingester *Ingester
 	limiter  *RateLimiter
-	drops    *Drops
-	checkIns CheckIns
-	metrics  *metrics.Metrics
-	log      *slog.Logger
+	// sessionLimiter es el límite de sesiones, SessionBudget veces el de eventos.
+	sessionLimiter *RateLimiter
+	drops          *Drops
+	checkIns       CheckIns
+	metrics        *metrics.Metrics
+	log            *slog.Logger
 }
 
 // WithMetrics hace que el handler cuente en m lo que recibe; sin él, no cuenta.
@@ -60,6 +62,12 @@ func (h *Handler) drop(projectID int64, reason string, n int) {
 	h.metrics.Dropped(projectID, reason, n)
 }
 
+// dropOther cuenta lo que no es un evento descartado (store.EventDrop): no
+// sale en las métricas de eventos.
+func (h *Handler) dropOther(projectID int64, reason string, n int) {
+	h.drops.Add(projectID, reason, n)
+}
+
 // WithCheckIns hace que el handler guarde los items check_in; sin él, se ignoran.
 func (h *Handler) WithCheckIns(c CheckIns) *Handler {
 	h.checkIns = c
@@ -68,7 +76,8 @@ func (h *Handler) WithCheckIns(c CheckIns) *Handler {
 
 // NewHandler acepta drops nil: entonces no se cuentan los descartes.
 func NewHandler(projects Projects, ingester *Ingester, limiter *RateLimiter, drops *Drops, log *slog.Logger) *Handler {
-	return &Handler{projects: projects, ingester: ingester, limiter: limiter, drops: drops, log: log}
+	return &Handler{projects: projects, ingester: ingester, limiter: limiter, drops: drops, log: log,
+		sessionLimiter: &RateLimiter{perMinute: limiter.perMinute * SessionBudget, now: limiter.now, windows: map[int64]*window{}}}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -167,12 +176,24 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		if ev.ID == "" {
 			ev.ID = headerID
 		}
+		if ev.InvalidRelease {
+			h.dropOther(project.ID, store.DropInvalidRelease, 1)
+		}
+		if ev.InvalidEnvironment {
+			h.dropOther(project.ID, store.DropInvalidEnvironment, 1)
+		}
 		events = append(events, ev)
 	}
 	var checkIns []store.CheckInInput
 	if h.checkIns != nil {
 		for _, it := range env.CheckIns() {
 			in, err := monitor.Parse(it.Payload)
+			if errors.Is(err, monitor.ErrEnvironment) {
+				h.dropOther(project.ID, store.DropInvalidEnvironment, 1)
+			}
+			if in.InvalidRelease {
+				h.dropOther(project.ID, store.DropInvalidRelease, 1)
+			}
 			if err != nil {
 				// Un check-in roto no tumba los eventos que viajan con él.
 				h.log.WarnContext(ctx, "check-in ignorado", "proyecto", project.ID, "err", err)
@@ -185,7 +206,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	h.metrics.Received(project.ID, len(events))
 	lim := DefaultLimits()
 	perMinute := 0
-	sessions := env.Sessions()
+	sessions := h.parseSessions(ctx, project.ID, env.Sessions())
 	if len(events) > 0 || len(checkIns) > 0 || len(sessions) > 0 {
 		filters, err := h.projects.Filters(ctx, project.ID)
 		if err != nil {
@@ -198,8 +219,13 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 			perMinute = *filters.RateLimitPerMinute
 		}
 		fl := NewFilter(filters)
-		// Las sesiones no gastan del límite de eventos.
-		h.sessions(ctx, project.ID, sessions, fl)
+		keptSessions := sessions[:0]
+		for _, s := range sessions {
+			if a := s.attrs(); !fl.DropSession(a.Release, a.Environment) {
+				keptSessions = append(keptSessions, s)
+			}
+		}
+		sessions = keptSessions
 		kept := events[:0]
 		for _, ev := range events {
 			if reason := fl.Drop(ev); reason != "" {
@@ -216,11 +242,16 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		arrived()
 	}
 
-	// Los check-ins cuentan en el mismo límite por minuto que los eventos.
+	// Los check-ins cuentan en el mismo límite por minuto que los eventos; las
+	// sesiones, en el suyo. Lo que no cabe no se guarda: si son eventos o
+	// check-ins, tampoco el resto del envío.
 	if n := len(events) + len(checkIns); n > 0 {
 		if ok, wait := h.limiter.AllowUpTo(project.ID, n, perMinute); !ok {
 			if len(events) > 0 {
 				h.drop(project.ID, store.DropRateLimit, len(events))
+			}
+			if len(sessions) > 0 {
+				h.dropOther(project.ID, store.DropSessionRateLimit, len(sessions))
 			}
 			var cats []string
 			if len(events) > 0 {
@@ -229,14 +260,24 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 			if len(checkIns) > 0 {
 				cats = append(cats, "monitor")
 			}
-			secs := strconv.Itoa(max(1, int(math.Ceil(wait.Seconds()))))
-			hdr := w.Header()
-			hdr.Set("Retry-After", secs)
-			hdr.Set("X-Sentry-Rate-Limits", secs+":"+strings.Join(cats, ";")+":project")
-			fail(w, http.StatusTooManyRequests, "demasiados eventos")
+			rateLimited(w, wait, cats)
 			return
 		}
 	}
+	if len(sessions) > 0 {
+		if ok, wait := h.sessionLimiter.AllowUpTo(project.ID, sessionsCost(sessions), perMinute*SessionBudget); !ok {
+			h.dropOther(project.ID, store.DropSessionRateLimit, len(sessions))
+			sessions = nil
+			if len(events) == 0 && len(checkIns) == 0 {
+				rateLimited(w, wait, []string{"session"})
+				return
+			}
+			// Los eventos del envío sí caben: se guardan y el SDK se entera por
+			// la cabecera de que las sesiones no.
+			w.Header().Set("X-Sentry-Rate-Limits", retrySecs(wait)+":session:project")
+		}
+	}
+	h.sessions(ctx, project.ID, sessions)
 
 	start := time.Now()
 	results, errs := h.ingester.ingestEvents(ctx, project.ID, events, lim, arrived)
@@ -281,6 +322,18 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": respID})
+}
+
+func retrySecs(wait time.Duration) string {
+	return strconv.Itoa(max(1, int(math.Ceil(wait.Seconds()))))
+}
+
+func rateLimited(w http.ResponseWriter, wait time.Duration, cats []string) {
+	secs := retrySecs(wait)
+	hdr := w.Header()
+	hdr.Set("Retry-After", secs)
+	hdr.Set("X-Sentry-Rate-Limits", secs+":"+strings.Join(cats, ";")+":project")
+	fail(w, http.StatusTooManyRequests, "demasiados eventos")
 }
 
 func fail(w http.ResponseWriter, code int, detail string) {

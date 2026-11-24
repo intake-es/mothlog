@@ -85,6 +85,15 @@ func EnsureRelease(ctx context.Context, q Querier, projectID int64, version stri
 	return id, true, nil
 }
 
+// declareRelease apunta que la release se ha declarado con un token, si no lo
+// estaba ya. Solo a las declaradas les llega un despliegue sin proyectos.
+func declareRelease(ctx context.Context, q Querier, id int64, now time.Time) error {
+	if _, err := q.Exec(ctx, `UPDATE releases SET declared_at = COALESCE(declared_at, $2) WHERE id = $1`, id, now); err != nil {
+		return fmt.Errorf("declarar release: %w", err)
+	}
+	return nil
+}
+
 // CompareReleases dice si la release a es anterior (-1), la misma (0) o
 // posterior (1) a b: por su número si las dos se leen como versiones del
 // mismo paquete (byVersion), y si no, por cuándo se vieron por primera vez;
@@ -134,8 +143,12 @@ func (s *Store) CreateRelease(ctx context.Context, projectID int64, version stri
 	if err != nil {
 		return Release{}, false, err
 	}
-	_, created, err := EnsureRelease(ctx, s.pool, projectID, version, time.Now())
+	now := time.Now()
+	id, created, err := EnsureRelease(ctx, s.pool, projectID, version, now)
 	if err != nil {
+		return Release{}, false, err
+	}
+	if err := declareRelease(ctx, s.pool, id, now); err != nil {
 		return Release{}, false, err
 	}
 	r, err := s.Release(ctx, projectID, version, "")
@@ -149,11 +162,13 @@ func (s *Store) FinalizeRelease(ctx context.Context, projectID int64, version st
 	if err != nil {
 		return Release{}, err
 	}
-	id, _, err := EnsureRelease(ctx, s.pool, projectID, version, time.Now())
+	now := time.Now()
+	id, _, err := EnsureRelease(ctx, s.pool, projectID, version, now)
 	if err != nil {
 		return Release{}, err
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE releases SET finalized_at = COALESCE(finalized_at, $2) WHERE id = $1`, id, at); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE releases SET finalized_at = COALESCE(finalized_at, $2),
+		declared_at = COALESCE(declared_at, $3) WHERE id = $1`, id, at, now); err != nil {
 		return Release{}, fmt.Errorf("finalizar release: %w", err)
 	}
 	return s.Release(ctx, projectID, version, "")
@@ -176,8 +191,12 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 	d := Deploy{Environment: environment}
 	var resolved []int64
 	err = db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
-		id, _, err := EnsureRelease(ctx, tx, projectID, version, time.Now())
+		now := time.Now()
+		id, _, err := EnsureRelease(ctx, tx, projectID, version, now)
 		if err != nil {
+			return err
+		}
+		if err := declareRelease(ctx, tx, id, now); err != nil {
 			return err
 		}
 		if err := tx.QueryRow(ctx, `
@@ -557,10 +576,12 @@ func (s *Store) Environments(ctx context.Context, project string) ([]Environment
 	return envs, nil
 }
 
-// ReleaseProjects son los proyectos que tienen una release con esa versión.
+// ReleaseProjects son los proyectos que tienen declarada una release con esa
+// versión. Las que solo ha creado la ingesta no cuentan: cualquiera con la
+// clave pública de un proyecto puede crearlas.
 func (s *Store) ReleaseProjects(ctx context.Context, version string) ([]Project, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+projectColumns+` FROM projects
-		WHERE id IN (SELECT project_id FROM releases WHERE version = $1) ORDER BY id`, version)
+		WHERE id IN (SELECT project_id FROM releases WHERE version = $1 AND declared_at IS NOT NULL) ORDER BY id`, version)
 	if err != nil {
 		return nil, fmt.Errorf("proyectos de la release: %w", err)
 	}

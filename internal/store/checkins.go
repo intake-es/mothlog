@@ -30,6 +30,8 @@ type CheckInInput struct {
 	Environment string
 	Release     string
 	Config      *MonitorConfig
+	// InvalidRelease dice que la release que llegó no valía y se quitó.
+	InvalidRelease bool
 }
 
 // MonitorChange es un cambio de estado de un monitor que puede avisar.
@@ -169,15 +171,18 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 			res.Created = true
 		} else if err != nil {
 			return err
-		} else if cfg != nil {
-			if m, err = configureMonitor(ctx, tx, m, *cfg); err != nil {
-				return err
-			}
 		}
 		res.Monitor = m
+		// Un check-in de otro entorno no cambia nada del monitor, tampoco su horario.
 		if m.Environment != "" && in.Environment != m.Environment {
 			res.Outcome, res.Reason = CheckInIgnored, "el monitor vigila el entorno "+m.Environment
 			return nil
+		}
+		if !res.Created && cfg != nil {
+			if m, err = configureMonitor(ctx, tx, m, *cfg); err != nil {
+				return err
+			}
+			res.Monitor = m
 		}
 		return s.saveCheckIn(ctx, tx, &res, in, now, notify)
 	})

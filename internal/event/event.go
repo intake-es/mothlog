@@ -38,6 +38,10 @@ type Event struct {
 	Contexts    json.RawMessage   `json:"contexts,omitempty"`
 	// DebugMeta va tal cual; sus imágenes sourcemap dicen el debug ID de cada .js.
 	DebugMeta json.RawMessage `json:"debug_meta,omitempty"`
+	// InvalidRelease e InvalidEnvironment dicen que el valor que llegó no valía
+	// (ver CleanName) y se quitó.
+	InvalidRelease     bool `json:"-"`
+	InvalidEnvironment bool `json:"-"`
 }
 
 type SDK struct {
@@ -114,9 +118,9 @@ type raw struct {
 	Platform    text            `json:"platform"`
 	Level       text            `json:"level"`
 	Logger      text            `json:"logger"`
-	Release     text            `json:"release"`
+	Release     name            `json:"release"`
 	Dist        text            `json:"dist"`
-	Environment text            `json:"environment"`
+	Environment name            `json:"environment"`
 	SDK         json.RawMessage `json:"sdk"`
 	Logentry    json.RawMessage `json:"logentry"`
 	Message     json.RawMessage `json:"message"`
@@ -179,9 +183,9 @@ func Parse(payload []byte) (*Event, error) {
 		Platform:    string(r.Platform),
 		Level:       string(r.Level),
 		Logger:      string(r.Logger),
-		Release:     string(r.Release),
+		Release:     r.Release.s,
 		Dist:        string(r.Dist),
-		Environment: string(r.Environment),
+		Environment: r.Environment.s,
 		SDK:         parseSDK(r.SDK),
 		Message:     message(r),
 		Exceptions:  excs,
@@ -193,6 +197,9 @@ func Parse(payload []byte) (*Event, error) {
 		Breadcrumbs: nonNull(r.Breadcrumbs),
 		Contexts:    nonNull(r.Contexts),
 		DebugMeta:   object(r.DebugMeta),
+
+		InvalidRelease:     r.Release.invalid,
+		InvalidEnvironment: r.Environment.invalid,
 	}
 	if e.Level == "" {
 		e.Level = "error"

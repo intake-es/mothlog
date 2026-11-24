@@ -180,8 +180,8 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 					return nil
 				}
 				if err := tx.QueryRow(ctx, `
-					INSERT INTO releases (project_id, version, first_seen, finalized_at) VALUES ($1, $2, $3, $4)
-					RETURNING id`, projectID, version, r.Created, r.Released).Scan(&id); err != nil {
+					INSERT INTO releases (project_id, version, first_seen, finalized_at, declared_at) VALUES ($1, $2, $3, $4, $5)
+					RETURNING id`, projectID, version, r.Created, r.Released, time.Now()).Scan(&id); err != nil {
 					return fmt.Errorf("crear release: %w", err)
 				}
 				return saveOrigin(ctx, tx, o, "release", r.ExternalID, id, r)
@@ -209,6 +209,9 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 				WHERE id = $1`, id, r.Created, r.Released); err != nil {
 				return fmt.Errorf("actualizar release: %w", err)
 			}
+		}
+		if err := declareRelease(ctx, tx, id, time.Now()); err != nil {
+			return err
 		}
 		return saveOrigin(ctx, tx, o, "release", r.ExternalID, id, r)
 	})

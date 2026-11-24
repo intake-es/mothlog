@@ -92,7 +92,8 @@ func (s *Service) newRelease(w http.ResponseWriter, r *http.Request) error {
 }
 
 // releaseProjects son los proyectos del cuerpo, o si no trae, los que ya
-// tienen la release.
+// tienen la release declarada con un token (`sentry-cli deploys new` no manda
+// proyectos). Las releases que solo ha creado la ingesta no cuentan.
 func (s *Service) releaseProjects(r *http.Request, version string, names []string) ([]int64, []string, error) {
 	if p := r.PathValue("project"); p != "" {
 		names = append(names, p)
@@ -148,7 +149,7 @@ func (s *Service) finalizeRelease(w http.ResponseWriter, r *http.Request) error 
 }
 
 // newDeploy es `sentry-cli deploys new`: apunta el despliegue en todos los
-// proyectos que tienen la release, o en los del cuerpo si los trae.
+// proyectos que tienen la release declarada, o en los del cuerpo si los trae.
 func (s *Service) newDeploy(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Environment  string     `json:"environment"`

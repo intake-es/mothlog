@@ -36,9 +36,30 @@ const (
 	DropSampled          = "sampled"
 )
 
+// Lo que no es un evento descartado: el campo de un evento o un check-in que
+// se quitó por no valer, y las sesiones.
+const (
+	DropInvalidRelease      = "invalid_release"
+	DropInvalidEnvironment  = "invalid_env"
+	DropSessionInvalid      = "session_invalid"
+	DropSessionRateLimit    = "session_limit"
+	DropSessionReleaseLimit = "session_releases"
+)
+
 var DropReasons = []string{
 	DropMessage, DropExceptionType, DropBrowserExtension, DropWebCrawler, DropLocalhost,
 	DropEnvironment, DropRelease, DropRateLimit, DropIssueLimit, DropSampled,
+	DropInvalidRelease, DropInvalidEnvironment, DropSessionInvalid, DropSessionRateLimit, DropSessionReleaseLimit,
+}
+
+// EventDrop dice si el motivo es de un evento entero, el único que cuenta en
+// el total de descartados.
+func EventDrop(reason string) bool {
+	switch reason {
+	case DropInvalidRelease, DropInvalidEnvironment, DropSessionInvalid, DropSessionRateLimit, DropSessionReleaseLimit:
+		return false
+	}
+	return true
 }
 
 // Filters es lo que la ingesta descarta o limita de un proyecto.
@@ -221,7 +242,8 @@ type DroppedDay struct {
 type DroppedStats struct {
 	// Since es el primer día (UTC) que se cuenta.
 	Since string `json:"since"`
-	Total int64  `json:"total"`
+	// Total son los eventos descartados: no cuenta las sesiones ni los campos quitados.
+	Total int64 `json:"total"`
 	// Reasons lleva todos los motivos, también los que están a cero.
 	Reasons map[string]int64 `json:"reasons"`
 	// Daily son los días y motivos con algo descartado, del más viejo al más nuevo.
@@ -259,7 +281,9 @@ func (s *Store) DroppedSince(ctx context.Context, projectID int64, days int, now
 	err = db.ForEachRow(rows, []any{&d.Date, &d.Reason, &d.Count}, func() error {
 		st.Daily = append(st.Daily, d)
 		st.Reasons[d.Reason] += d.Count
-		st.Total += d.Count
+		if EventDrop(d.Reason) {
+			st.Total += d.Count
+		}
 		return nil
 	})
 	if err != nil {

@@ -64,6 +64,8 @@ type Ingester struct {
 	random   func() float64
 	hashKey  atomic.Pointer[[]byte]
 	batch    *batcher
+	// maxReleases es MaxSessionReleases; los tests lo bajan.
+	maxReleases int64
 }
 
 // NewIngester acepta enricher y notifier nil: entonces no hacen nada.
@@ -74,7 +76,8 @@ func NewIngester(pool db.DB, enricher Enricher, notifier Notifier, log *slog.Log
 	if notifier == nil {
 		notifier = NopNotifier{}
 	}
-	in := &Ingester{pool: pool, enricher: enricher, notifier: notifier, log: log, now: time.Now, random: mrand.Float64}
+	in := &Ingester{pool: pool, enricher: enricher, notifier: notifier, log: log, now: time.Now, random: mrand.Float64,
+		maxReleases: MaxSessionReleases}
 	in.batch = newBatcher(in)
 	return in
 }
