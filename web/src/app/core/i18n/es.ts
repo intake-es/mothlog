@@ -767,7 +767,7 @@ export const es = {
   'uptimeForm.namePlaceholder': 'Web principal',
   'uptimeForm.method': 'Método',
   'uptimeForm.url': 'URL',
-  'uptimeForm.urlPlaceholder': 'https://ejemplo.com/salud',
+  'uptimeForm.urlPlaceholder': 'https://example.com/salud',
   'uptimeForm.urlHint':
     'http o https. HEAD no descarga la página, pero hay servidores que no lo aceptan.',
   'uptimeForm.interval': 'Cada cuánto',

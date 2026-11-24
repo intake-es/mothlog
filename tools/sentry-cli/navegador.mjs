@@ -3,10 +3,10 @@ import { extname, join } from 'node:path';
 import { chromium } from 'playwright';
 
 // Sirve <dist> como https://app.example.com, pulsa el botón y reenvía a
-// <intake> lo que el SDK manda a errors.example.com, guardando cada envío en
+// <servicio> lo que el SDK manda a errors.example.com, guardando cada envío en
 // <salida> como tools/fixtures/navegador/grabar.mjs.
-const [dist, intake, out] = process.argv.slice(2);
-if (!dist || !intake || !out) {
+const [dist, service, out] = process.argv.slice(2);
+if (!dist || !service || !out) {
   console.error('uso: node navegador.mjs <dist> <url de mothlog> <salida>');
   process.exit(1);
 }
@@ -34,7 +34,7 @@ await context.route('**/*', async (route) => {
     const headers = await req.allHeaders();
     writeFileSync(`${base}.envelope`, body);
     writeFileSync(`${base}.meta.json`, JSON.stringify({ method: 'POST', path: url.pathname, query: url.search.slice(1), headers }, null, 2));
-    const res = await fetch(`${intake}${url.pathname}${url.search}`, {
+    const res = await fetch(`${service}${url.pathname}${url.search}`, {
       method: 'POST',
       body,
       headers: { 'content-type': headers['content-type'] ?? 'text/plain' },

@@ -18,7 +18,7 @@ var oldName = regexp.MustCompile(`(?i)intake[-_ ]?errors`)
 var oldNameAllowed = map[string]string{
 	"internal/alert/webhook.go":                        "las cabeceras X-Intake-Errors-* que el webhook manda también, hasta la 2.0.0",
 	"internal/alert/rules_test.go":                     "comprueba que van esas cabeceras",
-	"README.md":                                        "cuenta que van esas cabeceras",
+	"docs/alerts.md":                                   "cuenta que van esas cabeceras",
 	"migrations/00023_sesiones_e_identidad.sql":        "migración ya aplicada: no se cambia",
 	"migrations/sqlite/00023_sesiones_e_identidad.sql": "migración ya aplicada: no se cambia",
 	"cmd/mothlog/name_test.go":                         "este test",

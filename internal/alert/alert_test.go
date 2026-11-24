@@ -1,7 +1,6 @@
 package alert
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -971,16 +968,6 @@ func endToEndTaskFailed(t *testing.T, l lang.Lang) {
 	e.slack.mu.Lock()
 	bodies := slices.Clone(e.slack.bodies)
 	e.slack.mu.Unlock()
-	if dir := os.Getenv("TEST_EVIDENCE_DIR"); dir != "" {
-		for i, b := range bodies {
-			var pretty bytes.Buffer
-			_ = json.Indent(&pretty, b, "", "  ")
-			name := filepath.Join(dir, fmt.Sprintf("slack-falso-%s-%d-%s.json", l, i+1, []string{"nuevo", "regresion"}[i]))
-			if err := os.WriteFile(name, append(pretty.Bytes(), '\n'), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 
 	link := fmt.Sprintf("%s/issues/%d", publicURL, first.IssueID)
 	msgs := e.slack.payloads(t)

@@ -41,7 +41,7 @@ func framesEvent(release string, n int, file func(i int) string) *event.Event {
 	return ev
 }
 
-func appJS(int) string { return "https://ejemplo.com/app.js" }
+func appJS(int) string { return "https://example.com/app.js" }
 
 func translated(ev *event.Event) int {
 	n := 0
@@ -61,7 +61,7 @@ func TestEnrichFrameBudget(t *testing.T) {
 	_ = st.PutSourceMaps(context.Background(), webID, "r", []store.SourceMapFile{{File: "app.js", Map: longLineMap(10)}})
 
 	// 20.000 fotogramas de ficheros sin mapa: como mucho maxEnrichedFrames lecturas.
-	ev := framesEvent("r", 20_000, func(i int) string { return fmt.Sprintf("https://ejemplo.com/f%d.js", i) })
+	ev := framesEvent("r", 20_000, func(i int) string { return fmt.Sprintf("https://example.com/f%d.js", i) })
 	_ = s.Enrich(context.Background(), webID, ev)
 	if st.reads > maxEnrichedFrames {
 		t.Errorf("%d lecturas del store para un evento", st.reads)
@@ -69,7 +69,7 @@ func TestEnrichFrameBudget(t *testing.T) {
 
 	// Se traducen los más internos: el último fotograma sí, el primero no.
 	for _, innermost := range []bool{true, false} {
-		ev := framesEvent("r", 1000, func(i int) string { return fmt.Sprintf("https://ejemplo.com/g%d.js", i) })
+		ev := framesEvent("r", 1000, func(i int) string { return fmt.Sprintf("https://example.com/g%d.js", i) })
 		frames := ev.Exceptions[0].Frames
 		at := 0
 		if innermost {
@@ -133,7 +133,7 @@ func TestEnrichSkipsLongKeys(t *testing.T) {
 	long := strings.Repeat("r", maxKeyLen+1)
 	for _, ev := range []*event.Event{
 		framesEvent(long, 10, appJS),
-		framesEvent("r", 10, func(int) string { return "https://ejemplo.com/" + long + ".js" }),
+		framesEvent("r", 10, func(int) string { return "https://example.com/" + long + ".js" }),
 		func() *event.Event { ev := framesEvent("r", 10, appJS); ev.Dist = long; return ev }(),
 	} {
 		_ = s.Enrich(context.Background(), webID, ev)

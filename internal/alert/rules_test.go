@@ -15,8 +15,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -308,7 +306,6 @@ func TestRuleEachAction(t *testing.T) {
 	}
 	link := fmt.Sprintf("%s/issues/%d", publicURL, res.IssueID)
 	head := "task failed id=88dfc065281046dfa0098d0fa91bbdf4"
-	evidence := map[string]string{}
 
 	// Slack: el mismo mensaje que sin reglas, con el botón de Linear porque espera a su issue.
 	sl := slackSrv.all()
@@ -320,7 +317,6 @@ func TestRuleEachAction(t *testing.T) {
 	if !strings.HasPrefix(sp.Text, "New error in backend: "+head) || !slices.Equal(buttons(sp), []string{"View error", "ERR-101 in Linear"}) {
 		t.Errorf("slack = %s", sl[0].Body)
 	}
-	evidence["slack"] = string(sl[0].Body)
 
 	issues, order := e.linear.snapshot()
 	if len(order) != 1 {
@@ -330,7 +326,6 @@ func TestRuleEachAction(t *testing.T) {
 	if !slices.Equal(li.Labels, []string{"label-regla", "label-proyecto"}) || !strings.HasPrefix(li.Title, "[backend] "+head) {
 		t.Errorf("linear = %+v", li)
 	}
-	evidence["linear"] = li.Title + "\netiquetas: " + strings.Join(li.Labels, ", ") + "\n\n" + li.Description
 
 	msgs := mail.messages()
 	if len(msgs) != 1 {
@@ -347,7 +342,6 @@ func TestRuleEachAction(t *testing.T) {
 			t.Errorf("el correo no lleva %q:\n%s", want, m.Data)
 		}
 	}
-	evidence["correo"] = "MAIL FROM: " + m.From + "\nRCPT TO: " + strings.Join(m.To, ", ") + "\n\n" + m.Data
 
 	dc := discordSrv.all()
 	var dp discordPayload
@@ -358,7 +352,6 @@ func TestRuleEachAction(t *testing.T) {
 		dp.Embeds[0].URL != link || dp.AllowedMentions["parse"] == nil {
 		t.Errorf("discord = %s", dc[0].Body)
 	}
-	evidence["discord"] = string(dc[0].Body)
 
 	tg := telegramSrv.all()
 	if len(tg) != 1 || tg[0].Path != "/bot123:token-del-bot/sendMessage" {
@@ -374,7 +367,6 @@ func TestRuleEachAction(t *testing.T) {
 		!strings.Contains(tp.Text, `<a href="`+link+`">View error</a>`) {
 		t.Errorf("telegram = %s", tg[0].Body)
 	}
-	evidence["telegram"] = tg[0].Path + "\n" + string(tg[0].Body)
 
 	nt := ntfySrv.all()
 	if len(nt) != 1 {
@@ -386,23 +378,12 @@ func TestRuleEachAction(t *testing.T) {
 		!strings.HasPrefix(string(nt[0].Body), head) {
 		t.Errorf("ntfy = %v\n%s", h, nt[0].Body)
 	}
-	evidence["ntfy"] = fmt.Sprintf("Title: %s\nTags: %s\nPriority: %s\nClick: %s\n\n%s", h.Get("Title"), h.Get("Tags"), h.Get("Priority"), h.Get("Click"), nt[0].Body)
 
 	wh := hookSrv.all()
 	if len(wh) != 1 {
 		t.Fatalf("webhook = %d", len(wh))
 	}
 	checkSignature(t, wh[0], webhookSecret)
-	evidence["webhook"] = HeaderSignature + ": " + wh[0].Header.Get(HeaderSignature) + "\n" + HeaderEvent + ": " +
-		wh[0].Header.Get(HeaderEvent) + "\n\n" + string(wh[0].Body)
-
-	if dir := os.Getenv("TEST_EVIDENCE_DIR"); dir != "" {
-		for name, body := range evidence {
-			if err := os.WriteFile(filepath.Join(dir, "servidor-falso-"+name+".txt"), []byte(body+"\n"), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 }
 
 func TestRuleConditionsNewAndRegressed(t *testing.T) {

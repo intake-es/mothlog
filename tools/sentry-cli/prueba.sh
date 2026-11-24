@@ -25,7 +25,7 @@ raiz=$(cd ../.. && pwd)
 navegador=$raiz/tools/fixtures/navegador
 trabajo=$aqui/trabajo
 puerto=${PUERTO:-18480}
-intake=http://127.0.0.1:$puerto
+servicio=http://127.0.0.1:$puerto
 cli=$aqui/node_modules/.bin/sentry-cli
 
 rm -rf "$trabajo"
@@ -34,7 +34,7 @@ mkdir -p "$trabajo"
 [ -d "$navegador/node_modules" ] || (cd "$navegador" && npm ci --no-fund --no-audit)
 
 go build -o "$trabajo/mothlog" "$raiz/cmd/mothlog"
-export PUBLIC_URL=$intake LISTEN_ADDR=127.0.0.1:$puerto
+export PUBLIC_URL=$servicio LISTEN_ADDR=127.0.0.1:$puerto
 SOURCEMAP_UPLOAD_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
 export SOURCEMAP_UPLOAD_TOKEN
 
@@ -50,7 +50,7 @@ api_token=$("$trabajo/mothlog" tokens create prueba-sentry-cli | head -n 1)
 servidor=$!
 trap 'kill $servidor 2>/dev/null || true' EXIT
 for _ in $(seq 50); do
-  curl -sf "$intake/healthz" >/dev/null && break
+  curl -sf "$servicio/healthz" >/dev/null && break
   sleep 0.2
 done
 
@@ -58,7 +58,7 @@ export SENTRY_ORG=cualquiera SENTRY_PROJECT=front
 grabar() { # <caso> <orden...>: la lanza con SENTRY_URL en un proxy que graba
   local caso=$1 proxy estado=0
   shift
-  node proxy.mjs $((puerto + 1)) "$intake" "$trabajo/subidas/$caso" &
+  node proxy.mjs $((puerto + 1)) "$servicio" "$trabajo/subidas/$caso" &
   proxy=$!
   for _ in $(seq 50); do
     curl -s "http://127.0.0.1:$((puerto + 1))/healthz" >/dev/null && break
@@ -77,11 +77,11 @@ build() { # <caso>: deja en trabajo/<caso> el build con release prueba-<caso>
 }
 
 comprobar() { # <caso>: manda el error y mira el último fotograma del evento guardado
-  node navegador.mjs "$trabajo/$1" "$intake" "$trabajo/envios-$1"
+  node navegador.mjs "$trabajo/$1" "$servicio" "$trabajo/envios-$1"
   local env evento
   env=$(grep -l '"type":"event"' "$trabajo/envios-$1"/*.envelope | head -n 1)
   evento=$(head -n 1 "$env" | python3 -c 'import json,sys; print(json.load(sys.stdin)["event_id"])')
-  curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/events/$evento/" >"$trabajo/evento-$1.json"
+  curl -sf -H "Authorization: Bearer $api_token" "$servicio/api/0/events/$evento/" >"$trabajo/evento-$1.json"
   python3 - "$1" "$trabajo/evento-$1.json" <<'EOF'
 import json, sys
 caso, fichero = sys.argv[1], sys.argv[2]
@@ -120,14 +120,14 @@ SENTRY_AUTH_TOKEN=$SOURCEMAP_UPLOAD_TOKEN grabar antiguo npm exec --yes --packag
 comprobar antiguo
 
 echo "== releases y despliegues"
-issue=$(curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/issues/?project=front" |
+issue=$(curl -sf -H "Authorization: Bearer $api_token" "$servicio/api/0/issues/?project=front" |
   python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; assert len(d)==1, d; print(d[0]["id"])')
 curl -sf -H "Authorization: Bearer $api_token" -H 'Content-Type: application/json' \
-  -d '{"status":"resolved_next"}' "$intake/api/0/issues/$issue/status" >/dev/null
+  -d '{"status":"resolved_next"}' "$servicio/api/0/issues/$issue/status" >/dev/null
 SENTRY_AUTH_TOKEN=$api_token grabar releases sh -c \
   '"$0" releases new prueba-releases && "$0" releases finalize prueba-releases && "$0" deploys new -r prueba-releases -e production' "$cli"
-curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/projects/$id/releases/prueba-releases/" >"$trabajo/release.json"
-curl -sf -H "Authorization: Bearer $api_token" "$intake/api/0/issues/$issue/" >"$trabajo/issue-resuelto.json"
+curl -sf -H "Authorization: Bearer $api_token" "$servicio/api/0/projects/$id/releases/prueba-releases/" >"$trabajo/release.json"
+curl -sf -H "Authorization: Bearer $api_token" "$servicio/api/0/issues/$issue/" >"$trabajo/issue-resuelto.json"
 python3 - "$trabajo/release.json" "$trabajo/issue-resuelto.json" <<'EOF'
 import json, sys
 rel, issue = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))

@@ -8,13 +8,13 @@ import { IntegrationsSection } from './integrations';
 
 const DATA: Integrations = {
   linear: {
-    webhook_url: 'https://intake.example.com/webhooks/linear',
+    webhook_url: 'https://errors.example.com/webhooks/linear',
     secret_set: true,
     token_set: true,
     last_delivery: new Date(Date.now() - 3 * 60_000).toISOString(),
   },
   github: {
-    webhook_url: 'https://intake.example.com/webhooks/github',
+    webhook_url: 'https://errors.example.com/webhooks/github',
     secret_set: false,
     token_set: true,
     last_delivery: null,
@@ -51,7 +51,7 @@ describe('IntegrationsSection', () => {
     const cards = el.querySelectorAll('.card');
     expect(cards).toHaveLength(2);
     expect(cards[0].querySelector('.integ__code')?.textContent).toBe(
-      'https://intake.example.com/webhooks/linear',
+      'https://errors.example.com/webhooks/linear',
     );
     expect(cards[0].querySelector('.integ__head .sp-badge')?.textContent).toBe('Conectado');
     expect(cards[0].textContent).toContain('Se comprueba con LINEAR_WEBHOOK_SECRET');

@@ -200,7 +200,7 @@ func (l *Linear) hookLocked(action string, is *LinearIssue, from map[string]any,
 		"type":      "Issue",
 		"createdAt": now.UTC().Format(time.RFC3339Nano),
 		"actor": map[string]any{"id": by.ID, "type": "user", "name": by.Name,
-			"email": strings.ToLower(strings.ReplaceAll(by.Name, " ", ".")) + "@ejemplo.com", "url": "https://linear.app/ejemplo/profiles/" + by.ID},
+			"email": strings.ToLower(strings.ReplaceAll(by.Name, " ", ".")) + "@example.com", "url": "https://linear.app/example/profiles/" + by.ID},
 		"data": map[string]any{
 			"id": is.ID, "identifier": is.Identifier, "number": is.Number, "title": is.Title, "description": is.Description,
 			"url": l.URL(is.Identifier), "priority": 0, "priorityLabel": "No priority", "labelIds": is.LabelIDs,
