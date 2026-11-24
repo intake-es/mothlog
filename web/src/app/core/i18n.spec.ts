@@ -81,6 +81,9 @@ const ALLOWED = new Set([
   // Las etiquetas, los atributos y los tipos de nodo del Markdown de los comentarios.
   ...['code', 'strong', 'em', 'link', 'br', 'p', 'heading', 'list', 'a', 'href', 'rel'],
   ...['target', 'li', 'ol', 'ul', 'pre', 'md', 'noopener noreferrer'],
+  // Las aplicaciones conectadas por OAuth: rutas, permisos, estados de la pantalla y referencias.
+  ...['authorize', 'apps', 'read', 'write', 'client', 'deny'],
+  ...['loading', 'ready', 'gone', 'failed', 'leaving', 'box', 'cancelBtn', 'button'],
 ]);
 
 /** Sin espacios y con pinta de código: rutas, clases, claves con punto, snake_case, MAYÚSCULAS, 6px. */

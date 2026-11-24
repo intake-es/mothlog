@@ -687,7 +687,7 @@ func TestMigrationOIDC(t *testing.T) {
 	if page, err := s.ListIssues(ctx, IssueFilter{Query: "assigned:me", Viewer: &Actor{Name: "ana~2", Kind: ActorUser}}); err != nil || len(page.Issues) != 0 {
 		t.Errorf("la de OIDC ve como suyos los de GitHub: %d, %v", len(page.Issues), err)
 	}
-	// El historial de hoy lee también columnas de migraciones posteriores.
+	// El historial lo lee el código de hoy, con las columnas de migraciones posteriores.
 	if _, err := p.Up(ctx); err != nil {
 		t.Fatal(err)
 	}

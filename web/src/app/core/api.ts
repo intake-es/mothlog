@@ -165,6 +165,8 @@ export interface Actor {
   name: string;
   /** user: una persona con sesión; token: un token de la API o del MCP. */
   kind: 'user' | 'token';
+  /** La aplicación conectada por la que actuó la persona, si fue por una. */
+  via?: string;
 }
 
 export interface IssueComment {

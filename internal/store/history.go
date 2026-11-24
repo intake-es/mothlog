@@ -39,6 +39,29 @@ const (
 type Actor struct {
 	Name string `json:"name"`
 	Kind string `json:"kind"`
+	// Via es el cliente de OAuth por el que actuó la persona, si fue por uno.
+	Via string `json:"via,omitempty"`
+}
+
+// Same dice si a y b son el mismo autor, por el cliente que sea.
+func (a Actor) Same(b Actor) bool { return a.Name == b.Name && a.Kind == b.Kind }
+
+func via(a *Actor) *string {
+	if a == nil || a.Via == "" {
+		return nil
+	}
+	return &a.Via
+}
+
+func actorOf(name, kind, via *string) *Actor {
+	if name == nil || kind == nil {
+		return nil
+	}
+	a := &Actor{Name: *name, Kind: *kind}
+	if via != nil {
+		a.Via = *via
+	}
+	return a
 }
 
 type Comment struct {
@@ -105,8 +128,8 @@ func validActor(a *Actor) error {
 func insertComment(ctx context.Context, q Querier, issueID int64, a Actor, body string) (Comment, error) {
 	c := Comment{IssueID: issueID, Author: a, Body: body, Mine: true}
 	err := q.QueryRow(ctx, `
-		INSERT INTO issue_comments (issue_id, author, author_kind, body) VALUES ($1, $2, $3, $4)
-		RETURNING id, created_at`, issueID, a.Name, a.Kind, body).Scan(&c.ID, &c.CreatedAt)
+		INSERT INTO issue_comments (issue_id, author, author_kind, author_via, body) VALUES ($1, $2, $3, $4, $5)
+		RETURNING id, created_at`, issueID, a.Name, a.Kind, via(&a), body).Scan(&c.ID, &c.CreatedAt)
 	if db.IsForeignKeyViolation(err) {
 		return Comment{}, ErrNotFound
 	}
@@ -156,39 +179,37 @@ func (s *Store) History(ctx context.Context, issueID int64, viewer *Actor) ([]Hi
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT 'status', c.id, c.created_at, c.author, c.author_kind, '', c.source, c.from_status, c.to_status, c.release,
-			m.id, m.author, m.author_kind, m.body, m.created_at
+		SELECT 'status', c.id, c.created_at, c.author, c.author_kind, c.author_via, '', c.source, c.from_status, c.to_status, c.release,
+			m.id, m.author, m.author_kind, m.author_via, m.body, m.created_at
 		FROM issue_status_changes c LEFT JOIN issue_comments m ON m.id = c.comment_id
 		WHERE c.issue_id = $1
 		UNION ALL
-		SELECT 'comment', m.id, m.created_at, m.author, m.author_kind, m.body, '', '', '', NULL,
-			NULL, NULL, NULL, NULL, NULL
+		SELECT 'comment', m.id, m.created_at, m.author, m.author_kind, m.author_via, m.body, '', '', '', NULL,
+			NULL, NULL, NULL, NULL, NULL, NULL
 		FROM issue_comments m
 		WHERE m.issue_id = $1 AND NOT EXISTS (SELECT 1 FROM issue_status_changes c WHERE c.comment_id = m.id)
 		ORDER BY 3, 1 DESC, 2`, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("leer historial: %w", err)
 	}
-	mine := func(a *Actor) bool { return viewer != nil && a != nil && *a == *viewer }
+	mine := func(a *Actor) bool { return viewer != nil && a != nil && a.Same(*viewer) }
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (HistoryEntry, error) {
 		var e HistoryEntry
-		var author, kind *string
+		var author, kind, authorVia *string
 		var cID *int64
-		var cAuthor, cKind, cBody *string
+		var cAuthor, cKind, cVia, cBody *string
 		var cAt *time.Time
-		err := r.Scan(&e.Type, &e.ID, &e.At, &author, &kind, &e.Body, &e.Source, &e.From, &e.To, &e.Release,
-			&cID, &cAuthor, &cKind, &cBody, &cAt)
+		err := r.Scan(&e.Type, &e.ID, &e.At, &author, &kind, &authorVia, &e.Body, &e.Source, &e.From, &e.To, &e.Release,
+			&cID, &cAuthor, &cKind, &cVia, &cBody, &cAt)
 		if err != nil {
 			return e, err
 		}
-		if author != nil && kind != nil {
-			e.Author = &Actor{Name: *author, Kind: *kind}
-		}
+		e.Author = actorOf(author, kind, authorVia)
 		if e.Type == "comment" {
 			e.Mine = mine(e.Author)
 		}
 		if cID != nil {
-			a := Actor{Name: *cAuthor, Kind: *cKind}
+			a := *actorOf(cAuthor, cKind, cVia)
 			e.Comment = &Comment{ID: *cID, IssueID: issueID, Author: a, Body: *cBody, CreatedAt: *cAt, Mine: mine(&a)}
 		}
 		return e, nil
@@ -225,8 +246,8 @@ func recordStatusChange(ctx context.Context, q Querier, issueID int64, a *Actor,
 		name, kind = &a.Name, &a.Kind
 	}
 	_, err := q.Exec(ctx, `
-		INSERT INTO issue_status_changes (issue_id, author, author_kind, source, from_status, to_status, release, comment_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, issueID, name, kind, source, from, to, release, commentID)
+		INSERT INTO issue_status_changes (issue_id, author, author_kind, author_via, source, from_status, to_status, release, comment_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, issueID, name, kind, via(a), source, from, to, release, commentID)
 	if err != nil {
 		return fmt.Errorf("apuntar cambio de estado: %w", err)
 	}

@@ -81,7 +81,10 @@ describe('Shell', () => {
     click(el, '.rail__avatar');
     fixture.detectChanges();
     expect(el.querySelector('[role=menu]')?.getAttribute('aria-label')).toBe('Account');
-    expect(el.querySelector('[role=menuitem]')?.textContent?.trim()).toBe('Sign out');
+    expect(
+      Array.from(el.querySelectorAll('[role=menuitem]')).map((i) => i.textContent?.trim()),
+    ).toEqual(['Connected apps', 'Sign out']);
+    expect(el.querySelector('[role=menuitem]')?.getAttribute('href')).toBe('/apps');
     expect(spanishLeft(el)).toEqual([]);
   });
 

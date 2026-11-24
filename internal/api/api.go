@@ -22,6 +22,8 @@ type Options struct {
 	PublicURL string
 	// Auth envuelve cada ruta. Por defecto, RequireAuth(BearerToken(st)).
 	Auth func(http.Handler) http.Handler
+	// MCPAuth envuelve /mcp; por defecto, Auth.
+	MCPAuth func(http.Handler) http.Handler
 	// Alerts comprueba y prueba las reglas de aviso; sin él, no se prueban.
 	Alerts Alerts
 	// Integrations da el estado de Linear y GitHub; sin él, no hay ruta.
@@ -55,6 +57,10 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	if auth == nil {
 		auth = RequireAuth(BearerToken(st))
 	}
+	mcpAuth := opts.MCPAuth
+	if mcpAuth == nil {
+		mcpAuth = auth
+	}
 	route := func(pattern string, f http.HandlerFunc) { mux.Handle(pattern, auth(f)) }
 
 	route("GET /api/0/projects/{$}", h.projects)
@@ -83,7 +89,8 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	h.registerUptime(route)
 	route("GET /api/0/integrations/{$}", h.integrations)
 	mcpHandler := mcpserver.Handler(st, mcpserver.Options{
-		Actor: actorFrom,
+		Actor:  actorFrom,
+		Scopes: scopesFrom,
 		IssueURL: func(ctx context.Context, id int64) string {
 			base, _ := ctx.Value(baseURLKey{}).(string)
 			return base + "/issues/" + strconv.FormatInt(id, 10)
@@ -93,7 +100,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 			return base
 		},
 	})
-	mux.Handle("/mcp", auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/mcp", mcpAuth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), baseURLKey{}, h.baseURL(r).String())
 		mcpHandler.ServeHTTP(w, r.WithContext(ctx))
 	})))

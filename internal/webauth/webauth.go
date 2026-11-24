@@ -269,6 +269,9 @@ func (a *Auth) methods() []string {
 
 func (a *Auth) enabled() bool { return a.github || a.oidc != nil || a.cfg.DevLogin }
 
+// Enabled dice si hay algún login en el panel.
+func (a *Auth) Enabled() bool { return a.enabled() }
+
 // Authenticator reconoce la cookie de sesión. En las peticiones que cambian
 // algo exige además que Origin sea el de PUBLIC_URL.
 func (a *Auth) Authenticator() api.Authenticator {

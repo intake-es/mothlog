@@ -1,0 +1,102 @@
+<main class="consent">
+  <div class="consent__card">
+    @if (problem()) {
+      <div class="consent__state" role="alert">
+        <svg appIcon="warning-circle" weight="duotone"></svg>
+        <h1 class="consent__state-title">{{ t('consent.error.title') }}</h1>
+        <p class="consent__state-text">{{ problem() }}</p>
+      </div>
+    } @else if (state() === 'loading') {
+      <div class="consent__loading" aria-busy="true" [attr.aria-label]="t('consent.loading')">
+        <span class="sp-skeleton" style="width: 96px; height: 40px; border-radius: 10px"></span>
+        <span class="sp-skeleton" style="width: 70%; height: 1.2rem"></span>
+        <span class="sp-skeleton" style="width: 100%; height: 7rem; border-radius: 10px"></span>
+      </div>
+    } @else if (state() === 'gone') {
+      <div class="consent__state" role="status">
+        <svg appIcon="hourglass-simple" weight="duotone"></svg>
+        <h1 class="consent__state-title">{{ t('consent.gone.title') }}</h1>
+        <p class="consent__state-text">{{ t('consent.gone.text') }}</p>
+      </div>
+    } @else if (state() === 'failed') {
+      <div class="consent__state" role="alert">
+        <svg appIcon="warning-circle" weight="duotone"></svg>
+        <h1 class="consent__state-title">{{ t('consent.error.title') }}</h1>
+        <p class="consent__state-text">{{ t('consent.error.server') }}</p>
+      </div>
+    } @else if (req(); as r) {
+      <div class="consent__marks" aria-hidden="true">
+        <app-mark [name]="r.client_name" [size]="40" />
+        <svg class="consent__link" appIcon="arrows-left-right"></svg>
+        <span class="consent__brand"><svg appIcon="bug" weight="fill"></svg></span>
+      </div>
+      <h1 class="consent__title">{{ t('consent.title', { client: r.client_name }) }}</h1>
+      <p class="consent__lede">
+        {{ lede().before }}<strong>{{ r.client_name }}</strong>{{ lede().after }}
+      </p>
+      <p class="consent__who">
+        <svg appIcon="user"></svg>
+        <span>{{ t('consent.as') }} <strong>{{ login() }}</strong></span>
+      </p>
+
+      <dl class="consent__facts">
+        <div class="consent__fact">
+          <dt>{{ t('consent.redirect') }}</dt>
+          <dd class="mono" [attr.title]="r.redirect_uri">{{ r.redirect_uri }}</dd>
+        </div>
+        @if (r.client_url) {
+          <div class="consent__fact">
+            <dt>{{ t('consent.clientId') }}</dt>
+            <dd class="mono" [attr.title]="r.client_id">{{ r.client_id }}</dd>
+          </div>
+        }
+      </dl>
+
+      <fieldset class="consent__scopes" [disabled]="sending() || state() === 'leaving'">
+        <legend class="consent__legend">{{ t('consent.scopes') }}</legend>
+        @for (s of scopes(); track s.value) {
+          <label class="scope">
+            <input
+              type="checkbox"
+              [name]="'scope-' + s.value"
+              [checked]="chosen().has(s.value)"
+              (change)="toggle(s.value, $any($event.target).checked)"
+            />
+            <svg class="scope__icon" [appIcon]="s.icon"></svg>
+            <span class="scope__text">
+              <span class="scope__label">{{ t(s.label) }}</span>
+              <span class="scope__hint">{{ t(s.hint) }}</span>
+            </span>
+          </label>
+        }
+      </fieldset>
+
+      <p class="consent__note">{{ note() }}</p>
+
+      @if (sendError()) {
+        <p class="consent__error" role="alert">{{ sendError() }}</p>
+      }
+
+      @if (state() === 'leaving') {
+        <p class="consent__leaving" role="status">{{ t('consent.going', { host: redirectHost() }) }}</p>
+      } @else {
+        <div class="consent__actions">
+          <button type="button" class="btn consent__btn" [disabled]="sending()" (click)="deny()">
+            {{ t('consent.deny') }}
+          </button>
+          <button
+            type="button"
+            class="btn btn--primary consent__btn"
+            [disabled]="sending() || chosen().size === 0"
+            (click)="allow()"
+          >
+            {{ t('consent.allow') }}
+          </button>
+        </div>
+        @if (chosen().size === 0) {
+          <p class="consent__hint">{{ t('consent.none') }}</p>
+        }
+      }
+    }
+  </div>
+</main>

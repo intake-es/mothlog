@@ -20,6 +20,8 @@ En la base solo queda el sha256 del token. Los tokens no tienen permisos distint
 
 El servidor habla Streamable HTTP sin sesión: cada petición es un `POST` a `https://<host>/mcp` con la cabecera `Authorization: Bearer <token>`. Cualquier réplica atiende cualquier petición.
 
+Si el cliente hace OAuth (Claude Code, Claude, Cursor y los que siguen la autorización de MCP) y el servidor tiene `PUBLIC_URL` y login en la interfaz, basta con la URL: el cliente se registra solo y abre en el navegador la pantalla de consentimiento, donde se entra con el login de la interfaz y se eligen los permisos (`read`, y `write` para comentar, asignar y cambiar el estado). Lo que haga queda a nombre de esa persona, «vía» el cliente, y se revoca en **Aplicaciones conectadas**. Los detalles, en [Conectar un cliente de MCP con OAuth](../README.md#conectar-un-cliente-de-mcp-con-oauth). Para un agente sin navegador (CI, un servidor), un token `ie_` como el de arriba.
+
 ### Claude Code
 
 ```sh

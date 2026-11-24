@@ -300,6 +300,8 @@ func actor(a *store.Actor, st style) string {
 		return "intake-errors"
 	case a.Kind == store.ActorToken:
 		return st.text(a.Name) + " (token)"
+	case a.Via != "":
+		return st.text(a.Name) + " vía " + st.text(a.Via)
 	}
 	return st.text(a.Name)
 }

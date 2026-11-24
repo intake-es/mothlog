@@ -29,11 +29,24 @@ func actorFrom(ctx context.Context) *store.Actor {
 	if !ok || p.Name == "" {
 		return nil
 	}
-	kind := store.ActorToken
-	if p.Kind == "session" {
-		kind = store.ActorUser
+	switch p.Kind {
+	case "session":
+		return &store.Actor{Name: p.Name, Kind: store.ActorUser}
+	case "oauth":
+		return &store.Actor{Name: p.Name, Kind: store.ActorUser, Via: p.Via}
 	}
-	return &store.Actor{Name: p.Name, Kind: kind}
+	return &store.Actor{Name: p.Name, Kind: store.ActorToken}
+}
+
+// scopesFrom son los permisos de un token de OAuth; nil, todos.
+func scopesFrom(ctx context.Context) []string {
+	if p, ok := PrincipalFrom(ctx); ok && p.Kind == "oauth" {
+		if p.Scopes == nil {
+			return []string{}
+		}
+		return p.Scopes
+	}
+	return nil
 }
 
 // sourceFrom: con sesión, la petición viene de la interfaz; con token, de la API.

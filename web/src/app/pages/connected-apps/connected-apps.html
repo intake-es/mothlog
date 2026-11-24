@@ -1,0 +1,72 @@
+<header class="titlebar">
+  <h1 class="titlebar__title">{{ t('apps.title') }}</h1>
+</header>
+
+<div class="content">
+  <div class="page">
+    <p class="apps__lede">{{ t('apps.lede') }}</p>
+
+    @if (error()) {
+      <div class="state state--error" role="alert">
+        <svg appIcon="warning-circle" weight="duotone"></svg>
+        <p class="state__title">{{ t('apps.error') }}</p>
+        <p class="state__text">{{ error() }}</p>
+        <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+      </div>
+    } @else if (grants() === null) {
+      <div aria-busy="true" [attr.aria-label]="t('apps.loading')">
+        <span class="sp-skeleton" style="width: 100%; height: 4.5rem; border-radius: 12px"></span>
+        <span class="sp-skeleton" style="width: 100%; height: 4.5rem; border-radius: 12px; margin-top: 0.75rem"></span>
+      </div>
+    } @else if (rows().length === 0) {
+      <div class="state">
+        <svg appIcon="plugs-connected" weight="duotone"></svg>
+        <p class="state__title">{{ t('apps.empty.title') }}</p>
+        <p class="state__text">{{ t('apps.empty.text') }}</p>
+      </div>
+    } @else {
+      <ul class="apps">
+        @for (r of rows(); track r.g.id) {
+          <li class="app">
+            <app-mark [name]="r.g.client_name" [size]="36" />
+            <div class="app__body">
+              <div class="app__head">
+                <h2 class="app__name">{{ r.g.client_name }}</h2>
+                <span class="app__scopes">
+                  @for (s of r.scopes; track s.value) {
+                    <span class="sp-badge sp-badge--sm" [class.sp-badge--gray]="s.value === 'read'" [class.sp-badge--yellow]="s.value === 'write'">{{ t(s.label) }}</span>
+                  }
+                </span>
+              </div>
+              <p class="app__meta">
+                <time [attr.datetime]="r.g.created_at" [attr.title]="r.connectedTitle">{{ r.connected }}</time>
+                <span aria-hidden="true"> · </span>
+                @if (r.g.last_used_at) {
+                  <time [attr.datetime]="r.g.last_used_at" [attr.title]="r.usedTitle">{{ r.used }}</time>
+                } @else {
+                  <span>{{ r.used }}</span>
+                }
+              </p>
+              <p class="app__host mono" [attr.title]="r.g.redirect_uri">{{ r.host }}</p>
+            </div>
+            <button type="button" class="btn app__revoke" (click)="ask(r.g)">{{ t('apps.revoke') }}</button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</div>
+
+@if (confirming(); as g) {
+  <app-confirm-dialog
+    [heading]="t('apps.revokeTitle', { client: g.client_name })"
+    [text]="t('apps.revokeText')"
+    [confirmLabel]="t('apps.revokeConfirm')"
+    [cancelLabel]="t('apps.cancel')"
+    [busyLabel]="t('apps.revoking')"
+    [busy]="revoking()"
+    [error]="revokeError()"
+    (confirmed)="revoke()"
+    (cancelled)="close()"
+  />
+}

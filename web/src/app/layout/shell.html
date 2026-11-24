@@ -186,6 +186,10 @@
             <span>{{ user()?.login }}</span>
           </div>
           <div class="menu__rule"></div>
+          <a class="menu__item" role="menuitem" routerLink="/apps" (click)="menu.set(null)">
+            <svg appIcon="plugs-connected"></svg>
+            {{ t('shell.apps') }}
+          </a>
           <button type="button" class="menu__item" role="menuitem" (click)="logout()">
             <svg appIcon="sign-out"></svg>
             {{ t('shell.logout') }}

@@ -12,6 +12,12 @@ export const routes: Routes = [
     title: 'title.login' satisfies Key,
   },
   {
+    path: 'authorize',
+    loadComponent: () => import('./pages/authorize/authorize').then((m) => m.AuthorizePage),
+    canActivate: [authGuard],
+    title: 'title.authorize' satisfies Key,
+  },
+  {
     path: '',
     component: Shell,
     canActivate: [authGuard],
@@ -74,6 +80,12 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/project-settings/project-settings').then((m) => m.ProjectSettingsPage),
         title: 'title.settings' satisfies Key,
+      },
+      {
+        path: 'apps',
+        loadComponent: () =>
+          import('./pages/connected-apps/connected-apps').then((m) => m.ConnectedAppsPage),
+        title: 'title.apps' satisfies Key,
       },
       { path: 'projects/:id/settings', redirectTo: 'projects/:id/settings/alerts' },
       {

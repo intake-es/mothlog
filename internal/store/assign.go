@@ -317,9 +317,9 @@ func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignC
 			author, authorKind = &by.Actor.Name, &by.Actor.Kind
 		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO issue_assignment_changes (issue_id, author, author_kind, source, from_name, from_kind, to_name, to_kind)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			id, author, authorKind, by.Source, fromName, fromKind, toName, toKind); err != nil {
+			INSERT INTO issue_assignment_changes (issue_id, author, author_kind, author_via, source, from_name, from_kind, to_name, to_kind)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			id, author, authorKind, via(by.Actor), by.Source, fromName, fromKind, toName, toKind); err != nil {
 			return fmt.Errorf("apuntar asignación: %w", err)
 		}
 		return nil
@@ -337,24 +337,18 @@ func validAssignSource(s string) bool {
 // assignmentHistory son las asignaciones del issue, de la más vieja a la más nueva.
 func (s *Store) assignmentHistory(ctx context.Context, issueID int64) ([]HistoryEntry, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, created_at, author, author_kind, source, from_name, from_kind, to_name, to_kind
+		SELECT id, created_at, author, author_kind, author_via, source, from_name, from_kind, to_name, to_kind
 		FROM issue_assignment_changes WHERE issue_id = $1 ORDER BY created_at, id`, issueID)
 	if err != nil {
 		return nil, fmt.Errorf("leer asignaciones: %w", err)
 	}
-	actor := func(name, kind *string) *Actor {
-		if name == nil || kind == nil {
-			return nil
-		}
-		return &Actor{Name: *name, Kind: *kind}
-	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (HistoryEntry, error) {
 		e := HistoryEntry{Type: "assignment"}
-		var author, kind, fromName, fromKind, toName, toKind *string
-		err := r.Scan(&e.ID, &e.At, &author, &kind, &e.Source, &fromName, &fromKind, &toName, &toKind)
-		e.Author = actor(author, kind)
-		e.Previous = actor(fromName, fromKind)
-		e.Assignee = actor(toName, toKind)
+		var author, kind, authorVia, fromName, fromKind, toName, toKind *string
+		err := r.Scan(&e.ID, &e.At, &author, &kind, &authorVia, &e.Source, &fromName, &fromKind, &toName, &toKind)
+		e.Author = actorOf(author, kind, authorVia)
+		e.Previous = actorOf(fromName, fromKind, nil)
+		e.Assignee = actorOf(toName, toKind, nil)
 		return e, err
 	})
 }
@@ -370,8 +364,7 @@ func AssigneeRef(name, kind string, me *Actor) (*Actor, error) {
 		if me == nil {
 			return nil, fmt.Errorf("%w: no se sabe quién eres para asignarte", ErrInvalid)
 		}
-		a := *me
-		return &a, nil
+		return &Actor{Name: me.Name, Kind: me.Kind}, nil
 	}
 	return &Actor{Name: name, Kind: kind}, nil
 }

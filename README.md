@@ -114,7 +114,7 @@ Al arrancar aplica las migraciones de `migrations/` (con SQLite, las de `migrati
 | `DATABASE_URL` | `postgres://…` o, con SQLite, `sqlite:///ruta/intake.db` ([Con SQLite](#con-sqlite-sin-servidor-de-base-de-datos)) | obligatoria |
 | `LISTEN_ADDR` | dirección HTTP | `:8080` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
-| `PUBLIC_URL` | URL pública del servicio, para escribir los DSN y el enlace de los avisos | obligatoria para `projects create` y `list`; en `/api/0/projects/`, la de cada petición; sin ella, los avisos van sin enlace |
+| `PUBLIC_URL` | URL pública del servicio, para escribir los DSN y el enlace de los avisos, y el emisor del [OAuth del MCP](#conectar-un-cliente-de-mcp-con-oauth) | obligatoria para `projects create` y `list`; en `/api/0/projects/`, la de cada petición; sin ella, los avisos van sin enlace |
 | `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto, en los proyectos que no ponen el suyo | `60` |
 | `RETENTION_DAYS` | días que se guardan los eventos y los source maps | `90` |
 | `SOURCEMAP_UPLOAD_TOKEN` | token para subir source maps, además de los tokens de la API; sin él solo valen esos | vacío |
@@ -378,7 +378,7 @@ intake-errors tokens create claude   # imprime el token (ie_…) una sola vez; e
 intake-errors tokens list            # nombre, alta, último uso y revocación
 intake-errors tokens revoke claude
 intake-errors people list            # quién ha entrado: login, proveedor, id, último login y revocación
-intake-errors people revoke ana      # cierra todas sus sesiones: el paso para sacar a alguien
+intake-errors people revoke ana      # cierra todas sus sesiones y revoca sus aplicaciones conectadas: el paso para sacar a alguien
 ```
 
 Para conectarlo con Claude Code:
@@ -386,6 +386,19 @@ Para conectarlo con Claude Code:
 ```sh
 claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
+
+### Conectar un cliente de MCP con OAuth
+
+Con `PUBLIC_URL` y un login en la interfaz (GitHub, OIDC o `UI_DEV_LOGIN`), el MCP también acepta OAuth 2.1 como lo pide la especificación de MCP: el cliente se conecta solo con la URL, sin pegar un token (`claude mcp add --transport http intake-errors https://<host>/mcp`). Sin `PUBLIC_URL` no se ofrece y solo valen los tokens.
+
+1. **Descubrimiento.** Sin credenciales, `/mcp` responde 401 con `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_URL>/.well-known/oauth-protected-resource/mcp"`. Esa metadata (RFC 9728, también en `/.well-known/oauth-protected-resource`) dice que el recurso es `<PUBLIC_URL>/mcp` y su servidor de autorización, el propio servicio, con su metadata en `/.well-known/oauth-authorization-server` (RFC 8414).
+2. **Registro.** `POST /oauth/register` (RFC 7591) registra un cliente público, sin secreto, con URIs de vuelta https o http a loopback (`127.0.0.1`, `[::1]`, `localhost`). También vale una URL https como `client_id` (Client ID Metadata Document): se pide con 5 s y 16 KB como mucho, sin seguir redirecciones y nunca a direcciones privadas, de metadatos ni link-local. Los registros que no llegan a usarse se borran a las 24 horas. Cada dirección puede registrar 30 clientes y pedir 120 autorizaciones cada 10 minutos (luego, 429 con `Retry-After`).
+3. **Consentimiento.** `GET /oauth/authorize` exige `redirect_uri` (una de las registradas), PKCE `S256` y `resource=<PUBLIC_URL>/mcp` (RFC 8707), y manda a la persona a la pantalla de consentimiento de la interfaz, que le pide entrar si no tiene sesión. Enseña el nombre del cliente (con su inicial, sin pedir su logo a ningún sitio), adónde vuelve y una casilla por permiso: `read` (las herramientas de leer, marcada) y `write` (`add_comment`, `assign_issue` y `set_issue_status`, sin marcar). Se concede lo marcado y nunca más de lo pedido.
+4. **Tokens.** `POST /oauth/token` canjea el código (vale 2 minutos y una vez: reusarlo revoca lo que salió de él) por un token de acceso de una hora (`ieo_…`) y uno de refresco de 30 días (`ier_…`) que cambia en cada uso; reusar un refresco ya gastado revoca la concesión entera. En la base solo queda su sha256. Valen solo para `/mcp`, no para la API. `POST /oauth/revoke` (RFC 7009) revoca un token: el de refresco, con la concesión entera.
+
+Con un token de OAuth, `tools/list` solo enseña las herramientas que permiten sus permisos y llamar a otra devuelve un error que dice qué permiso falta. Lo que hace queda en el historial como de la persona que lo concedió, con el cliente (`"author": {"name": "ana", "kind": "user", "via": "Claude Code"}`, «ana vía Claude Code» en la interfaz), y `assigned:me` y `"assignee": "me"` son esa persona. Los tokens `ie_` siguen igual, con todas las herramientas.
+
+Cada persona ve sus concesiones en **Aplicaciones conectadas** (el menú de su cuenta en la interfaz): el cliente, sus permisos y cuándo y desde qué dirección se usaron por última vez (detrás de un proxy en loopback o en la red privada, la última de `X-Forwarded-For`), y puede revocarlas. `intake-errors people revoke <login>` revoca también todas las suyas; cerrar sesión en la interfaz no las toca.
 
 Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `assign_issue`, `list_assignees`, `list_releases`, `get_release`, `list_monitors`, `get_monitor` (que también traen los de disponibilidad: `list_monitors` en `uptime` y `get_monitor` con `type` `uptime`) y `get_digest`; las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` y `assign_issue` como idempotentes. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, asignárselo con `assign_issue` y `"assignee": "me"`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
 
@@ -442,7 +455,7 @@ Las listas devuelven `{"data": [...], "next_cursor": "..."}`: para la página si
 
 **Asignar.** Cada issue puede tener un asignado: una persona o un token, que es como se asigna un agente. Las personas se guardan al entrar en la interfaz (login, nombre, avatar de GitHub y la última vez que entraron) para poder elegirlas; nadie más ve esos datos que quien entra en la interfaz o tiene un token. Un agente se asigna un error con `assign_issue` y `{"issue_id": 42, "assignee": "me"}` (o `POST /api/0/issues/42/assignee` con `{"assignee": "me"}`) y encuentra los suyos con `assigned:me`; una persona, con el selector del detalle o asignándole el nombre del token. Si se revoca el token, la asignación conserva el nombre y sale como inactiva (`"active": false`). Sale en el issue (`assignee`), en la lista, en `get_issue`, `list_issues` y el `context.md`.
 
-**Historial.** Cada issue guarda sus comentarios (Markdown, con el autor y si es una persona o un token), sus asignaciones y desasignaciones (quién, a quién y desde dónde) y sus cambios de estado: quién, cuándo, de qué estado a cuál, la release si la hay y desde dónde (`ui`, `api`, `mcp`, `ingest` al reabrirse como regresión o `deploy` al resolverse por un despliegue). El autor es el usuario de la sesión en la interfaz o el nombre del token en la API y el MCP. Repetir el mismo estado no apunta nada; un comentario que llega con él queda suelto. Se borra con el issue.
+**Historial.** Cada issue guarda sus comentarios (Markdown, con el autor y si es una persona o un token), sus asignaciones y desasignaciones (quién, a quién y desde dónde) y sus cambios de estado: quién, cuándo, de qué estado a cuál, la release si la hay y desde dónde (`ui`, `api`, `mcp`, `ingest` al reabrirse como regresión o `deploy` al resolverse por un despliegue). El autor es el usuario de la sesión en la interfaz, el nombre del token en la API y el MCP, o la persona con el cliente por el que actuó (`via`) si el MCP se usa con OAuth. Repetir el mismo estado no apunta nada; un comentario que llega con él queda suelto. Se borra con el issue.
 
 ### Búsqueda
 

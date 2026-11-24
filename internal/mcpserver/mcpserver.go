@@ -6,9 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -91,6 +94,26 @@ type Options struct {
 	IssueURL func(ctx context.Context, id int64) string
 	// BaseURL es la base de la interfaz, para los enlaces del resumen.
 	BaseURL func(ctx context.Context) string
+	// Scopes son los permisos de quien llama (ScopeRead, ScopeWrite); nil, todos.
+	Scopes func(ctx context.Context) []string
+}
+
+// Permisos de un token de OAuth: leer, o cambiar algo (comentar, asignar y
+// cambiar el estado).
+const (
+	ScopeRead  = "read"
+	ScopeWrite = "write"
+)
+
+// writeTools son las herramientas que cambian algo; las demás son de leer.
+var writeTools = map[string]bool{"add_comment": true, "assign_issue": true, "set_issue_status": true}
+
+// ToolScope es el permiso que hace falta para usar la herramienta.
+func ToolScope(name string) string {
+	if writeTools[name] {
+		return ScopeWrite
+	}
+	return ScopeRead
 }
 
 const instructions = `Errores de las aplicaciones que envían a intake-errors, agrupados en issues. Para llevar un error de principio a fin:
@@ -330,7 +353,48 @@ func New(st *store.Store, opts Options) *mcp.Server {
 	})
 	addMonitorTools(s, st)
 	addDigestTool(s, st, opts.BaseURL)
+	if opts.Scopes != nil {
+		s.AddReceivingMiddleware(scopeMiddleware(opts.Scopes))
+	}
 	return s
+}
+
+// scopeMiddleware deja ver y usar solo las herramientas que permiten los
+// permisos de quien llama.
+func scopeMiddleware(scopes func(context.Context) []string) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			have := scopes(ctx)
+			if have == nil {
+				return next(ctx, method, req)
+			}
+			switch method {
+			case "tools/call":
+				if r, ok := req.(*mcp.CallToolRequest); ok && r.Params != nil {
+					need := ToolScope(r.Params.Name)
+					if !slices.Contains(have, need) {
+						return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{
+							Text: fmt.Sprintf("%s necesita el permiso %q y esta conexión solo tiene %q: vuelve a conectar y concédelo en la pantalla de consentimiento",
+								r.Params.Name, need, strings.Join(have, " ")),
+						}}}, nil
+					}
+				}
+			case "tools/list":
+				res, err := next(ctx, method, req)
+				if list, ok := res.(*mcp.ListToolsResult); ok && err == nil {
+					kept := make([]*mcp.Tool, 0, len(list.Tools))
+					for _, t := range list.Tools {
+						if slices.Contains(have, ToolScope(t.Name)) {
+							kept = append(kept, t)
+						}
+					}
+					list.Tools = kept
+				}
+				return res, err
+			}
+			return next(ctx, method, req)
+		}
+	}
 }
 
 // project busca un proyecto por id o por nombre.

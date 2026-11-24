@@ -81,7 +81,8 @@ func reserved(p string) bool {
 	return p == "/api" || strings.HasPrefix(p, "/api/") ||
 		p == "/mcp" || strings.HasPrefix(p, "/mcp/") ||
 		p == "/healthz" || p == "/llms.txt" || p == "/metrics" ||
-		p == "/auth" || strings.HasPrefix(p, "/auth/")
+		p == "/auth" || strings.HasPrefix(p, "/auth/") ||
+		p == "/oauth" || strings.HasPrefix(p, "/oauth/") || strings.HasPrefix(p, "/.well-known/")
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

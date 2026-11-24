@@ -823,6 +823,58 @@ export const es = {
   'linear.failed': 'Linear no ha podido crear la issue. Prueba otra vez en un rato.',
   'linear.created': 'Issue {identifier} creada en Linear',
   'history.linkCreated': 'creó en Linear la issue',
+  // Aplicaciones conectadas al MCP con OAuth y su pantalla de consentimiento.
+  'title.authorize': 'Dar acceso · intake-errors',
+  'title.apps': 'Aplicaciones conectadas · intake-errors',
+  'shell.apps': 'Aplicaciones conectadas',
+  'history.via': 'vía {client}',
+  'consent.title': 'Conectar {client}',
+  'consent.lede': '{client} quiere usar el MCP de intake-errors con tu cuenta.',
+  'consent.as': 'Con tu cuenta',
+  'consent.redirect': 'Vuelve a',
+  'consent.clientId': 'Su ficha está en',
+  'consent.scopes': 'Permisos',
+  'consent.scope.read': 'Leer',
+  'consent.scope.readHint': 'Errores, eventos, releases, monitores y su historial.',
+  'consent.scope.write': 'Escribir',
+  'consent.scope.writeHint': 'Comentar, asignar y cambiar el estado de los errores.',
+  'consent.note':
+    'Lo que haga quedará en el historial como «{login} vía {client}». Puedes quitarle el acceso cuando quieras en Aplicaciones conectadas.',
+  'consent.allow': 'Dar acceso',
+  'consent.deny': 'Cancelar',
+  'consent.none': 'Marca al menos un permiso.',
+  'consent.loading': 'Cargando la petición de acceso',
+  'consent.going': 'Volviendo a {host}…',
+  'consent.gone.title': 'Esta petición ya no vale',
+  'consent.gone.text': 'Ha caducado o ya se respondió. Vuelve a conectar desde la aplicación.',
+  'consent.error.title': 'No se puede dar acceso',
+  'consent.error.client':
+    'La aplicación no está registrada en este servidor, o no se ha podido leer su ficha.',
+  'consent.error.redirect':
+    'La dirección a la que quiere volver no es ninguna de las que registró la aplicación.',
+  'consent.error.server': 'Algo ha fallado en el servidor. Vuelve a probar en un momento.',
+  'consent.error.other':
+    'La petición de acceso no es válida. Vuelve a conectar desde la aplicación.',
+  'consent.failed': 'No se ha podido responder. Vuelve a probar.',
+  'apps.title': 'Aplicaciones conectadas',
+  'apps.lede':
+    'Las aplicaciones a las que has dado acceso al MCP con tu cuenta. Al revocar una, pierde el acceso al momento.',
+  'apps.loading': 'Cargando las aplicaciones conectadas',
+  'apps.error': 'No se han podido cargar las aplicaciones conectadas.',
+  'apps.empty.title': 'Ninguna aplicación conectada',
+  'apps.empty.text': 'Cuando conectes un cliente de MCP con tu cuenta, aparecerá aquí.',
+  'apps.connected': 'Conectada {when}',
+  'apps.lastUsed': 'último uso {when} desde {ip}',
+  'apps.neverUsed': 'sin usar todavía',
+  'apps.redirect': 'Vuelve a {host}',
+  'apps.revoke': 'Revocar',
+  'apps.revokeTitle': '¿Revocar el acceso de {client}?',
+  'apps.revokeText':
+    'Dejará de poder usar el MCP con tu cuenta al momento. Para volver a usarlo, tendrá que pedirte acceso otra vez.',
+  'apps.revokeConfirm': 'Revocar el acceso',
+  'apps.revoking': 'Revocando…',
+  'apps.revokeFailed': 'No se ha podido revocar. Vuelve a probar.',
+  'apps.cancel': 'Cancelar',
 };
 
 export type Key = keyof typeof es;

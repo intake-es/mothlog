@@ -28,6 +28,9 @@
             <p class="item__line">
               @if (r.entry.author; as a) {
                 <strong class="item__who">{{ a.name }} </strong>
+                @if (a.via) {
+                  <span class="item__kind">{{ t('history.via', { client: a.via }) }} </span>
+                }
                 @if (a.kind === 'token') {
                   <span class="item__kind">{{ t('history.token') }} </span>
                 }

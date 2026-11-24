@@ -67,9 +67,22 @@ const ICONS = {
     'pencil-simple',
     'pulse',
     'key',
+    'plugs-connected',
+    'arrows-left-right',
+    'eye',
+    'pencil-simple-line',
   ],
   fill: ['bug'],
-  duotone: ['check-circle', 'lock-key', 'magnifying-glass', 'warning-circle', 'heartbeat', 'pulse'],
+  duotone: [
+    'check-circle',
+    'lock-key',
+    'magnifying-glass',
+    'warning-circle',
+    'heartbeat',
+    'pulse',
+    'plugs-connected',
+    'hourglass-simple',
+  ],
 };
 
 const SUFFIX = { regular: '', fill: '-fill', duotone: '-duotone' };

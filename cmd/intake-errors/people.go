@@ -43,7 +43,14 @@ func peopleCommand(ctx context.Context, db *store.Store, args []string, out io.W
 		if err != nil {
 			return err
 		}
+		grants, err := db.RevokeOAuthGrantsOf(ctx, login, now())
+		if err != nil {
+			return err
+		}
 		_, err = fmt.Fprintf(out, "sesiones de %q revocadas: tiene que volver a entrar\n", login)
+		if err == nil && grants > 0 {
+			_, err = fmt.Fprintf(out, "concesiones de OAuth del MCP revocadas: %d\n", grants)
+		}
 		return err
 	}
 	return errors.New(usage)

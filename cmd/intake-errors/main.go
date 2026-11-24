@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,6 +20,7 @@ import (
 	"github.com/intake-es/intake-errors/internal/ingest"
 	"github.com/intake-es/intake-errors/internal/metrics"
 	"github.com/intake-es/intake-errors/internal/monitor"
+	"github.com/intake-es/intake-errors/internal/oauth"
 	"github.com/intake-es/intake-errors/internal/sourcemap"
 	"github.com/intake-es/intake-errors/internal/store"
 	"github.com/intake-es/intake-errors/internal/ui"
@@ -160,13 +162,22 @@ func run(args []string) error {
 		go servePprof(addr, log)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
+		return err
+	}
+	return serve(ctx, cfg, log, ln)
+}
+
+// serve atiende en ln hasta que se cancela ctx.
+func serve(ctx context.Context, cfg config, log *slog.Logger, ln net.Listener) error {
+	defer func() { _ = ln.Close() }()
 	auth, err := webauth.New(webauth.LoadConfig(os.Getenv, cfg.Addr, cfg.PublicURL), log)
 	if err != nil {
 		return err
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	db, err := store.Open(ctx, cfg.DatabaseURL, log)
 	if err != nil {
@@ -216,7 +227,20 @@ func run(args []string) error {
 	}
 	mux := routes(db, envelopes, register...)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks, Digests: alerts, Channels: alerts}); err != nil {
+	mcpAuth := apiAuth
+	// OAuth en el MCP solo con PUBLIC_URL y un login en el panel con el que consentir.
+	if auth.Enabled() {
+		oa, err := oauth.New(db, oauth.Config{PublicURL: cfg.PublicURL, Log: log})
+		if err != nil {
+			return err
+		}
+		if oa != nil {
+			oa.Register(mux, api.RequireAuth(auth.Authenticator()))
+			mcpAuth = api.RequireAuthChallenge(oa.Challenge, oa.Authenticator(), api.BearerToken(db), auth.Authenticator())
+			go oa.Run(ctx)
+		}
+	}
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, MCPAuth: mcpAuth, Alerts: alerts, Integrations: hooks, Digests: alerts, Channels: alerts}); err != nil {
 		return err
 	}
 	srv := &http.Server{
@@ -229,8 +253,8 @@ func run(args []string) error {
 	}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("escuchando", "addr", cfg.Addr)
-		errc <- srv.ListenAndServe()
+		log.Info("escuchando", "addr", ln.Addr().String())
+		errc <- srv.Serve(ln)
 	}()
 
 	select {

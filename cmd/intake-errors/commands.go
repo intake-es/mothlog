@@ -29,7 +29,7 @@ const usage = `uso:
   intake-errors tokens list             lista los tokens
   intake-errors tokens revoke <nombre>  revoca el token activo con ese nombre
   intake-errors people list             lista quién ha entrado en la interfaz
-  intake-errors people revoke <login>   cierra todas las sesiones de esa persona (para darla de baja)
+  intake-errors people revoke <login>   cierra todas las sesiones de esa persona y revoca sus aplicaciones conectadas al MCP (para darla de baja)
   intake-errors import sentry --url <servidor> --org <slug> [--project <slug>…] [--since <fecha>] [--events <N>] [--dry-run]
                                         importa de Sentry, con el token en SENTRY_IMPORT_TOKEN
   intake-errors version                 imprime la versión, el commit y la fecha del binario`

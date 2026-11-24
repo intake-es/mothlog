@@ -87,6 +87,26 @@ describe('History', () => {
       (l.textContent ?? '').replace(/\s+/g, ' ').trim(),
     );
 
+  it('lo que hace una persona con una aplicación conectada sale como «persona vía aplicación»', async () => {
+    const fixture = await render([
+      {
+        type: 'status',
+        id: 9,
+        at: minutesAgo(5),
+        author: { name: 'ana', kind: 'user', via: 'Editor de prueba' },
+        source: 'mcp',
+        from: 'open',
+        to: 'resolved',
+      },
+    ]);
+    expect(lines(fixture.nativeElement)[0]).toMatch(
+      /^ana vía Editor de prueba cambió el estado Abierto → Resuelto desde el MCP/,
+    );
+    lang.set('en');
+    fixture.detectChanges();
+    expect(lines(fixture.nativeElement)[0]).toMatch(/^ana via Editor de prueba changed/);
+  });
+
   it('pinta los comentarios y los cambios de estado, del más viejo al más nuevo', async () => {
     const fixture = await render();
     const el: HTMLElement = fixture.nativeElement;
