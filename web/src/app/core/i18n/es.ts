@@ -1,10 +1,10 @@
 export const es = {
-  'title.login': 'Entrar · intake-errors',
-  'title.list': 'Errores · intake-errors',
-  'title.issue': 'Error · intake-errors',
+  'title.login': 'Entrar · Mothlog',
+  'title.list': 'Errores · Mothlog',
+  'title.issue': 'Error · Mothlog',
   'title.issueNamed': '{title} · Errores',
-  'title.releases': 'Releases · intake-errors',
-  'title.release': 'Release · intake-errors',
+  'title.releases': 'Releases · Mothlog',
+  'title.release': 'Release · Mothlog',
   'title.releaseNamed': '{version} · Releases',
 
   'api.offline': 'No hay conexión con el servidor.',
@@ -280,7 +280,7 @@ export const es = {
   'releases.error': 'No se han podido cargar las releases',
   'releases.empty.title': 'Todavía no hay releases',
   'releases.empty.text':
-    'Se crean solas con el primer error que trae una versión nueva, o a mano con la API, con intake-errors releases new o con sentry-cli releases new.',
+    'Se crean solas con el primer error que trae una versión nueva, o a mano con la API, con mothlog releases new o con sentry-cli releases new.',
   'releases.noMatch.title': 'Ninguna release con estos filtros',
   'releases.noMatch.text': 'Prueba con otro proyecto u otro entorno.',
   'releases.col.release': 'Release',
@@ -312,7 +312,7 @@ export const es = {
   'release.firstSeen': 'Vista por primera vez {ago}',
   'release.deploys': 'Despliegues',
   'release.noDeploys':
-    'Todavía no se ha desplegado. Un despliegue se apunta con intake-errors releases new --env, con la API o con sentry-cli deploys new.',
+    'Todavía no se ha desplegado. Un despliegue se apunta con mothlog releases new --env, con la API o con sentry-cli deploys new.',
   'release.new': 'Errores nuevos',
   'release.new.hint': 'Aparecieron con esta release.',
   'release.regressed': 'Regresiones',
@@ -360,7 +360,7 @@ export const es = {
   'chart.sessions.start': 'Hace 72 h',
   'chart.sessions.now': 'Ahora',
 
-  'title.settings': 'Ajustes · intake-errors',
+  'title.settings': 'Ajustes · Mothlog',
   'shell.settings': 'Ajustes del proyecto',
   'fact.settings': 'Ajustes de {project}',
 
@@ -374,8 +374,7 @@ export const es = {
   'settings.loading': 'Cargando los ajustes',
   'settings.error': 'No se han podido cargar los ajustes',
   'settings.noProjects.title': 'No hay proyectos',
-  'settings.noProjects.text':
-    'Crea uno con «intake-errors projects create <nombre>» y vuelve aquí.',
+  'settings.noProjects.text': 'Crea uno con «mothlog projects create <nombre>» y vuelve aquí.',
   'settings.unsaved': 'Hay cambios sin guardar',
 
   'rules.title': 'Reglas de aviso',
@@ -474,7 +473,7 @@ export const es = {
   'field.botToken': 'Token del bot',
   'field.chat': 'Id del chat',
   'field.webhookHint':
-    'Un POST con el error en JSON y en Markdown, firmado con HMAC-SHA256 en X-Intake-Errors-Signature. Cómo comprobar la firma, en el README.',
+    'Un POST con el error en JSON y en Markdown, firmado con HMAC-SHA256 en X-Mothlog-Signature. Cómo comprobar la firma, en el README.',
   'field.emailHint': 'Sale por el servidor de correo de SMTP_URL.',
   'field.linearHint': 'Usa la clave LINEAR_API_KEY del servidor.',
   'field.githubRepo': 'Repositorio, como dueño/repo',
@@ -551,7 +550,7 @@ export const es = {
   'digest.sentOk': 'Enviado',
   'digest.secret': 'Secreto de la firma del webhook. Cópialo ahora: no se vuelve a enseñar entero.',
   'digest.webhookHint':
-    'Un POST con el resumen por secciones en JSON y en Markdown, firmado con HMAC-SHA256 en X-Intake-Errors-Signature, como el de las reglas.',
+    'Un POST con el resumen por secciones en JSON y en Markdown, firmado con HMAC-SHA256 en X-Mothlog-Signature, como el de las reglas.',
   'digest.preview': 'Vista previa',
   'digest.previewLede':
     'El correo con lo de las últimas 24 horas (o 7 días) hasta ahora, en el idioma elegido.',
@@ -608,8 +607,8 @@ export const es = {
   'dropped.reason.session_invalid': 'Sesión no válida',
   'dropped.reason.session_limit': 'Sesiones: límite por minuto',
   'dropped.reason.session_releases': 'Sesiones: tope de releases',
-  'title.monitors': 'Monitores · intake-errors',
-  'title.monitor': 'Monitor · intake-errors',
+  'title.monitors': 'Monitores · Mothlog',
+  'title.monitor': 'Monitor · Mothlog',
   'title.monitorNamed': '{name} · Monitores',
   'nav.monitors': 'Monitores',
 
@@ -705,8 +704,8 @@ export const es = {
   'editor.cronMonitorsPlaceholder': 'copia-seguridad, enviar-facturas',
   'editor.cronMonitorsHint': 'Los slugs, separados por comas. Vacío, todos los del proyecto.',
 
-  'title.uptimeNew': 'Nuevo monitor · intake-errors',
-  'title.uptimeEdit': 'Editar monitor · intake-errors',
+  'title.uptimeNew': 'Nuevo monitor · Mothlog',
+  'title.uptimeEdit': 'Editar monitor · Mothlog',
   'title.uptimeEditNamed': 'Editar {name} · Monitores',
   'monitors.new': 'Nuevo monitor',
   'monitors.section.uptime': 'Disponibilidad',
@@ -824,12 +823,12 @@ export const es = {
   'linear.created': 'Issue {identifier} creada en Linear',
   'history.linkCreated': 'creó en Linear la issue',
   // Aplicaciones conectadas al MCP con OAuth y su pantalla de consentimiento.
-  'title.authorize': 'Dar acceso · intake-errors',
-  'title.apps': 'Aplicaciones conectadas · intake-errors',
+  'title.authorize': 'Dar acceso · Mothlog',
+  'title.apps': 'Aplicaciones conectadas · Mothlog',
   'shell.apps': 'Aplicaciones conectadas',
   'history.via': 'vía {client}',
   'consent.title': 'Conectar {client}',
-  'consent.lede': '{client} quiere usar el MCP de intake-errors con tu cuenta.',
+  'consent.lede': '{client} quiere usar el MCP de Mothlog con tu cuenta.',
   'consent.as': 'Con tu cuenta',
   'consent.redirect': 'Vuelve a',
   'consent.clientId': 'Su ficha está en',

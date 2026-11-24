@@ -11,15 +11,24 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Cabeceras del webhook genérico.
 const (
-	HeaderSignature = "X-Intake-Errors-Signature"
-	HeaderEvent     = "X-Intake-Errors-Event"
-	HeaderDelivery  = "X-Intake-Errors-Delivery"
+	HeaderSignature = "X-Mothlog-Signature"
+	HeaderEvent     = "X-Mothlog-Event"
+	HeaderDelivery  = "X-Mothlog-Delivery"
+)
+
+// Las cabeceras de antes del cambio de nombre, con los mismos valores, para
+// los receptores que aún comprueban esas. Se quitan en la versión 2.0.0, que
+// lo avisa en sus notas.
+const (
+	LegacyHeaderSignature = "X-Intake-Errors-Signature"
+	LegacyHeaderEvent     = "X-Intake-Errors-Event"
+	LegacyHeaderDelivery  = "X-Intake-Errors-Delivery"
 )
 
 // Sign firma el cuerpo del webhook: HMAC-SHA256, con el secreto de la acción,
@@ -116,7 +125,7 @@ func (w *webhook) payload(ctx context.Context, p *pending) (WebhookPayload, erro
 		Issue: &WebhookIssue{ID: d.ID, Title: d.Title, Culprit: d.Culprit, Level: d.Level, Status: d.Status,
 			Count: d.Count, FirstSeen: d.FirstSeen, LastSeen: d.LastSeen, URL: p.link},
 		ResolvedAt: p.resolvedAt,
-		Markdown:   markdown.Issue(d),
+		Markdown:   markdown.Issue(d, p.l),
 	}
 	if p.kind == kindTest {
 		out.Delivery = "test-" + newUUID()
@@ -129,7 +138,7 @@ func (w *webhook) payload(ctx context.Context, p *pending) (WebhookPayload, erro
 		we := &WebhookEvent{EventID: se.EventID, Timestamp: se.OccurredAt, Level: e.Level, Release: e.Release,
 			Environment: e.Environment, Error: errorText(&e), Tags: e.Tags, Request: requestText(e.Request)}
 		if f := failingFrame(&e); f != nil {
-			we.Location = frameLocation(f)
+			we.Location = frameLocation(f, p.l)
 		}
 		if e.User != nil {
 			we.User = e.User.ID
@@ -165,8 +174,12 @@ func (w *webhook) post(ctx context.Context, typ, delivery string, sentAt time.Ti
 	}
 	h := http.Header{}
 	h.Set("Content-Type", "application/json")
+	sig := Sign(w.secret, sentAt, body.Bytes())
 	h.Set(HeaderEvent, typ)
 	h.Set(HeaderDelivery, delivery)
-	h.Set(HeaderSignature, Sign(w.secret, sentAt, body.Bytes()))
+	h.Set(HeaderSignature, sig)
+	h.Set(LegacyHeaderEvent, typ)
+	h.Set(LegacyHeaderDelivery, delivery)
+	h.Set(LegacyHeaderSignature, sig)
 	return post(ctx, w.client, "webhook", w.url, body.Bytes(), h)
 }

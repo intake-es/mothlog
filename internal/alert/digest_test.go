@@ -17,9 +17,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/digest"
-	"github.com/intake-es/intake-errors/internal/digest/digesttest"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/digest"
+	"github.com/intake-es/mothlog/internal/digest/digesttest"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type digestEnv struct {
@@ -39,7 +39,7 @@ func newDigestEnv(t *testing.T, lang string) *digestEnv {
 	e := &digestEnv{mail: m, hook: &recorder{}}
 	e.env = newEnv(t, func(o *Options) {
 		o.SMTPURL = "smtp://avisos:clave-smtp@" + m.addr
-		o.SMTPFrom = "intake-errors <avisos@errores.test>"
+		o.SMTPFrom = "Mothlog <avisos@errores.test>"
 	})
 	e.clock.set(time.Date(2026, 11, 21, 11, 0, 0, 0, time.UTC))
 	c := store.DefaultDigest(e.project)
@@ -135,9 +135,9 @@ func TestDigestReachesEachDestination(t *testing.T) {
 	for _, tc := range []struct {
 		lang, subject, heading, newTitle, settings string
 	}{
-		{"es", "[intake-errors] Resumen diario de backend: 1 nuevo, 1 ha vuelto, 2 crons con problemas",
+		{"es", "[Mothlog] Resumen diario de backend: 1 nuevo, 1 ha vuelto, 2 crons con problemas",
 			"Del sáb 21 nov, 09:00 al dom 22 nov, 09:00 (Europe/Madrid)", "Errores nuevos", "Cambiar el resumen"},
-		{"en", "[intake-errors] Daily digest for backend: 1 new, 1 regression, 2 cron problems",
+		{"en", "[Mothlog] Daily digest for backend: 1 new, 1 regression, 2 cron problems",
 			"From Sat, Nov 21, 09:00 to Sun, Nov 22, 09:00 (Europe/Madrid)", "New errors", "Change the digest"},
 	} {
 		t.Run(tc.lang, func(t *testing.T) {
@@ -170,7 +170,7 @@ func TestDigestReachesEachDestination(t *testing.T) {
 			}
 			raw, _ := json.Marshal(slack[0])
 			if !strings.Contains(string(raw), `"type":"header"`) || !strings.Contains(string(raw), tc.newTitle) ||
-				!strings.Contains(slack[0].Text, strings.TrimPrefix(tc.subject, "[intake-errors] ")) {
+				!strings.Contains(slack[0].Text, strings.TrimPrefix(tc.subject, "[Mothlog] ")) {
 				t.Errorf("Slack = %s", raw)
 			}
 

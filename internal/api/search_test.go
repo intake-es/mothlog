@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 const (
@@ -168,9 +168,9 @@ func TestSearchExamples(t *testing.T) {
 	})
 
 	for _, tc := range []struct{ query, code, inMsg string }{
-		{`os:"Mac OS`, "unclosed_quote", "carácter 4"},
+		{`os:"Mac OS`, "unclosed_quote", "character 4"},
 		{"! browser:Chrome", "lone_negation", "!browser:Chrome"},
-		{"is:abierto", "bad_status", "is:abierto no existe"},
+		{"is:abierto", "bad_status", "is:abierto does not exist"},
 	} {
 		t.Run("error de sintaxis "+tc.query, func(t *testing.T) {
 			code, b := s.do(t, http.MethodGet, "/api/0/issues/?query="+url.QueryEscape(tc.query), "")
@@ -269,7 +269,7 @@ func TestMCPSearch(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &page); err != nil || isErr || !slices.Equal(ids(page.Issues), []int64{s.keyErr}) {
 		t.Errorf("is:regressed = %s", out)
 	}
-	if out, isErr := call(t, cs, "list_issues", map[string]any{"query": `os:"Mac`}); !isErr || !strings.Contains(out, "comillas") {
+	if out, isErr := call(t, cs, "list_issues", map[string]any{"query": `os:"Mac`}); !isErr || !strings.Contains(out, "closing quotes") {
 		t.Errorf("error de sintaxis = %v %s", isErr, out)
 	}
 

@@ -115,8 +115,8 @@ describe('History', () => {
     expect(ls[1]).toMatch(
       /^agente token cambió el estado Abierto → Resuelto en la siguiente versión web@1\.4\.0 desde el MCP hace 40 min/,
     );
-    expect(ls[2]).toMatch(/^intake-errors lo resolvió al desplegar web@1\.5\.0 hace 30 min/);
-    expect(ls[3]).toMatch(/^intake-errors lo reabrió al llegar un evento de web@1\.6\.0/);
+    expect(ls[2]).toMatch(/^Mothlog lo resolvió al desplegar web@1\.5\.0 hace 30 min/);
+    expect(ls[3]).toMatch(/^Mothlog lo reabrió al llegar un evento de web@1\.6\.0/);
     const bodies = Array.from(el.querySelectorAll('.comment__body')).map((b) => b.innerHTML);
     expect(bodies).toEqual([
       '<p>Pasa con pedidos sin líneas.<br>Lo miro.</p>',
@@ -332,8 +332,8 @@ describe('History', () => {
       expect(ls[1]).toMatch(
         /^agente token changed the status Open → Resolved in the next release web@1\.4\.0 from MCP/,
       );
-      expect(ls[2]).toMatch(/^intake-errors resolved it when web@1\.5\.0 was deployed/);
-      expect(ls[3]).toMatch(/^intake-errors reopened it when an event from web@1\.6\.0 came in/);
+      expect(ls[2]).toMatch(/^Mothlog resolved it when web@1\.5\.0 was deployed/);
+      expect(ls[3]).toMatch(/^Mothlog reopened it when an event from web@1\.6\.0 came in/);
       expect(el.querySelector('.composer__hint')?.textContent).toBe(
         'Markdown supported · Ctrl or ⌘ + Enter to send',
       );

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -104,7 +104,7 @@ func (h *Handler) Status(ctx context.Context, base string) (Status, error) {
 	return s, err
 }
 
-var errSignature = errors.New("firma no válida")
+var errSignature = errors.New("invalid signature")
 
 // verify comprueba que sig (hexadecimal) es el HMAC-SHA256 de body con secret.
 func verify(secret string, body []byte, sig string) error {
@@ -130,7 +130,7 @@ func Sign(secret string, body []byte) string {
 func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
 	if err != nil {
-		http.Error(w, "cuerpo demasiado grande o cortado", http.StatusBadRequest)
+		http.Error(w, "body too large or truncated", http.StatusBadRequest)
 		return nil, false
 	}
 	return body, true
@@ -152,7 +152,7 @@ func (h *Handler) apply(ctx context.Context, issueID int64, status string, by st
 		return err
 	}
 	if changed {
-		h.opts.Log.InfoContext(ctx, "estado cambiado desde fuera", "origen", by.Source, "issue", issueID, "estado", status)
+		h.opts.Log.InfoContext(ctx, "status changed from outside", "source", by.Source, "issue", issueID, "status", status)
 	}
 	return nil
 }
@@ -160,11 +160,11 @@ func (h *Handler) apply(ctx context.Context, issueID int64, status string, by st
 // failed responde con un error para que el sitio reintente la entrega, y la
 // olvida para aceptar el reintento.
 func (h *Handler) failed(w http.ResponseWriter, r *http.Request, provider, delivery string, body []byte, err error) {
-	h.opts.Log.ErrorContext(r.Context(), "webhook", "origen", provider, "entrega", delivery, "err", err)
+	h.opts.Log.ErrorContext(r.Context(), "webhook", "source", provider, "delivery", delivery, "err", err)
 	if ferr := h.st.ForgetWebhookDelivery(context.WithoutCancel(r.Context()), provider, delivery, body); ferr != nil {
-		h.opts.Log.ErrorContext(r.Context(), "webhook", "origen", provider, "err", ferr)
+		h.opts.Log.ErrorContext(r.Context(), "webhook", "source", provider, "err", ferr)
 	}
-	reply(w, http.StatusInternalServerError, "error interno")
+	reply(w, http.StatusInternalServerError, "internal error")
 }
 
 // base es la URL de los errores en el panel: PUBLIC_URL o la de la petición.

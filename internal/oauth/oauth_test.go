@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/netguard"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/netguard"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 type clock struct {
@@ -239,7 +239,7 @@ func TestAuthorizeRejects(t *testing.T) {
 		return q
 	}
 
-	toPanel("cliente desconocido", h.authorizeQuery("iec_no-existe", redirect), "client")
+	toPanel("unknown client", h.authorizeQuery("iec_no-existe", redirect), "client")
 	toPanel("sin redirect_uri, aunque solo tenga una", with("redirect_uri", ""), "redirect")
 	toPanel("otra ruta", with("redirect_uri", "http://127.0.0.1:5555/otra"), "redirect")
 	toPanel("otro sitio", with("redirect_uri", "https://atacante.example.com/cb"), "redirect")
@@ -550,7 +550,7 @@ func TestClientMetadataPrivateAddress(t *testing.T) {
 	h := newHarness(t, nil)
 	cid := md.URL + "/client.json"
 	_, err := h.oa.fetchMetadata(context.Background(), cid)
-	if !errors.Is(err, errClient) || !strings.Contains(err.Error(), "privada") {
+	if !errors.Is(err, errClient) || !strings.Contains(err.Error(), "private") {
 		t.Fatalf("documento en 127.0.0.1 = %v", err)
 	}
 	r := h.do(t, http.MethodGet, "/oauth/authorize?"+h.authorizeQuery(cid, "https://c.example.com/cb").Encode(), nil, nil)

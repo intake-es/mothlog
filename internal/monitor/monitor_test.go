@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func fixtureCheckIn(t *testing.T, name string) store.CheckInInput {

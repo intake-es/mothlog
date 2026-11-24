@@ -44,5 +44,5 @@ func setMemoryLimit(log *slog.Logger, root string) {
 	}
 	limit := n / 100 * memLimitPercent
 	debug.SetMemoryLimit(limit)
-	log.Info("GOMEMLIMIT según el límite del contenedor", "contenedor_bytes", n, "gomemlimit_bytes", limit)
+	log.Info("GOMEMLIMIT from the container limit", "container_bytes", n, "gomemlimit_bytes", limit)
 }

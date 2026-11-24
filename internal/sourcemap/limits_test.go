@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // longLineMap es un mapa de app.js con un original de 11 líneas de n
@@ -297,7 +297,7 @@ func TestUploadRejectsMapBiggerThanCache(t *testing.T) {
 		s := New(st, quiet(), opts)
 		body, ct := multipartBody(t, m)
 		rec := post(t, s, uploadURL(webID, release1), "Bearer "+token, body, ct)
-		if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "caché de source maps") {
+		if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "source map cache") {
 			t.Errorf("= %d %s", rec.Code, rec.Body)
 		}
 		if len(st.maps) != 0 {
@@ -317,7 +317,7 @@ func TestUploadRejectsMapBiggerThanCache(t *testing.T) {
 		_ = mw.WriteField("name", "~/"+chunkJS+".map")
 		_ = mw.Close()
 		rec := serve(t, s, http.MethodPost, "/api/0/projects/o/web/releases/"+release1+"/files/", "Bearer "+token, mw.FormDataContentType(), buf.Bytes())
-		if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "caché de source maps") {
+		if rec.Code != http.StatusRequestEntityTooLarge || !strings.Contains(rec.Body.String(), "source map cache") {
 			t.Errorf("= %d %s", rec.Code, rec.Body)
 		}
 		if len(st.maps) != 0 {
@@ -330,7 +330,7 @@ func TestUploadRejectsMapBiggerThanCache(t *testing.T) {
 		s := New(st, quiet(), opts)
 		z := makeZip(t, bundleFile{"manifest.json", []byte(manifestOK)}, bundleFile{"files/_/_/" + chunkJS, []byte("x")}, bundleFile{"files/_/_/" + chunkJS + ".map", m.body})
 		code, res := assembleBundle(t, s, z, 1<<20, nil)
-		if code != http.StatusOK || res.State != "error" || res.Detail == nil || !strings.Contains(*res.Detail, "caché de source maps") {
+		if code != http.StatusOK || res.State != "error" || res.Detail == nil || !strings.Contains(*res.Detail, "source map cache") {
 			t.Errorf("= %d %+v", code, res)
 		}
 		if len(st.maps) != 0 {

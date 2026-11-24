@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // HealthSeriesHours es cuántas horas trae la serie del detalle de una release.
@@ -109,7 +109,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		WHERE `+s.pool.Dialect().InList("r.id", "$1")+` AND ($2 = '' OR s.environment = $2)
 		GROUP BY r.id, s.environment`, ids, env, since)
 	if err != nil {
-		return fmt.Errorf("leer sesiones: %w", err)
+		return fmt.Errorf("read sessions: %w", err)
 	}
 	var rid int64
 	var e string
@@ -126,7 +126,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("leer sesiones: %w", err)
+		return fmt.Errorf("read sessions: %w", err)
 	}
 
 	// Por entorno con su propia fila y, en total, cada usuario una vez.
@@ -142,7 +142,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		UNION ALL
 		SELECT r.id, '', true, `+counts+users+` GROUP BY r.id`), ids, env)
 	if err != nil {
-		return fmt.Errorf("leer usuarios de las releases: %w", err)
+		return fmt.Errorf("read release users: %w", err)
 	}
 	var all bool
 	err = db.ForEachRow(rows, []any{&rid, &e, &all, &c[0], &c[1]}, func() error {
@@ -154,7 +154,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("leer usuarios de las releases: %w", err)
+		return fmt.Errorf("read release users: %w", err)
 	}
 
 	// Las sesiones de cada proyecto y entorno en las últimas 24 horas.
@@ -163,7 +163,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		WHERE `+s.pool.Dialect().InList("project_id", "$1")+` AND hour >= $2 AND ($3 = '' OR environment = $3)
 		GROUP BY project_id, environment`, projects, since, env)
 	if err != nil {
-		return fmt.Errorf("leer la adopción: %w", err)
+		return fmt.Errorf("read adoption: %w", err)
 	}
 	type key struct {
 		project int64
@@ -177,7 +177,7 @@ func (s *Store) loadHealth(ctx context.Context, rels []Release, env string, now 
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("leer la adopción: %w", err)
+		return fmt.Errorf("read adoption: %w", err)
 	}
 	for i := range rels {
 		r := &rels[i]
@@ -208,7 +208,7 @@ func (s *Store) healthSeries(ctx context.Context, projectID int64, version, env 
 		WHERE project_id = $1 AND release = $2 AND ($3 = '' OR environment = $3) AND hour >= $4
 		GROUP BY hour`, projectID, version, env, start)
 	if err != nil {
-		return nil, fmt.Errorf("leer la serie de sesiones: %w", err)
+		return nil, fmt.Errorf("read session series: %w", err)
 	}
 	got := map[time.Time]HealthHour{}
 	var h HealthHour
@@ -217,7 +217,7 @@ func (s *Store) healthSeries(ctx context.Context, projectID int64, version, env 
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("leer la serie de sesiones: %w", err)
+		return nil, fmt.Errorf("read session series: %w", err)
 	}
 	out := make([]HealthHour, 0, HealthSeriesHours)
 	for t := start; !t.After(end); t = t.Add(time.Hour) {

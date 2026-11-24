@@ -1,4 +1,4 @@
-# intake-errors
+# Mothlog
 
 Recibe los envíos de los SDK de Sentry (solo cambia el DSN), los agrupa en issues y avisa a Slack y Linear.
 
@@ -7,23 +7,23 @@ Recibe los envíos de los SDK de Sentry (solo cambia el DSN), los agrupa en issu
 ### Probarlo con docker compose
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/intake-es/intake-errors/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/intake-es/mothlog/main/docker-compose.yml
 docker compose up
 ```
 
-Levanta intake-errors (la imagen `latest`) y su Postgres y aplica las migraciones al arrancar. En http://localhost:8000 se entra como `dev`, sin GitHub (`UI_DEV_LOGIN=1`), con el enlace que el servicio escribe en el log al arrancar, que lleva una clave nueva en cada arranque: **no es para producción**, y por eso solo escucha en el `127.0.0.1` de la máquina. El enlace se saca con:
+Levanta Mothlog (la imagen `latest`) y su Postgres y aplica las migraciones al arrancar. En http://localhost:8000 se entra como `dev`, sin GitHub (`UI_DEV_LOGIN=1`), con el enlace que el servicio escribe en el log al arrancar, que lleva una clave nueva en cada arranque: **no es para producción**, y por eso solo escucha en el `127.0.0.1` de la máquina. El enlace se saca con:
 
 ```sh
-docker compose logs intake-errors | grep dev/login   # http://localhost:8000/auth/dev/login?key=…
+docker compose logs mothlog | grep dev/login   # http://localhost:8000/auth/dev/login?key=…
 ```
 
 Para mandarle errores, se crea un proyecto y su DSN se pone en el SDK:
 
 ```sh
-docker compose exec intake-errors /intake-errors projects create demo   # imprime http://<clave>@localhost:8000/1
+docker compose exec mothlog /mothlog projects create demo   # imprime http://<clave>@localhost:8000/1
 ```
 
-`INTAKE_ERRORS_PORT` cambia el puerto (8000) e `INTAKE_ERRORS_IMAGE`, la imagen. `docker compose down -v` lo para y borra los datos.
+`MOTHLOG_PORT` cambia el puerto (8000) e `MOTHLOG_IMAGE`, la imagen. `docker compose down -v` lo para y borra los datos.
 
 Si la imagen no se puede descargar (antes de la primera versión, o mientras el paquete de ghcr sea privado), compose la construye con el `Dockerfile`, así que hasta entonces hay que lanzarlo desde una copia del repositorio. La imagen construida queda en local con la etiqueta `latest`; `docker compose pull` la cambia por la publicada.
 
@@ -35,12 +35,12 @@ Cada versión publica en GitHub Releases un `.tar.gz` para Linux y macOS, amd64 
 
 ```sh
 v=1.0.0; os=linux; arch=amd64   # o darwin, arm64
-curl -fsSLO https://github.com/intake-es/intake-errors/releases/download/v$v/intake-errors_${v}_${os}_${arch}.tar.gz
-curl -fsSLO https://github.com/intake-es/intake-errors/releases/download/v$v/checksums.txt
+curl -fsSLO https://github.com/intake-es/mothlog/releases/download/v$v/mothlog_${v}_${os}_${arch}.tar.gz
+curl -fsSLO https://github.com/intake-es/mothlog/releases/download/v$v/checksums.txt
 sha256sum --ignore-missing -c checksums.txt   # en macOS, shasum -a 256 --ignore-missing -c
-tar -xzf intake-errors_${v}_${os}_${arch}.tar.gz intake-errors
-./intake-errors version
-DATABASE_URL=postgres://... PUBLIC_URL=https://errors.example.com ./intake-errors
+tar -xzf mothlog_${v}_${os}_${arch}.tar.gz mothlog
+./mothlog version
+DATABASE_URL=postgres://... PUBLIC_URL=https://errors.example.com ./mothlog
 ```
 
 Necesita Postgres 16, o nada con SQLite ([Con SQLite, sin servidor de base de datos](#con-sqlite-sin-servidor-de-base-de-datos)); la configuración es la de la tabla de [Arrancar](#arrancar).
@@ -48,48 +48,48 @@ Necesita Postgres 16, o nada con SQLite ([Con SQLite, sin servidor de base de da
 ### Con Docker
 
 ```sh
-docker run -p 8000:8000 -e DATABASE_URL=postgres://... -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/intake-errors:latest
+docker run -p 8000:8000 -e DATABASE_URL=postgres://... -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/mothlog:latest
 ```
 
-La imagen es multiarquitectura (amd64 y arm64), distroless, sin shell y sin root, y escucha en el 8000. Hay una etiqueta por versión (`ghcr.io/intake-es/intake-errors:1.0.0`) y `latest`, la última que no es prerelease. Más en [Desplegar](#desplegar).
+La imagen es multiarquitectura (amd64 y arm64), distroless, sin shell y sin root, y escucha en el 8000. Hay una etiqueta por versión (`ghcr.io/intake-es/mothlog:1.0.0`) y `latest`, la última que no es prerelease. Más en [Desplegar](#desplegar).
 
 ### Con SQLite, sin servidor de base de datos
 
-Con `DATABASE_URL=sqlite:///ruta/intake.db` (o `sqlite://./intake.db`, relativa al directorio de trabajo) guarda todo en un fichero de SQLite, sin Postgres, con todas las funciones: ingesta, source maps, crons, disponibilidad, avisos, la API, el MCP y la interfaz. El mismo binario y la misma imagen valen para los dos; crea el fichero y su esquema (`migrations/sqlite/`) al arrancar.
+Con `DATABASE_URL=sqlite:///ruta/mothlog.db` (o `sqlite://./mothlog.db`, relativa al directorio de trabajo) guarda todo en un fichero de SQLite, sin Postgres, con todas las funciones: ingesta, source maps, crons, disponibilidad, avisos, la API, el MCP y la interfaz. El mismo binario y la misma imagen valen para los dos; crea el fichero y su esquema (`migrations/sqlite/`) al arrancar.
 
 ```sh
-DATABASE_URL=sqlite:///var/lib/intake-errors/intake.db PUBLIC_URL=https://errors.example.com ./intake-errors
+DATABASE_URL=sqlite:///var/lib/mothlog/mothlog.db PUBLIC_URL=https://errors.example.com ./mothlog
 ```
 
 Con Docker, el fichero va en un volumen montado en `/home/nonroot`, que en la imagen es del usuario con el que corre el servicio:
 
 ```sh
-docker run -p 8000:8000 -v intake-errors:/home/nonroot -e DATABASE_URL=sqlite:///home/nonroot/intake.db \
-  -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/intake-errors:latest
+docker run -p 8000:8000 -v mothlog:/home/nonroot -e DATABASE_URL=sqlite:///home/nonroot/mothlog.db \
+  -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/mothlog:latest
 ```
 
-Para probarlo sin Postgres, como el compose de arriba: `docker compose -f docker-compose.sqlite.yml up` (los datos van en el volumen `intake`).
+Para probarlo sin Postgres, como el compose de arriba: `docker compose -f docker-compose.sqlite.yml up` (los datos van en el volumen `mothlog`).
 
 Límites:
 
-- **Una sola instancia.** SQLite admite un solo escritor y el fichero vive en una máquina: nada de réplicas detrás de un balanceador. Al arrancar coge un cerrojo en `intake.db.lock`, y una segunda instancia sobre el mismo fichero se niega a arrancar («otra instancia tiene abierta la base…»). Las órdenes (`projects`, `tokens`, `releases`, `import`) sí pueden correr con el servicio arrancado. Para varias réplicas, Postgres.
+- **Una sola instancia.** SQLite admite un solo escritor y el fichero vive en una máquina: nada de réplicas detrás de un balanceador. Al arrancar coge un cerrojo en `mothlog.db.lock`, y una segunda instancia sobre el mismo fichero se niega a arrancar («otra instancia tiene abierta la base…»). Las órdenes (`projects`, `tokens`, `releases`, `import`) sí pueden correr con el servicio arrancado. Para varias réplicas, Postgres.
 - El fichero tiene que estar en un disco local, no en uno de red (NFS, SMB), donde los cerrojos de SQLite no son de fiar.
 - No hay paso de Postgres a SQLite ni al revés: cada base empieza vacía, aunque `import sentry` sirve para traer lo de un Sentry.
 
-Va en modo WAL (junto a `intake.db` están `intake.db-wal` e `intake.db-shm`, que son parte de la base), con una sola conexión que escribe y varias que leen. Con la mezcla de `make carga` y 0,25 vCPU recibe lo mismo que con Postgres (ver [Lotes y rendimiento](#lotes-y-rendimiento)).
+Va en modo WAL (junto a `mothlog.db` están `mothlog.db-wal` e `mothlog.db-shm`, que son parte de la base), con una sola conexión que escribe y varias que leen. Con la mezcla de `make carga` y 0,25 vCPU recibe lo mismo que con Postgres (ver [Lotes y rendimiento](#lotes-y-rendimiento)).
 
 **Copias de seguridad.** Copiar el fichero con el servicio arrancado puede dar una copia rota; las dos formas buenas se hacen en caliente, sin pararlo:
 
 ```sh
-sqlite3 /var/lib/intake-errors/intake.db ".backup '/copias/intake-$(date +%F).db'"
-sqlite3 /var/lib/intake-errors/intake.db "VACUUM INTO '/copias/intake-$(date +%F).db'"
+sqlite3 /var/lib/mothlog/mothlog.db ".backup '/copias/mothlog-$(date +%F).db'"
+sqlite3 /var/lib/mothlog/mothlog.db "VACUUM INTO '/copias/mothlog-$(date +%F).db'"
 ```
 
-`.backup` copia la base página a página; `VACUUM INTO` escribe una copia compactada. Las dos dan un único fichero, sin `-wal`, que se restaura parando el servicio y poniéndolo en el lugar de `intake.db` (borrando antes los `intake.db-wal` e `intake.db-shm` viejos). Con Docker, la imagen no trae `sqlite3`: se lanza desde otro contenedor con el mismo volumen, como `docker run --rm -v intake-errors:/datos -v "$PWD":/copias alpine sh -c "apk add -q sqlite && sqlite3 /datos/intake.db \".backup '/copias/intake.db'\""`. `sqlite3` sirve para leer y copiar la base, no para escribir en ella: el servicio registra funciones propias (`now()`, `lower` con Unicode y la colación `en_us`) que `sqlite3` no tiene.
+`.backup` copia la base página a página; `VACUUM INTO` escribe una copia compactada. Las dos dan un único fichero, sin `-wal`, que se restaura parando el servicio y poniéndolo en el lugar de `mothlog.db` (borrando antes los `mothlog.db-wal` e `mothlog.db-shm` viejos). Con Docker, la imagen no trae `sqlite3`: se lanza desde otro contenedor con el mismo volumen, como `docker run --rm -v mothlog:/datos -v "$PWD":/copias alpine sh -c "apk add -q sqlite && sqlite3 /datos/mothlog.db \".backup '/copias/mothlog.db'\""`. `sqlite3` sirve para leer y copiar la base, no para escribir en ella: el servicio registra funciones propias (`now()`, `lower` con Unicode y la colación `en_us`) que `sqlite3` no tiene.
 
 ### Publicar una versión
 
-Empujar un tag `v*` (`git tag v1.0.0 && git push origin v1.0.0`) lanza `.github/workflows/release.yml`: GoReleaser compila la web y los cuatro binarios, con la versión, el commit y la fecha dentro (`intake-errors version`), y publica la versión en GitHub, con sus notas a partir de los commits, y la imagen en `ghcr.io`. Un paquete nuevo de ghcr sale privado: después de la primera publicación hay que hacerlo público en los ajustes del paquete (Package settings → Change visibility), o `docker pull` y el compose de arriba fallan con `denied` a quien no tenga acceso. Para probarlo en local sin publicar nada:
+Empujar un tag `v*` (`git tag v1.0.0 && git push origin v1.0.0`) lanza `.github/workflows/release.yml`: GoReleaser compila la web y los cuatro binarios, con la versión, el commit y la fecha dentro (`mothlog version`), y publica la versión en GitHub, con sus notas a partir de los commits, y la imagen en `ghcr.io`. Un paquete nuevo de ghcr sale privado: después de la primera publicación hay que hacerlo público en los ajustes del paquete (Package settings → Change visibility), o `docker pull` y el compose de arriba fallan con `denied` a quien no tenga acceso. Para probarlo en local sin publicar nada:
 
 ```sh
 go run github.com/goreleaser/goreleaser/v2@v2.20.3 release --snapshot --clean
@@ -111,9 +111,10 @@ Al arrancar aplica las migraciones de `migrations/` (con SQLite, las de `migrati
 
 | Variable | Para qué | Por defecto |
 |---|---|---|
-| `DATABASE_URL` | `postgres://…` o, con SQLite, `sqlite:///ruta/intake.db` ([Con SQLite](#con-sqlite-sin-servidor-de-base-de-datos)) | obligatoria |
+| `DATABASE_URL` | `postgres://…` o, con SQLite, `sqlite:///ruta/mothlog.db` ([Con SQLite](#con-sqlite-sin-servidor-de-base-de-datos)) | obligatoria |
 | `LISTEN_ADDR` | dirección HTTP | `:8080` |
 | `LOG_LEVEL` | `debug`, `info`, `warn` o `error` | `info` |
+| `DEFAULT_LANGUAGE` | `en` o `es`: idioma de los avisos, del Markdown para agentes, del MCP, de `llms.txt` y del resumen de los proyectos nuevos | `en` |
 | `PUBLIC_URL` | URL pública del servicio, para escribir los DSN y el enlace de los avisos, y el emisor del [OAuth del MCP](#conectar-un-cliente-de-mcp-con-oauth) | obligatoria para `projects create` y `list`; en `/api/0/projects/`, la de cada petición; sin ella, los avisos van sin enlace |
 | `RATE_LIMIT_PER_MINUTE` | eventos por minuto y proyecto, en los proyectos que no ponen el suyo | `60` |
 | `RETENTION_DAYS` | días que se guardan los eventos y los source maps | `90` |
@@ -129,7 +130,7 @@ Al arrancar aplica las migraciones de `migrations/` (con SQLite, las de `migrati
 | `GITHUB_API_URL` | API de GitHub; solo para probar contra una falsa | `https://api.github.com` |
 | `TELEGRAM_API_URL` | API de bots de Telegram; solo para probar contra una falsa | `https://api.telegram.org` |
 | `SMTP_URL` | servidor de correo de las reglas que avisan por correo: `smtp://usuario:clave@host:587` (STARTTLS si el servidor lo ofrece) o `smtps://…:465` | vacío: sin correo |
-| `SMTP_FROM` | remitente de esos correos, como `intake-errors <avisos@ejemplo.com>` | obligatoria con `SMTP_URL` |
+| `SMTP_FROM` | remitente de esos correos, como `mothlog <avisos@ejemplo.com>` | obligatoria con `SMTP_URL` |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | la OAuth App de GitHub del login de la interfaz | vacías: sin login |
 | `GITHUB_ORG` | org cuyos miembros activos pueden entrar | vacía |
 | `SESSION_SECRET` | firma la cookie de sesión; 32 caracteres o más, obligatoria con GitHub u OIDC | vacía |
@@ -168,7 +169,7 @@ La sesión es una cookie firmada con HMAC (`SESSION_SECRET`) con el login, el no
 La pertenencia a la org de GitHub o al grupo del proveedor OIDC solo se mira al entrar. Para sacar a alguien:
 
 1. Quítalo de la org de GitHub o del grupo (o del dominio) del proveedor OIDC, para que no pueda volver a entrar.
-2. Cierra sus sesiones abiertas: `intake-errors people revoke <login>` (el login de `intake-errors people list`). Sin este paso, su cookie seguiría valiendo hasta los 7 días.
+2. Cierra sus sesiones abiertas: `mothlog people revoke <login>` (el login de `mothlog people list`). Sin este paso, su cookie seguiría valiendo hasta los 7 días.
 
 La cookie vale para `/api/0/` y `/mcp` igual que un token (los tokens siguen igual), y en lo que cambia algo exige que `Origin` sea el de `PUBLIC_URL`; si no, 403. Las respuestas de `/api/0/` y `/mcp` van con `Cache-Control: no-store`. Sin las variables de GitHub, de OIDC ni `UI_DEV_LOGIN`, la interfaz dice que el login no está configurado.
 
@@ -180,7 +181,7 @@ Además de GitHub, o en su lugar, se puede entrar con cualquier proveedor OIDC. 
 
 ```sh
 OIDC_ISSUER=https://idp.example.com        # su /.well-known/openid-configuration dice el resto
-OIDC_CLIENT_ID=intake-errors
+OIDC_CLIENT_ID=mothlog
 OIDC_CLIENT_SECRET=...
 OIDC_NAME="SSO del equipo"                 # el botón dice «Entrar con SSO del equipo»
 OIDC_ALLOWED_DOMAINS=example.com           # o, por grupo:
@@ -207,7 +208,7 @@ Con GitHub y OIDC configurados, la pantalla de entrada enseña los dos botones. 
 ### Para probar en local
 
 ```sh
-UI_DEV_LOGIN=1 LISTEN_ADDR=127.0.0.1:8080 DATABASE_URL=... intake-errors
+UI_DEV_LOGIN=1 LISTEN_ADDR=127.0.0.1:8080 DATABASE_URL=... mothlog
 ```
 
 Al arrancar, el log trae una vez el enlace para entrar como `dev`, con una clave aleatoria que cambia en cada arranque (`"url":"http://127.0.0.1:8080/auth/dev/login?key=…"`). En la pantalla de entrada también se puede pegar la clave. Sin ella, `/auth/dev/login` vuelve a la pantalla de entrada sin sesión.
@@ -217,15 +218,15 @@ Sin `PUBLIC_URL`, la interfaz se puede abrir por `http://127.0.0.1:8080`, `http:
 ## Proyectos
 
 ```sh
-intake-errors projects create backend   # imprime el DSN: https://<clave>@<host de PUBLIC_URL>/<id>
-intake-errors projects list
-intake-errors projects labels backend                 # enseña sus etiquetas de Linear propias
-intake-errors projects labels backend <id>,<id>       # las sustituye por estas
-intake-errors projects labels backend --clear         # las quita
-intake-errors projects filters backend                # enseña sus filtros, el tope por issue y el muestreo
-intake-errors projects filters backend set <clave> [<valor>…]   # cambia uno; ver Filtros, tope y muestreo
-intake-errors projects dropped backend [<días>]       # lo descartado por motivo, 30 días por defecto
-intake-errors projects rules backend [<orden> …]      # sus reglas de aviso; ver Reglas de aviso
+mothlog projects create backend   # imprime el DSN: https://<clave>@<host de PUBLIC_URL>/<id>
+mothlog projects list
+mothlog projects labels backend                 # enseña sus etiquetas de Linear propias
+mothlog projects labels backend <id>,<id>       # las sustituye por estas
+mothlog projects labels backend --clear         # las quita
+mothlog projects filters backend                # enseña sus filtros, el tope por issue y el muestreo
+mothlog projects filters backend set <clave> [<valor>…]   # cambia uno; ver Filtros, tope y muestreo
+mothlog projects dropped backend [<días>]       # lo descartado por motivo, 30 días por defecto
+mothlog projects rules backend [<orden> …]      # sus reglas de aviso; ver Reglas de aviso
 ```
 
 Las issues de Linear de un proyecto llevan dos grupos de etiquetas: las de `LINEAR_LABEL_IDS`, que llevan las issues de todos los proyectos, y las propias del proyecto, que se ponen con `projects labels` y sirven para lo que cada uno quiera (el equipo que se encarga, una prioridad, que las recoja otro servicio…). Los ids son los de Linear, no los nombres de las etiquetas.
@@ -265,11 +266,11 @@ Si cambia la URL de una acción de ntfy o de un webhook, sus secretos no se cons
 `users`, en una regla que no filtra por entorno, nivel ni etiqueta, usa los usuarios afectados del issue (`user_count`), también los de antes de crear la regla. Con filtros, cuenta por su cuenta los usuarios distintos (id, correo, nombre o IP) de los eventos que los pasan, desde que existe la regla.
 
 ```sh
-intake-errors projects rules backend                          # lista las reglas
-intake-errors projects rules backend create regla.json        # o - para leerla de stdin
-intake-errors projects rules backend edit <id> regla.json
-intake-errors projects rules backend test <id> [<acción>]     # aviso de prueba por una acción o por todas
-intake-errors projects rules backend delete <id>
+mothlog projects rules backend                          # lista las reglas
+mothlog projects rules backend create regla.json        # o - para leerla de stdin
+mothlog projects rules backend edit <id> regla.json
+mothlog projects rules backend test <id> [<acción>]     # aviso de prueba por una acción o por todas
+mothlog projects rules backend delete <id>
 ```
 
 ```json
@@ -303,7 +304,7 @@ Un `POST` con `Content-Type: application/json`:
 }
 ```
 
-`type` es `new`, `regressed`, `frequency`, `users` o `test`, o en los crons `cron_failed`, `cron_missed`, `cron_timeout` o `cron_recovered`: esos no llevan `issue` ni `event`, sino `monitor` (id, slug, nombre, horario, zona, margen, tiempo máximo y `url`) y `check_in` (`check_in_id`, estado, `duration_ms`, entorno, release, `expected_at` y `started_at`), y `markdown` es un resumen del cron; en los de disponibilidad, `uptime_down` o `uptime_up`, con `uptime` (id, slug, nombre, `check_url`, `method` y `url`, el enlace a la interfaz) e `incident` (id, `started_at`, `ended_at` y `duration_ms`, vacíos en la caída, y `first_error`); `trigger` solo va en `frequency` y `users`, y `resolved_at` en las regresiones; `markdown` es el `stacktrace.md`, listo para un agente; `delivery` es el mismo en los reintentos de un aviso. Lo acompañan `X-Intake-Errors-Event` (el tipo), `X-Intake-Errors-Delivery` y `X-Intake-Errors-Signature: t=<segundos Unix>,v1=<firma>`, donde la firma es el HMAC-SHA256 en hexadecimal, con el secreto de la acción, de `<t>.<cuerpo>`. Para comprobarla, con el cuerpo tal cual llega, sin volver a serializarlo:
+`type` es `new`, `regressed`, `frequency`, `users` o `test`, o en los crons `cron_failed`, `cron_missed`, `cron_timeout` o `cron_recovered`: esos no llevan `issue` ni `event`, sino `monitor` (id, slug, nombre, horario, zona, margen, tiempo máximo y `url`) y `check_in` (`check_in_id`, estado, `duration_ms`, entorno, release, `expected_at` y `started_at`), y `markdown` es un resumen del cron; en los de disponibilidad, `uptime_down` o `uptime_up`, con `uptime` (id, slug, nombre, `check_url`, `method` y `url`, el enlace a la interfaz) e `incident` (id, `started_at`, `ended_at` y `duration_ms`, vacíos en la caída, y `first_error`); `trigger` solo va en `frequency` y `users`, y `resolved_at` en las regresiones; `markdown` es el `stacktrace.md`, listo para un agente; `delivery` es el mismo en los reintentos de un aviso. Lo acompañan `X-Mothlog-Event` (el tipo), `X-Mothlog-Delivery` y `X-Mothlog-Signature: t=<segundos Unix>,v1=<firma>`, donde la firma es el HMAC-SHA256 en hexadecimal, con el secreto de la acción, de `<t>.<cuerpo>`. Por ahora van también, con los mismos valores, las cabeceras de antes del nombre Mothlog (`X-Intake-Errors-Event`, `X-Intake-Errors-Delivery` y `X-Intake-Errors-Signature`); se quitan en la 2.0.0. Para comprobarla, con el cuerpo tal cual llega, sin volver a serializarlo:
 
 ```python
 import hashlib, hmac, time
@@ -348,7 +349,7 @@ Trae, por secciones, y sin las que no tienen nada:
 - **Webs que no respondieron**: los monitores de disponibilidad con incidentes en el periodo, cuántas caídas y cuánto tiempo sin responder dentro de él, los que más primero.
 - **Salud de la release**: la última release, si tiene sesiones: sesiones y usuarios sin crash, con el título enlazado a la release (en el webhook, `url` de la sección).
 
-Los eventos y usuarios son los de los eventos guardados, así que el muestreo y el tope por issue los rebajan. Un periodo sin nada manda un resumen corto que lo dice o, con `send_empty: false`, ninguno. El correo va en HTML sencillo con su versión en texto; Slack, con Block Kit; el webhook, con las secciones en JSON y el resumen en `markdown`, firmado como el de las reglas, con `type: digest` y `X-Intake-Errors-Event: digest`:
+Los eventos y usuarios son los de los eventos guardados, así que el muestreo y el tope por issue los rebajan. Un periodo sin nada manda un resumen corto que lo dice o, con `send_empty: false`, ninguno. El correo va en HTML sencillo con su versión en texto; Slack, con Block Kit; el webhook, con las secciones en JSON y el resumen en `markdown`, firmado como el de las reglas, con `type: digest` y `X-Mothlog-Event: digest`:
 
 ```json
 {
@@ -374,31 +375,31 @@ Lo manda un proceso dentro del servicio, que mira cada minuto si toca alguno. El
 La API REST (`/api/0/`) y el servidor MCP (`/mcp`) piden un token en `Authorization: Bearer <token>`. Los tokens se gestionan con el mismo binario y la misma `DATABASE_URL`:
 
 ```sh
-intake-errors tokens create claude   # imprime el token (ie_…) una sola vez; en la base solo queda su sha256
-intake-errors tokens list            # nombre, alta, último uso y revocación
-intake-errors tokens revoke claude
-intake-errors people list            # quién ha entrado: login, proveedor, id, último login y revocación
-intake-errors people revoke ana      # cierra todas sus sesiones y revoca sus aplicaciones conectadas: el paso para sacar a alguien
+mothlog tokens create claude   # imprime el token (ml_…; los ie_… de antes siguen valiendo) una sola vez; en la base solo queda su sha256
+mothlog tokens list            # nombre, alta, último uso y revocación
+mothlog tokens revoke claude
+mothlog people list            # quién ha entrado: login, proveedor, id, último login y revocación
+mothlog people revoke ana      # cierra todas sus sesiones y revoca sus aplicaciones conectadas: el paso para sacar a alguien
 ```
 
 Para conectarlo con Claude Code:
 
 ```sh
-claude mcp add --transport http intake-errors https://<host>/mcp --header "Authorization: Bearer <token>"
+claude mcp add --transport http mothlog https://<host>/mcp --header "Authorization: Bearer <token>"
 ```
 
 ### Conectar un cliente de MCP con OAuth
 
-Con `PUBLIC_URL` y un login en la interfaz (GitHub, OIDC o `UI_DEV_LOGIN`), el MCP también acepta OAuth 2.1 como lo pide la especificación de MCP: el cliente se conecta solo con la URL, sin pegar un token (`claude mcp add --transport http intake-errors https://<host>/mcp`). Sin `PUBLIC_URL` no se ofrece y solo valen los tokens.
+Con `PUBLIC_URL` y un login en la interfaz (GitHub, OIDC o `UI_DEV_LOGIN`), el MCP también acepta OAuth 2.1 como lo pide la especificación de MCP: el cliente se conecta solo con la URL, sin pegar un token (`claude mcp add --transport http mothlog https://<host>/mcp`). Sin `PUBLIC_URL` no se ofrece y solo valen los tokens.
 
 1. **Descubrimiento.** Sin credenciales, `/mcp` responde 401 con `WWW-Authenticate: Bearer resource_metadata="<PUBLIC_URL>/.well-known/oauth-protected-resource/mcp"`. Esa metadata (RFC 9728, también en `/.well-known/oauth-protected-resource`) dice que el recurso es `<PUBLIC_URL>/mcp` y su servidor de autorización, el propio servicio, con su metadata en `/.well-known/oauth-authorization-server` (RFC 8414).
 2. **Registro.** `POST /oauth/register` (RFC 7591) registra un cliente público, sin secreto, con URIs de vuelta https o http a loopback (`127.0.0.1`, `[::1]`, `localhost`). También vale una URL https como `client_id` (Client ID Metadata Document): se pide con 5 s y 16 KB como mucho, sin seguir redirecciones y nunca a direcciones privadas, de metadatos ni link-local. Los registros que no llegan a usarse se borran a las 24 horas. Cada dirección puede registrar 30 clientes y pedir 120 autorizaciones cada 10 minutos (luego, 429 con `Retry-After`).
 3. **Consentimiento.** `GET /oauth/authorize` exige `redirect_uri` (una de las registradas), PKCE `S256` y `resource=<PUBLIC_URL>/mcp` (RFC 8707), y manda a la persona a la pantalla de consentimiento de la interfaz, que le pide entrar si no tiene sesión. Enseña el nombre del cliente (con su inicial, sin pedir su logo a ningún sitio), adónde vuelve y una casilla por permiso: `read` (las herramientas de leer, marcada) y `write` (`add_comment`, `assign_issue` y `set_issue_status`, sin marcar). Se concede lo marcado y nunca más de lo pedido.
-4. **Tokens.** `POST /oauth/token` canjea el código (vale 2 minutos y una vez: reusarlo revoca lo que salió de él) por un token de acceso de una hora (`ieo_…`) y uno de refresco de 30 días (`ier_…`) que cambia en cada uso; reusar un refresco ya gastado revoca la concesión entera. En la base solo queda su sha256. Valen solo para `/mcp`, no para la API. `POST /oauth/revoke` (RFC 7009) revoca un token: el de refresco, con la concesión entera.
+4. **Tokens.** `POST /oauth/token` canjea el código (vale 2 minutos y una vez: reusarlo revoca lo que salió de él) por un token de acceso de una hora (`mlo_…`) y uno de refresco de 30 días (`mlr_…`); los `ieo_…` e `ier_…` emitidos antes siguen valiendo que cambia en cada uso; reusar un refresco ya gastado revoca la concesión entera. En la base solo queda su sha256. Valen solo para `/mcp`, no para la API. `POST /oauth/revoke` (RFC 7009) revoca un token: el de refresco, con la concesión entera.
 
 Con un token de OAuth, `tools/list` solo enseña las herramientas que permiten sus permisos y llamar a otra devuelve un error que dice qué permiso falta. Lo que hace queda en el historial como de la persona que lo concedió, con el cliente (`"author": {"name": "ana", "kind": "user", "via": "Claude Code"}`, «ana vía Claude Code» en la interfaz), y `assigned:me` y `"assignee": "me"` son esa persona. Los tokens `ie_` siguen igual, con todas las herramientas.
 
-Cada persona ve sus concesiones en **Aplicaciones conectadas** (el menú de su cuenta en la interfaz): el cliente, sus permisos y cuándo y desde qué dirección se usaron por última vez (detrás de un proxy en loopback o en la red privada, la última de `X-Forwarded-For`), y puede revocarlas. `intake-errors people revoke <login>` revoca también todas las suyas; cerrar sesión en la interfaz no las toca.
+Cada persona ve sus concesiones en **Aplicaciones conectadas** (el menú de su cuenta en la interfaz): el cliente, sus permisos y cuándo y desde qué dirección se usaron por última vez (detrás de un proxy en loopback o en la red privada, la última de `X-Forwarded-For`), y puede revocarlas. `mothlog people revoke <login>` revoca también todas las suyas; cerrar sesión en la interfaz no las toca.
 
 Herramientas del MCP: `list_issues`, `get_issue`, `get_issue_context`, `get_issue_tags`, `get_stacktrace`, `list_events`, `get_event`, `list_comments`, `add_comment`, `set_issue_status`, `assign_issue`, `list_assignees`, `list_releases`, `get_release`, `list_monitors`, `get_monitor` (que también traen los de disponibilidad: `list_monitors` en `uptime` y `get_monitor` con `type` `uptime`) y `get_digest`; las de leer aceptan `environment`, como la API. Las de leer van marcadas como de solo lectura y `set_issue_status` y `assign_issue` como idempotentes. Las instrucciones del servidor explican el flujo: buscar con `list_issues`, asignárselo con `assign_issue` y `"assignee": "me"`, leer `get_issue_context`, arreglarlo, comentar y marcar el estado. Hacen las mismas consultas que la API:
 
@@ -570,10 +571,10 @@ El primer evento de un issue nuevo y el de una regresión se guardan siempre, au
 
 Las cifras de lo descartado se cuentan en memoria y se guardan cada 10 segundos y al parar, por proyecto, motivo y día (UTC); si el proceso muere sin parar, se pierden las de esos últimos segundos.
 
-Los tests que usan la base (`internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert`, los subcomandos…) corren con Postgres si existe `INTAKE_ERRORS_TEST_DATABASE_URL`, con un esquema propio por test que se borra al acabar, y si no, con SQLite, en un fichero temporal por test: `go test ./...` sin nada instalado lo prueba todo con SQLite. Los pocos que solo tienen sentido con Postgres (sus migraciones, la conversión de los eventos de antes, varias réplicas a la vez) se saltan con SQLite y dicen por qué. Las salidas de referencia de la API, el MCP, los Markdown y el resumen son las mismas con los dos. Con el Postgres de desarrollo (`docker compose up -d --wait db`, el servicio `db` del perfil `dev`, en el 5433):
+Los tests que usan la base (`internal/store`, `internal/ingest`, `internal/sourcemap`, `internal/api`, `internal/alert`, los subcomandos…) corren con Postgres si existe `MOTHLOG_TEST_DATABASE_URL`, con un esquema propio por test que se borra al acabar, y si no, con SQLite, en un fichero temporal por test: `go test ./...` sin nada instalado lo prueba todo con SQLite. Los pocos que solo tienen sentido con Postgres (sus migraciones, la conversión de los eventos de antes, varias réplicas a la vez) se saltan con SQLite y dicen por qué. Las salidas de referencia de la API, el MCP, los Markdown y el resumen son las mismas con los dos. Con el Postgres de desarrollo (`docker compose up -d --wait db`, el servicio `db` del perfil `dev`, en el 5433):
 
 ```sh
-INTAKE_ERRORS_TEST_DATABASE_URL='postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable' go test ./...
+MOTHLOG_TEST_DATABASE_URL='postgres://mothlog:mothlog@127.0.0.1:5433/mothlog?sslmode=disable' go test ./...
 ```
 
 El código habla con la base por `internal/db` (consultas, filas, lotes y transacciones), con una implementación para Postgres y otra para SQLite, y escribe el SQL que cambia de un motor a otro con su `Dialect`; solo `internal/db` e `internal/store` importan pgx, y un test lo hace cumplir. [docs/sqlite.md](docs/sqlite.md) recoge lo que es propio de Postgres y cómo se hace con SQLite.
@@ -583,8 +584,8 @@ El código habla con la base por `internal/db` (consultas, filas, lotes y transa
 Cada proyecto tiene sus releases: la versión, cuándo se vio por primera vez y sus despliegues (entorno y fecha). Una release se crea sola con el primer evento que trae una versión nueva, y también a mano:
 
 ```sh
-intake-errors releases new web web@1.4.0                     # la crea
-intake-errors releases new web web@1.4.0 --env production    # y apunta un despliegue en production
+mothlog releases new web web@1.4.0                     # la crea
+mothlog releases new web web@1.4.0 --env production    # y apunta un despliegue en production
 ```
 
 o con la API (`POST /api/0/projects/{id}/releases/` y `.../releases/{version}/deploys/`, en [API y MCP](#api-y-mcp)) o con `sentry-cli` ([abajo](#releases-con-sentry-cli)). Una release es posterior a otra si se vio después.
@@ -724,13 +725,13 @@ La ingesta pasa cada evento por esta traducción antes de agruparlo, así que lo
 
 ### Con sentry-cli
 
-`sentry-cli` sube a intake-errors igual que a Sentry; solo cambian la URL y el token:
+`sentry-cli` sube a Mothlog igual que a Sentry; solo cambian la URL y el token:
 
 ```sh
 export SENTRY_URL=https://errors.example.com   # la URL del servicio, sin ruta
-export SENTRY_AUTH_TOKEN=...                    # SOURCEMAP_UPLOAD_TOKEN o un token de la API (ie_…)
+export SENTRY_AUTH_TOKEN=...                    # SOURCEMAP_UPLOAD_TOKEN o un token de la API (ml_…; los ie_… de antes siguen valiendo)
 export SENTRY_ORG=mi-org                        # se acepta cualquiera
-export SENTRY_PROJECT=web                       # el nombre del proyecto en intake-errors
+export SENTRY_PROJECT=web                       # el nombre del proyecto en mothlog
 ```
 
 Sin `inject`, los mapas se buscan por release y nombre, así que `--release` tiene que ser el `release` que manda el SDK:
@@ -766,8 +767,8 @@ Para no empezar de cero al venir de Sentry (sentry.io o uno propio), `import sen
 
 ```sh
 export SENTRY_IMPORT_TOKEN=...   # un token de la organización con permiso de lectura (org:read, project:read, event:read)
-intake-errors import sentry --url https://sentry.io --org mi-org --dry-run
-intake-errors import sentry --url https://sentry.io --org mi-org [--project api --project web] [--since 2026-06-01] [--events 5]
+mothlog import sentry --url https://sentry.io --org mi-org --dry-run
+mothlog import sentry --url https://sentry.io --org mi-org [--project api --project web] [--since 2026-06-01] [--events 5]
 ```
 
 El token va solo en `SENTRY_IMPORT_TOKEN`, nunca en la línea de órdenes, y solo se manda en la cabecera `Authorization` al servidor de `--url`: si una página de la API apunta a otro servidor, no se sigue. No sale en el progreso, en el informe ni en los errores.

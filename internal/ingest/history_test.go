@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Cada origen de un cambio de estado deja su entrada en el historial: la

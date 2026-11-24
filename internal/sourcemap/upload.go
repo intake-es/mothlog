@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const UploadPattern = "POST /api/{project_id}/releases/{release}/sourcemaps/"
@@ -46,13 +46,13 @@ func (s *Service) authorized(w http.ResponseWriter, r *http.Request) bool {
 			return true
 		}
 		if !errors.Is(err, store.ErrNotFound) {
-			s.log.ErrorContext(r.Context(), "autenticar subida de source maps", "err", err)
-			writeError(w, http.StatusInternalServerError, "error interno")
+			s.log.ErrorContext(r.Context(), "authenticate source map upload", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return false
 		}
 	}
 	w.Header().Set("WWW-Authenticate", "Bearer")
-	writeError(w, http.StatusUnauthorized, "token no válido")
+	writeError(w, http.StatusUnauthorized, "invalid token")
 	return false
 }
 
@@ -62,19 +62,19 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	projectID, err := strconv.ParseInt(r.PathValue("project_id"), 10, 64)
 	if err != nil || projectID <= 0 {
-		writeError(w, http.StatusNotFound, "proyecto no encontrado")
+		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	release := r.PathValue("release")
 	if release == "" {
-		writeError(w, http.StatusNotFound, "falta el release")
+		writeError(w, http.StatusNotFound, "missing release")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxRequestBytes)
 	mr, err := r.MultipartReader()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "se espera multipart/form-data con campos file")
+		writeError(w, http.StatusBadRequest, "expected multipart/form-data with file fields")
 		return
 	}
 	var (
@@ -101,7 +101,7 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		name := path.Base(strings.ReplaceAll(part.FileName(), `\`, "/"))
 		file, ok := strings.CutSuffix(name, ".map")
 		if !ok || file == "" || name == "." || name == "/" {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("%q no es un fichero .map", part.FileName()))
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("%q is not a .map file", part.FileName()))
 			return
 		}
 		b, err := io.ReadAll(io.LimitReader(part, s.opts.MaxFileBytes+1))
@@ -110,7 +110,7 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if int64(len(b)) > s.opts.MaxFileBytes {
-			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("%s pasa de %d MiB", name, s.opts.MaxFileBytes>>20))
+			writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("%s is over %d MiB", name, s.opts.MaxFileBytes>>20))
 			return
 		}
 		if i, ok := seen[file]; ok {
@@ -122,13 +122,13 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 		names = append(names, name)
 	}
 	if len(files) == 0 {
-		writeError(w, http.StatusBadRequest, "ningún campo file")
+		writeError(w, http.StatusBadRequest, "no file field")
 		return
 	}
 	for i, f := range files {
 		m, err := Parse(f.Map)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("%s no es un source map v3 válido: %v", names[i], err))
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("%s is not a valid v3 source map: %v", names[i], err))
 			return
 		}
 		if err := s.checkSize(names[i], m); err != nil {
@@ -139,12 +139,12 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 
 	err = s.store.PutSourceMaps(r.Context(), projectID, release, files)
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "proyecto no encontrado")
+		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
 	if err != nil {
-		s.log.ErrorContext(r.Context(), "subir source maps", "project", projectID, "release", release, "err", err)
-		writeError(w, http.StatusInternalServerError, "no se pudieron guardar")
+		s.log.ErrorContext(r.Context(), "upload source maps", "project", projectID, "release", release, "err", err)
+		writeError(w, http.StatusInternalServerError, "could not save them")
 		return
 	}
 	s.cache.clear()
@@ -152,17 +152,17 @@ func (s *Service) upload(w http.ResponseWriter, r *http.Request) {
 	for i, f := range files {
 		saved[i] = savedFile{Name: names[i], File: f.File, Size: len(f.Map)}
 	}
-	s.log.InfoContext(r.Context(), "source maps subidos", "project", projectID, "release", release, "n", len(saved))
+	s.log.InfoContext(r.Context(), "source maps uploaded", "project", projectID, "release", release, "n", len(saved))
 	writeJSON(w, http.StatusOK, map[string]any{"release": release, "files": saved})
 }
 
 func (s *Service) readError(w http.ResponseWriter, err error) {
 	var tooBig *http.MaxBytesError
 	if errors.As(err, &tooBig) {
-		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("la petición pasa de %d MiB", s.opts.MaxRequestBytes>>20))
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("the request is over %d MiB", s.opts.MaxRequestBytes>>20))
 		return
 	}
-	writeError(w, http.StatusBadRequest, "multipart no válido: "+err.Error())
+	writeError(w, http.StatusBadRequest, "invalid multipart: "+err.Error())
 }
 
 func writeError(w http.ResponseWriter, code int, msg string) {

@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/mcpserver"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/mcpserver"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -66,7 +66,7 @@ func New(st *store.Store, cfg Config) (*Server, error) {
 	}
 	u, err := url.Parse(cfg.PublicURL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.RawQuery != "" || u.Fragment != "" {
-		return nil, errors.New("OAuth del MCP: PUBLIC_URL tiene que ser una URL http o https absoluta")
+		return nil, errors.New("MCP OAuth: PUBLIC_URL must be an absolute http or https URL")
 	}
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
@@ -96,7 +96,7 @@ func (s *Server) metadataURL() string {
 // Challenge es el WWW-Authenticate de un 401 de /mcp, que dice dónde está la
 // metadata del recurso (RFC 9728, sección 5.1).
 func (s *Server) Challenge(badToken bool) string {
-	c := `Bearer realm="intake-errors", resource_metadata="` + s.metadataURL() + `", scope="` + strings.Join(scopes, " ") + `"`
+	c := `Bearer realm="mothlog", resource_metadata="` + s.metadataURL() + `", scope="` + strings.Join(scopes, " ") + `"`
 	if badToken {
 		c += `, error="invalid_token"`
 	}
@@ -133,7 +133,7 @@ func (s *Server) Run(ctx context.Context) {
 	defer t.Stop()
 	for {
 		if err := s.st.PruneOAuth(ctx, s.cfg.Now()); err != nil && ctx.Err() == nil {
-			s.log.Error("oauth: limpiar", "err", err)
+			s.log.Error("oauth: cleanup", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -149,7 +149,7 @@ func (s *Server) Authenticator() api.Authenticator {
 	return func(r *http.Request) (api.Principal, bool, error) {
 		scheme, secret, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		secret = strings.TrimSpace(secret)
-		if !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(secret, store.OAuthAccessPrefix) {
+		if !strings.EqualFold(scheme, "Bearer") || !store.IsOAuthAccess(secret) {
 			return api.Principal{}, false, nil
 		}
 		a, err := s.st.AuthenticateOAuth(r.Context(), secret, clientIP(r), s.cfg.Now())
@@ -170,7 +170,7 @@ func (s *Server) protectedResource(w http.ResponseWriter, _ *http.Request) {
 	cors(w)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"resource":                 s.resource,
-		"resource_name":            "intake-errors",
+		"resource_name":            "Mothlog",
 		"authorization_servers":    []string{s.issuer},
 		"scopes_supported":         scopes,
 		"bearer_methods_supported": []string{"header"},
@@ -200,7 +200,7 @@ func (s *Server) authorizationServer(w http.ResponseWriter, _ *http.Request) {
 func onlySession(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if p, ok := api.PrincipalFrom(r.Context()); !ok || p.Kind != "session" {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "solo con la sesión del panel"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "only with the panel session"})
 			return
 		}
 		next(w, r)

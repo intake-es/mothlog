@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // cronInfo es el monitor y el check-in de un aviso de cron.
@@ -41,7 +42,7 @@ func isCronKind(kind string) bool { return strings.HasPrefix(kind, "cron_") }
 func (a *Alerter) MonitorChanged(ctx context.Context, tx db.Tx, ch store.MonitorChange) error {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		a.log.ErrorContext(ctx, "encolar aviso de cron", "monitor", ch.Monitor.ID, "err", err)
+		a.log.ErrorContext(ctx, "enqueue cron alert", "monitor", ch.Monitor.ID, "err", err)
 		return nil
 	}
 	err = a.enqueueCron(ctx, sp, ch)
@@ -50,7 +51,7 @@ func (a *Alerter) MonitorChanged(ctx context.Context, tx db.Tx, ch store.Monitor
 	}
 	if err != nil {
 		_ = sp.Rollback(ctx)
-		a.log.ErrorContext(ctx, "encolar aviso de cron", "monitor", ch.Monitor.ID, "err", err)
+		a.log.ErrorContext(ctx, "enqueue cron alert", "monitor", ch.Monitor.ID, "err", err)
 	}
 	return nil
 }
@@ -132,14 +133,14 @@ func (a *Alerter) loadCron(ctx context.Context, tx db.Tx, p *pending, monitorID 
 		return errGone
 	}
 	if err != nil {
-		return fmt.Errorf("leer monitor %d: %w", monitorID, err)
+		return fmt.Errorf("read monitor %d: %w", monitorID, err)
 	}
 	if checkinID != nil {
 		err = tx.QueryRow(ctx, `
 			SELECT replace(CAST(check_in_id AS text), '-', ''), status, duration_ms, expected_at, started_at FROM monitor_checkins WHERE id = $1`,
 			*checkinID).Scan(&c.checkInID, &c.status, &c.durationMs, &c.expectedAt, &c.startedAt)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
-			return fmt.Errorf("leer check-in %d: %w", *checkinID, err)
+			return fmt.Errorf("read check-in %d: %w", *checkinID, err)
 		}
 	}
 	p.cron = c
@@ -150,25 +151,25 @@ func (a *Alerter) loadCron(ctx context.Context, tx db.Tx, p *pending, monitorID 
 	return nil
 }
 
-func cronKindText(kind string) string {
+func cronKindText(kind string, l lang.Lang) string {
 	switch kind {
 	case store.KindCronFailed:
-		return "Cron fallido"
+		return l.T("Cron failed", "Cron fallido")
 	case store.KindCronMissed:
-		return "Cron sin ejecutar"
+		return l.T("Cron missed", "Cron sin ejecutar")
 	case store.KindCronTimeout:
-		return "Cron pasado de tiempo"
+		return l.T("Cron timed out", "Cron pasado de tiempo")
 	case store.KindCronRecovered:
-		return "Cron recuperado"
+		return l.T("Cron recovered", "Cron recuperado")
 	}
 	return "Cron"
 }
 
-// scheduleText es «0 3 * * * (Europe/Madrid)» o «cada 2 hour».
-func scheduleText(c *cronInfo) string {
+// scheduleText es «0 3 * * * (Europe/Madrid)» o «every 2 hour».
+func scheduleText(c *cronInfo, l lang.Lang) string {
 	s := c.schedule.Crontab
 	if c.schedule.Type == cron.TypeInterval {
-		s = fmt.Sprintf("cada %d %s", c.schedule.Every, c.schedule.Unit)
+		s = l.F("every %d %s", "cada %d %s", c.schedule.Every, c.schedule.Unit)
 	}
 	if c.timezone != "" && c.timezone != "UTC" {
 		s += " (" + c.timezone + ")"
@@ -196,7 +197,8 @@ func cronSummary(p *pending) summary {
 	if p.environment != "" {
 		s.Meta = append(s.Meta, p.environment)
 	}
-	s.Location = truncate(c.slug+" · "+scheduleText(c), maxCodeLine)
+	s.Location = truncate(c.slug+" · "+scheduleText(c, p.l), maxCodeLine)
+	tr := p.l.T
 	add := func(name, value string) {
 		if value = oneLine(value); value != "" {
 			s.Fields = append(s.Fields, [2]string{name, truncate(value, maxValue)})
@@ -205,15 +207,15 @@ func cronSummary(p *pending) summary {
 	switch p.kind {
 	case store.KindCronMissed:
 		if c.expectedAt != nil {
-			add("Esperado", c.expectedAt.In(madrid).Format("2006-01-02 15:04 MST"))
+			add(tr("Expected", "Esperado"), c.expectedAt.In(madrid).Format("2006-01-02 15:04 MST"))
 		}
-		add("Margen", strconv.Itoa(c.checkinMargin)+" min")
+		add(tr("Margin", "Margen"), strconv.Itoa(c.checkinMargin)+" min")
 	case store.KindCronTimeout:
-		add("Empezó", c.startedAt.In(madrid).Format("2006-01-02 15:04 MST"))
-		add("Tiempo máximo", strconv.Itoa(c.maxRuntime)+" min")
+		add(tr("Started", "Empezó"), c.startedAt.In(madrid).Format("2006-01-02 15:04 MST"))
+		add(tr("Max runtime", "Tiempo máximo"), strconv.Itoa(c.maxRuntime)+" min")
 	default:
 		if c.durationMs != nil {
-			add("Duración", durationText(*c.durationMs))
+			add(tr("Duration", "Duración"), durationText(*c.durationMs))
 		}
 	}
 	release := p.release
@@ -243,7 +245,7 @@ func slackCron(p *pending) slackPayload {
 	}
 	if p.link != "" {
 		msg.Blocks = append(msg.Blocks, slackBlock{Type: "actions", Elements: []any{
-			slackButton{Type: "button", Text: plain("Ver el monitor", maxButtonText), URL: p.link, Style: "primary"},
+			slackButton{Type: "button", Text: plain(p.l.T("View monitor", "Ver el monitor"), maxButtonText), URL: p.link, Style: "primary"},
 		}})
 	}
 	return msg
@@ -261,17 +263,18 @@ func mapEsc(in []string) []string {
 func cronMarkdown(p *pending) string {
 	s := cronSummary(p)
 	var b strings.Builder
+	tr := p.l.T
 	fmt.Fprintf(&b, "# %s: %s\n\n", s.What, markdown.InertText(s.Headline))
-	fmt.Fprintf(&b, "- Proyecto: %s\n- Monitor: %s\n- Horario: %s\n", p.project, markdown.CodeSpan(p.cron.slug),
-		markdown.CodeSpan(scheduleText(p.cron)))
+	fmt.Fprintf(&b, tr("- Project: %s\n- Monitor: %s\n- Schedule: %s\n", "- Proyecto: %s\n- Monitor: %s\n- Horario: %s\n"), p.project, markdown.CodeSpan(p.cron.slug),
+		markdown.CodeSpan(scheduleText(p.cron, p.l)))
 	if env := markdown.InertText(p.environment); env != "" {
-		fmt.Fprintf(&b, "- Entorno: %s\n", env)
+		fmt.Fprintf(&b, tr("- Environment: %s\n", "- Entorno: %s\n"), env)
 	}
 	for _, f := range s.Fields {
 		fmt.Fprintf(&b, "- %s: %s\n", f[0], markdown.InertText(f[1]))
 	}
 	if p.link != "" {
-		fmt.Fprintf(&b, "\n[Ver en intake-errors](%s)\n", p.link)
+		fmt.Fprintf(&b, "\n%s\n", viewIn(p.l, p.link))
 	}
 	return b.String()
 }
@@ -313,7 +316,7 @@ func (l *linear) createCron(ctx context.Context, p *pending) error {
 		return err
 	}
 	if !out.IssueCreate.Success {
-		return errors.New("linear: issueCreate sin éxito")
+		return errors.New("linear: issueCreate was not successful")
 	}
 	return nil
 }

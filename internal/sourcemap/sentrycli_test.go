@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 // Debug IDs que `sourcemaps inject` dio a los .js de testdata/sentry-cli/inject.
@@ -206,7 +206,7 @@ func TestSentryCLIAuth(t *testing.T) {
 	s := New(newMemStore(), quiet(), Options{UploadToken: token})
 	url := "/api/0/organizations/o/chunk-upload/"
 	for _, auth := range []string{"", "Bearer ", "Bearer otro", "Bearer ie_otro", "Basic " + token} {
-		if rec := serve(t, s, http.MethodGet, url, auth, "", nil); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "token no válido") {
+		if rec := serve(t, s, http.MethodGet, url, auth, "", nil); rec.Code != http.StatusUnauthorized || !strings.Contains(rec.Body.String(), "invalid token") {
 			t.Errorf("%q: %d %s", auth, rec.Code, rec.Body)
 		}
 	}
@@ -433,7 +433,7 @@ func TestAssembleTotalSize(t *testing.T) {
 		t.Fatalf("el zip (%d) ya pasa del tope", len(z))
 	}
 	code, res := assembleBundle(t, s, z, 1<<20, nil)
-	if code != http.StatusOK || res.State != "error" || res.Detail == nil || !strings.Contains(*res.Detail, "descomprimidos") {
+	if code != http.StatusOK || res.State != "error" || res.Detail == nil || !strings.Contains(*res.Detail, "uncompressed") {
 		t.Fatalf("= %d %+v", code, res)
 	}
 	if len(st.maps) != 0 {
@@ -448,22 +448,22 @@ func TestAssembleErrors(t *testing.T) {
 		zip    func(t *testing.T) []byte
 		detail string
 	}{
-		{"no es un zip", func(*testing.T) []byte { return []byte("esto no es un zip") }, "el bundle no es un zip válido"},
+		{"no es un zip", func(*testing.T) []byte { return []byte("esto no es un zip") }, "the bundle is not a valid zip"},
 		{"sin manifest", func(t *testing.T) []byte {
 			return makeZip(t, bundleFile{"files/_/_/a.js.map", m})
-		}, "el bundle no trae manifest.json"},
+		}, "the bundle has no manifest.json"},
 		{"manifest roto", func(t *testing.T) []byte {
 			return makeZip(t, bundleFile{"manifest.json", []byte("{")})
-		}, "manifest.json no es válido"},
+		}, "manifest.json is not valid"},
 		{"mapa roto", func(t *testing.T) []byte {
 			return makeZip(t, bundleFile{"manifest.json", []byte(manifestOK)}, bundleFile{"files/_/_/" + chunkJS + ".map", []byte(`{"version":3}`)})
-		}, "~/assets/" + chunkJS + ".map no es un source map v3 válido: falta mappings"},
+		}, "~/assets/" + chunkJS + ".map is not a valid v3 source map: missing mappings"},
 		{"mapa que no está", func(t *testing.T) []byte {
 			return makeZip(t, bundleFile{"manifest.json", []byte(manifestOK)})
-		}, "manifest.json cita files/_/_/" + chunkJS + ".map, que no está en el bundle"},
+		}, "manifest.json lists files/_/_/" + chunkJS + ".map, which is not in the bundle"},
 		{"sin mapas", func(t *testing.T) []byte {
 			return makeZip(t, bundleFile{"manifest.json", []byte(`{"files":{}}`)})
-		}, "el bundle no trae ningún source map"},
+		}, "the bundle has no source maps"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			st := newMemStore()
@@ -491,7 +491,7 @@ func TestAssembleMissingChunk(t *testing.T) {
 		"projects": []string{"web"},
 	})
 	if code != http.StatusOK || res.State != "not_found" || !reflect.DeepEqual(res.MissingChunks, []string{sha1Hex(b)}) ||
-		res.Detail == nil || *res.Detail != "faltan 1 de 2 trozos" {
+		res.Detail == nil || *res.Detail != "missing 1 of 2 chunks" {
 		t.Fatalf("= %d %+v", code, res)
 	}
 
@@ -500,7 +500,7 @@ func TestAssembleMissingChunk(t *testing.T) {
 		t.Fatal(rec.Body)
 	}
 	code, res = assemble(t, s, map[string]any{"checksum": sha1Hex([]byte("otra cosa")), "chunks": []string{sha1Hex(a), sha1Hex(b)}, "projects": []string{"web"}})
-	if code != http.StatusOK || res.State != "error" || res.Detail == nil || !strings.Contains(*res.Detail, "no forman el bundle") {
+	if code != http.StatusOK || res.State != "error" || res.Detail == nil || !strings.Contains(*res.Detail, "don't make up the bundle") {
 		t.Fatalf("checksum: %d %+v", code, res)
 	}
 }
@@ -514,10 +514,10 @@ func TestAssembleBadRequests(t *testing.T) {
 		code int
 		msg  string
 	}{
-		{"checksum", map[string]any{"checksum": "x", "chunks": []string{sum}, "projects": []string{"web"}}, 400, "checksum no es un sha1"},
-		{"sin trozos", map[string]any{"checksum": sum, "projects": []string{"web"}}, 400, "faltan los trozos"},
-		{"sin proyecto", map[string]any{"checksum": sum, "chunks": []string{sum}}, 400, "falta el proyecto"},
-		{"proyecto que no existe", map[string]any{"checksum": sum, "chunks": []string{sum}, "projects": []string{"otro"}}, 404, `proyecto "otro" no encontrado`},
+		{"checksum", map[string]any{"checksum": "x", "chunks": []string{sum}, "projects": []string{"web"}}, 400, "checksum is not a sha1"},
+		{"sin trozos", map[string]any{"checksum": sum, "projects": []string{"web"}}, 400, "missing chunks"},
+		{"sin proyecto", map[string]any{"checksum": sum, "chunks": []string{sum}}, 400, "missing project"},
+		{"proyecto que no existe", map[string]any{"checksum": sum, "chunks": []string{sum}, "projects": []string{"otro"}}, 404, `project "otro" not found`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			code, res := assemble(t, s, tc.req)
@@ -536,7 +536,7 @@ func TestChunkUploadErrors(t *testing.T) {
 	_, _ = w.Write([]byte("contenido"))
 	_ = mw.Close()
 	rec := serve(t, s, http.MethodPost, "/api/0/organizations/o/chunk-upload/", "Bearer "+token, mw.FormDataContentType(), buf.Bytes())
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "no coincide con su sha1") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "does not match its sha1") {
 		t.Errorf("sha1 que no coincide: %d %s", rec.Code, rec.Body)
 	}
 
@@ -546,7 +546,7 @@ func TestChunkUploadErrors(t *testing.T) {
 	_, _ = w.Write([]byte("x"))
 	_ = mw.Close()
 	rec = serve(t, s, http.MethodPost, "/api/0/organizations/o/chunk-upload/", "Bearer "+token, mw.FormDataContentType(), buf.Bytes())
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "no es gzip") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "is not gzip") {
 		t.Errorf("gzip roto: %d %s", rec.Code, rec.Body)
 	}
 }
@@ -584,7 +584,7 @@ func TestLegacyReleaseFiles(t *testing.T) {
 	if rec := send(chunkJS, "~/"+chunkJS, []byte("js"), "Sourcemap:"+chunkJS+".map"); rec.Code != http.StatusCreated {
 		t.Fatalf("subir .js: %d %s", rec.Code, rec.Body)
 	}
-	if rec := send(chunkJS+".map", "~/"+chunkJS+".map", []byte(`{"version":3}`), ""); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "no es un source map v3 válido") {
+	if rec := send(chunkJS+".map", "~/"+chunkJS+".map", []byte(`{"version":3}`), ""); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "is not a valid v3 source map") {
 		t.Errorf("mapa roto: %d %s", rec.Code, rec.Body)
 	}
 	if rec := send(chunkJS+".map", "~/"+chunkJS+".map", mapFile(t, chunkJS+".map").body, ""); rec.Code != http.StatusCreated {

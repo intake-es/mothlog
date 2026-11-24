@@ -13,63 +13,68 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const maxBreadcrumbs = 20
 
 // Issue escribe el issue para un agente. Los datos del evento van en una sola
 // línea o en bloques de código, para que no puedan abrir secciones propias.
-func Issue(d store.IssueDetail) string { return issue(d, style{}) }
+func Issue(d store.IssueDetail, l lang.Lang) string { return issue(d, style{l: l}) }
 
 // IssueInert es Issue para publicar en GitHub o Linear: además, las menciones,
 // los enlaces y el HTML que trae el evento quedan como texto.
-func IssueInert(d store.IssueDetail) string { return issue(d, style{inert: true}) }
+func IssueInert(d store.IssueDetail, l lang.Lang) string {
+	return issue(d, style{inert: true, l: l})
+}
 
 func issue(d store.IssueDetail, st style) string {
 	var b strings.Builder
 	w := func(format string, a ...any) { fmt.Fprintf(&b, format, a...) }
 	t := st.text
+	tr := st.l.T
 
 	w("# %s\n\n", t(d.Title))
-	w("- Issue: %d, estado %s, eventos: %d, primera vez %s, última vez %s\n",
+	w(tr("- Issue: %d, status %s, events: %d, first seen %s, last seen %s\n",
+		"- Issue: %d, estado %s, eventos: %d, primera vez %s, última vez %s\n"),
 		d.ID, d.Status, d.Count, ts(d.FirstSeen), ts(d.LastSeen))
-	w("- Proyecto: %s\n", d.Project)
+	w(tr("- Project: %s\n", "- Proyecto: %s\n"), d.Project)
 	if d.Culprit != "" {
 		w("- Culprit: %s\n", t(d.Culprit))
 	}
 	if d.LastRegression != nil {
-		w("- Última regresión: %s\n", ts(*d.LastRegression))
+		w(tr("- Last regression: %s\n", "- Última regresión: %s\n"), ts(*d.LastRegression))
 	}
 	if d.LatestEvent == nil {
-		w("\nEl issue no tiene eventos guardados.\n")
+		b.WriteString(tr("\nThe issue has no stored events.\n", "\nEl issue no tiene eventos guardados.\n"))
 		return b.String()
 	}
 	se := d.LatestEvent
 	e := se.Event
-	w("- Último evento: %s (id %d), %s\n", t(se.EventID), se.ID, ts(se.OccurredAt))
+	w(tr("- Latest event: %s (id %d), %s\n", "- Último evento: %s (id %d), %s\n"), t(se.EventID), se.ID, ts(se.OccurredAt))
 	writeEventFields(&b, e, st)
 
-	w("\n## Etiquetas\n\n")
+	b.WriteString(tr("\n## Tags\n\n", "\n## Etiquetas\n\n"))
 	if len(e.Tags) == 0 {
-		w("(ninguna)\n")
+		b.WriteString(tr("(none)\n", "(ninguna)\n"))
 	}
 	for _, k := range slices.Sorted(maps.Keys(e.Tags)) {
 		w("- %s: %s\n", t(k), t(e.Tags[k]))
 	}
 
 	if e.Message != "" {
-		w("\n## Mensaje\n\n%s", codeBlock([]string{e.Message}))
+		w(tr("\n## Message\n\n%s", "\n## Mensaje\n\n%s"), codeBlock([]string{e.Message}))
 	}
 
 	if len(e.Exceptions) > 0 {
-		w("\n## Excepciones\n\nDe la causa a la que se lanzó; en cada una, los fotogramas van del más externo al que falló. Los de la aplicación llevan su código.\n")
+		w("\n## %s", exceptionsIntro(st.l))
 		for i, x := range e.Exceptions {
 			w("\n### %d. %s\n\n", i+1, t(excTitle(x)))
 			writeMechanism(&b, x.Mechanism, st)
 			if len(x.Frames) == 0 {
-				w("(sin fotogramas)\n")
+				b.WriteString(tr("(no frames)\n", "(sin fotogramas)\n"))
 			}
 			writeFrames(&b, st, x.Frames, "####", false)
 		}
@@ -81,9 +86,9 @@ func issue(d store.IssueDetail, st style) string {
 	}
 	w("\n## Breadcrumbs\n\n")
 	if len(crumbs) == 0 {
-		w("(ninguno)\n")
+		b.WriteString(tr("(none)\n", "(ninguno)\n"))
 	} else {
-		w("Del más viejo al más nuevo; como mucho, los %d últimos.\n\n", maxBreadcrumbs)
+		w(tr("Oldest to newest; at most the last %d.\n\n", "Del más viejo al más nuevo; como mucho, los %d últimos.\n\n"), maxBreadcrumbs)
 	}
 	for _, c := range crumbs {
 		w("- %s\n", c)
@@ -95,13 +100,14 @@ func issue(d store.IssueDetail, st style) string {
 func writeEventFields(b *strings.Builder, e event.Event, st style) {
 	w := func(format string, a ...any) { fmt.Fprintf(b, format, a...) }
 	t := st.text
-	w("- Release: %s\n", orNone(t(e.Release)))
-	w("- Entorno: %s\n", orNone(t(e.Environment)))
-	w("- Usuario: %s\n", user(e.User, st))
+	tr := st.l.T
+	w("- Release: %s\n", st.orNone(t(e.Release)))
+	w(tr("- Environment: %s\n", "- Entorno: %s\n"), st.orNone(t(e.Environment)))
+	w(tr("- User: %s\n", "- Usuario: %s\n"), user(e.User, st))
 	if e.Request != nil {
 		w("- Request: %s\n", t(e.Request.Method+" "+e.Request.URL))
 	} else {
-		w("- Request: (ninguna)\n")
+		b.WriteString(tr("- Request: (none)\n", "- Request: (ninguna)\n"))
 	}
 	if v := t(e.Transaction); v != "" {
 		w("- Transaction: %s\n", v)
@@ -110,20 +116,21 @@ func writeEventFields(b *strings.Builder, e event.Event, st style) {
 		w("- Logger: %s\n", v)
 	}
 	if v := t(e.ServerName); v != "" {
-		w("- Servidor: %s\n", v)
+		w(tr("- Server: %s\n", "- Servidor: %s\n"), v)
 	}
-	w("- Plataforma y SDK: %s, %s %s\n", orNone(t(e.Platform)), t(e.SDK.Name), t(e.SDK.Version))
+	w(tr("- Platform and SDK: %s, %s %s\n", "- Plataforma y SDK: %s, %s %s\n"), st.orNone(t(e.Platform)), t(e.SDK.Name), t(e.SDK.Version))
 }
 
 func writeMechanism(b *strings.Builder, m *event.Mechanism, st style) {
 	if m == nil {
 		return
 	}
-	handled := "sin saber si se manejó"
+	tr := st.l.T
+	handled := tr("unknown whether handled", "sin saber si se manejó")
 	if m.Handled != nil {
-		handled = map[bool]string{true: "manejada", false: "no manejada"}[*m.Handled]
+		handled = map[bool]string{true: tr("handled", "manejada"), false: tr("unhandled", "no manejada")}[*m.Handled]
 	}
-	fmt.Fprintf(b, "Mecanismo: %s, %s\n\n", orNone(st.text(m.Type)), handled)
+	fmt.Fprintf(b, tr("Mechanism: %s, %s\n\n", "Mecanismo: %s, %s\n\n"), st.orNone(st.text(m.Type)), handled)
 }
 
 // writeFrames pone los fotogramas con código bajo un título de nivel heading.
@@ -133,7 +140,8 @@ func writeFrames(b *strings.Builder, st style, frames []event.Frame, heading str
 	libs := 0
 	flushLibs := func() {
 		if libs > 0 {
-			fmt.Fprintf(b, "- (%d %s de librerías, sin poner)\n", libs, map[bool]string{true: "fotograma", false: "fotogramas"}[libs == 1])
+			fmt.Fprintf(b, st.l.N(int64(libs), "- (%d library frame, omitted)\n", "- (%d library frames, omitted)\n",
+				"- (%d fotograma de librerías, sin poner)\n", "- (%d fotogramas de librerías, sin poner)\n"), libs)
 			libs = 0
 		}
 	}
@@ -158,14 +166,14 @@ func writeFrames(b *strings.Builder, st style, frames []event.Frame, heading str
 			if app {
 				mark = " (app)"
 			}
-			fmt.Fprintf(b, "- %s%s\n", location(f), mark)
+			fmt.Fprintf(b, "- %s%s\n", location(f, st.l), mark)
 			continue
 		}
 		if i > 0 {
 			b.WriteString("\n")
 		}
 		afterCode = true
-		fmt.Fprintf(b, "%s %s (app)\n\n", heading, location(f))
+		fmt.Fprintf(b, "%s %s (app)\n\n", heading, location(f, st.l))
 		var lines []string
 		first := f.Line - len(f.PreContext)
 		width := len(strconv.Itoa(f.Line + len(f.PostContext)))
@@ -188,7 +196,7 @@ func writeFrames(b *strings.Builder, st style, frames []event.Frame, heading str
 	flushLibs()
 }
 
-func location(f event.Frame) string {
+func location(f event.Frame, l lang.Lang) string {
 	file := f.Filename
 	if file == "" {
 		file = f.AbsPath
@@ -207,10 +215,10 @@ func location(f event.Frame) string {
 	}
 	s := codeSpan(file)
 	if f.Function != "" {
-		s += " en " + codeSpan(f.Function)
+		s += l.T(" in ", " en ") + codeSpan(f.Function)
 	}
 	if f.Module != "" && f.Module != f.Filename {
-		s += " (módulo " + codeSpan(f.Module) + ")"
+		s += l.T(" (module ", " (módulo ") + codeSpan(f.Module) + ")"
 	}
 	return s
 }
@@ -267,7 +275,7 @@ func user(u *event.User, st style) string {
 		}
 	}
 	if len(parts) == 0 {
-		return "(ninguno)"
+		return st.l.T("(none)", "(ninguno)")
 	}
 	return strings.Join(parts, ", ")
 }
@@ -333,15 +341,24 @@ func crumbTime(raw json.RawMessage) string {
 
 func ts(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
 
-func orNone(s string) string {
+func (st style) orNone(s string) string {
 	if s == "" {
-		return "(ninguno)"
+		return st.l.T("(none)", "(ninguno)")
 	}
 	return s
 }
 
-// style dice cómo va un dato del evento fuera de los bloques de código.
-type style struct{ inert bool }
+// exceptionsIntro es el título de las excepciones, sin almohadillas, y cómo leerlas.
+func exceptionsIntro(l lang.Lang) string {
+	return l.T("Exceptions\n\nFrom the cause to the one that was raised; in each one, frames go from the outermost to the one that failed. Application frames include their code.\n",
+		"Excepciones\n\nDe la causa a la que se lanzó; en cada una, los fotogramas van del más externo al que falló. Los de la aplicación llevan su código.\n")
+}
+
+// style dice cómo va un dato del evento fuera de los bloques de código y en qué idioma.
+type style struct {
+	inert bool
+	l     lang.Lang
+}
 
 // inertEscaper deja como texto los enlaces, el HTML y las entidades, que
 // GitHub convertiría después en una @ de mención (&#64;).

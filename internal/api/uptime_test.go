@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type uptimeJSON struct {
@@ -46,7 +46,7 @@ func TestUptimeAPI(t *testing.T) {
 		}
 	}
 	code, b = e.do(t, http.MethodPost, path, `{"name": "meta", "url": "http://169.254.169.254/latest/meta-data/"}`)
-	if !strings.Contains(string(b), "169.254.169.254") || !strings.Contains(string(b), "metadatos") {
+	if !strings.Contains(string(b), "169.254.169.254") || !strings.Contains(string(b), "metadata") {
 		t.Errorf("metadatos = %d: %s", code, b)
 	}
 
@@ -137,7 +137,7 @@ func TestMCPUptimeMonitors(t *testing.T) {
 		t.Fatalf("get_monitor = %s", out)
 	}
 	if out, isErr := call(t, cs, "get_monitor", map[string]any{"project": "web", "slug": "home", "type": "cron"}); !isErr ||
-		!strings.Contains(out, "no existe ese monitor") {
+		!strings.Contains(out, "no such monitor") {
 		t.Errorf("get_monitor cron = %s", out)
 	}
 }

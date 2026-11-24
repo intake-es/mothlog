@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 const fixturesDir = "../../testdata/envelopes"

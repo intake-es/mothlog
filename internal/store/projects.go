@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Pool da acceso al pool para quien necesita sus propias transacciones.
@@ -26,7 +26,7 @@ func (s *Store) ProjectByID(ctx context.Context, id int64) (Project, error) {
 		return Project{}, ErrNotFound
 	}
 	if err != nil {
-		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
+		return Project{}, fmt.Errorf("find project: %w", err)
 	}
 	return p, nil
 }
@@ -34,7 +34,7 @@ func (s *Store) ProjectByID(ctx context.Context, id int64) (Project, error) {
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+projectColumns+` FROM projects ORDER BY id`)
 	if err != nil {
-		return nil, fmt.Errorf("listar proyectos: %w", err)
+		return nil, fmt.Errorf("list projects: %w", err)
 	}
 	ps, err := db.CollectRows(rows, func(r db.CollectableRow) (Project, error) {
 		var p Project
@@ -42,7 +42,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 		return p, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listar proyectos: %w", err)
+		return nil, fmt.Errorf("list projects: %w", err)
 	}
 	return ps, nil
 }
@@ -52,7 +52,7 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 func (s *Store) ProjectByName(ctx context.Context, name string) (Project, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+projectColumns+` FROM projects WHERE name = $1 ORDER BY id`, name)
 	if err != nil {
-		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
+		return Project{}, fmt.Errorf("find project: %w", err)
 	}
 	ps, err := db.CollectRows(rows, func(r db.CollectableRow) (Project, error) {
 		var p Project
@@ -60,7 +60,7 @@ func (s *Store) ProjectByName(ctx context.Context, name string) (Project, error)
 		return p, err
 	})
 	if err != nil {
-		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
+		return Project{}, fmt.Errorf("find project: %w", err)
 	}
 	switch len(ps) {
 	case 0:
@@ -68,7 +68,7 @@ func (s *Store) ProjectByName(ctx context.Context, name string) (Project, error)
 	case 1:
 		return ps[0], nil
 	default:
-		return Project{}, fmt.Errorf("%w: hay %d proyectos llamados %q", ErrInvalid, len(ps), name)
+		return Project{}, fmt.Errorf("%w: there are %d projects named %q", ErrInvalid, len(ps), name)
 	}
 }
 
@@ -83,7 +83,7 @@ func (s *Store) SetProjectLabels(ctx context.Context, name string, ids []string)
 		ids = []string{}
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE projects SET linear_label_ids = $2 WHERE id = $1`, p.ID, ids); err != nil {
-		return fmt.Errorf("cambiar etiquetas: %w", err)
+		return fmt.Errorf("change labels: %w", err)
 	}
 	return nil
 }
@@ -102,7 +102,7 @@ func DefaultAlertsOf(ctx context.Context, q Querier, projectID int64) (DefaultAl
 		return d, ErrNotFound
 	}
 	if err != nil {
-		return d, fmt.Errorf("leer avisos por defecto: %w", err)
+		return d, fmt.Errorf("read default alerts: %w", err)
 	}
 	return d, nil
 }
@@ -116,7 +116,7 @@ func (s *Store) SetDefaultAlerts(ctx context.Context, projectID int64, d Default
 	tag, err := s.pool.Exec(ctx, `UPDATE projects SET default_slack = $2, default_linear = $3 WHERE id = $1`,
 		projectID, d.Slack, d.Linear)
 	if err != nil {
-		return d, fmt.Errorf("guardar avisos por defecto: %w", err)
+		return d, fmt.Errorf("save default alerts: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return d, ErrNotFound
@@ -131,7 +131,7 @@ func (s *Store) HasIssueRules(ctx context.Context, projectID int64) (bool, error
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1 AND `+IssueRulesSQL(s.pool.Dialect())+`)`,
 		projectID).Scan(&has)
 	if err != nil {
-		return false, fmt.Errorf("leer reglas: %w", err)
+		return false, fmt.Errorf("read rules: %w", err)
 	}
 	return has, nil
 }

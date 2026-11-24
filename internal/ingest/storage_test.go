@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 // La retención borra los eventos viejos de los dos formatos y deja los demás.

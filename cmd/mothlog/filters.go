@@ -10,26 +10,26 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
-const filtersUsage = `claves de projects filters <nombre> set:
-  messages <regex>…             descarta los eventos cuyo mensaje o excepción casa con alguna
-  exception_types <tipo>…       descarta las excepciones de estos tipos
-  environments <entorno>…       descarta los eventos de estos entornos
-  releases <release>…           descarta los de estos releases; * es un comodín
-  browser_extensions on|off     errores de extensiones del navegador
-  web_crawlers on|off           user agents de bots y rastreadores
-  localhost on|off              localhost y direcciones locales
+const filtersUsage = `keys for projects filters <name> set:
+  messages <regex>…             drops events whose message or exception matches any of them
+  exception_types <type>…       drops exceptions of these types
+  environments <environment>…   drops events from these environments
+  releases <release>…           drops those from these releases; * is a wildcard
+  browser_extensions on|off     errors from browser extensions
+  web_crawlers on|off           user agents of bots and crawlers
+  localhost on|off              localhost and local addresses
   events_per_issue_per_hour <n>|default
   sample_rate <0..1>
   rate_limit_per_minute <n>|default
-sin valores, una lista se vacía`
+with no values, a list is emptied`
 
 func projectByName(ctx context.Context, db *store.Store, name string) (store.Project, error) {
 	p, err := db.ProjectByName(ctx, name)
 	if errors.Is(err, store.ErrNotFound) {
-		return p, fmt.Errorf("no hay ningún proyecto llamado %q", name)
+		return p, fmt.Errorf("there is no project named %q", name)
 	}
 	return p, err
 }
@@ -59,7 +59,7 @@ func filtersCommand(ctx context.Context, db *store.Store, args []string, out io.
 func setFilter(f *store.Filters, key string, vals []string) error {
 	one := func() (string, error) {
 		if len(vals) != 1 {
-			return "", fmt.Errorf("%s lleva un solo valor\n%s", key, filtersUsage)
+			return "", fmt.Errorf("%s takes a single value\n%s", key, filtersUsage)
 		}
 		return vals[0], nil
 	}
@@ -74,7 +74,7 @@ func setFilter(f *store.Filters, key string, vals []string) error {
 		case "off":
 			*dst = false
 		default:
-			return fmt.Errorf("%s es on u off, no %q", key, v)
+			return fmt.Errorf("%s is on or off, not %q", key, v)
 		}
 		return nil
 	}
@@ -89,7 +89,7 @@ func setFilter(f *store.Filters, key string, vals []string) error {
 		}
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return fmt.Errorf("%s es un número o default, no %q", key, v)
+			return fmt.Errorf("%s is a number or default, not %q", key, v)
 		}
 		*dst = &n
 		return nil
@@ -120,10 +120,10 @@ func setFilter(f *store.Filters, key string, vals []string) error {
 			return err
 		}
 		if f.SampleRate, err = strconv.ParseFloat(v, 64); err != nil {
-			return fmt.Errorf("sample_rate es un número de 0 a 1, no %q", v)
+			return fmt.Errorf("sample_rate is a number from 0 to 1, not %q", v)
 		}
 	default:
-		return fmt.Errorf("clave desconocida %q\n%s", key, filtersUsage)
+		return fmt.Errorf("unknown key %q\n%s", key, filtersUsage)
 	}
 	return nil
 }
@@ -143,7 +143,7 @@ func printFilters(out io.Writer, f store.Filters) error {
 	}
 	perIssue := strconv.Itoa(f.PerIssuePerHour())
 	if f.EventsPerIssuePerHour == nil {
-		perIssue += " (por defecto)"
+		perIssue += " (default)"
 	}
 	perMinute := "RATE_LIMIT_PER_MINUTE"
 	if f.RateLimitPerMinute != nil {
@@ -176,7 +176,7 @@ func droppedCommand(ctx context.Context, db *store.Store, args []string, out io.
 	days := 30
 	if len(args) == 2 {
 		if days, err = strconv.Atoi(args[1]); err != nil {
-			return fmt.Errorf("los días son un número, no %q", args[1])
+			return fmt.Errorf("days is a number, not %q", args[1])
 		}
 	}
 	st, err := db.DroppedSince(ctx, p.ID, days, time.Now())
@@ -184,7 +184,7 @@ func droppedCommand(ctx context.Context, db *store.Store, args []string, out io.
 		return err
 	}
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintf(out, "descartados desde el %s (UTC)\n", st.Since)
+	_, _ = fmt.Fprintf(out, "dropped since %s (UTC)\n", st.Since)
 	for _, r := range store.DropReasons {
 		_, _ = fmt.Fprintf(tw, "%s\t%d\n", r, st.Reasons[r])
 	}

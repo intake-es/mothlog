@@ -40,16 +40,16 @@ type rawMap struct {
 func Parse(b []byte) (*Map, error) {
 	var r rawMap
 	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, fmt.Errorf("JSON no válido: %w", err)
+		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	if r.Version == nil || *r.Version != 3 {
-		return nil, errors.New("version no es 3")
+		return nil, errors.New("version is not 3")
 	}
 	if r.Sections != nil {
-		return nil, errors.New("los index maps (sections) no se admiten")
+		return nil, errors.New("index maps (sections) are not supported")
 	}
 	if r.Mappings == nil {
-		return nil, errors.New("falta mappings")
+		return nil, errors.New("missing mappings")
 	}
 	m := &Map{
 		sources:  make([]string, len(r.Sources)),
@@ -170,7 +170,7 @@ func decodeMappings(s string, nSources int) ([][]segment, error) {
 			return nil
 		case 1, 4, 5:
 		default:
-			return fmt.Errorf("mappings: segmento con %d campos en la línea %d", nf, len(lines)+1)
+			return fmt.Errorf("mappings: segment with %d fields on line %d", nf, len(lines)+1)
 		}
 		genCol += fields[0]
 		seg := segment{genCol: int32(genCol), src: -1}
@@ -179,15 +179,15 @@ func decodeMappings(s string, nSources int) ([][]segment, error) {
 			srcLine += fields[2]
 			srcCol += fields[3]
 			if src < 0 || src >= int64(nSources) {
-				return fmt.Errorf("mappings: fuente %d fuera de rango en la línea %d", src, len(lines)+1)
+				return fmt.Errorf("mappings: source %d out of range on line %d", src, len(lines)+1)
 			}
 			if srcLine < 0 || srcCol < 0 || srcLine > 1<<30 || srcCol > 1<<30 {
-				return fmt.Errorf("mappings: posición original no válida en la línea %d", len(lines)+1)
+				return fmt.Errorf("mappings: invalid original position on line %d", len(lines)+1)
 			}
 			seg.src, seg.srcLine, seg.srcCol = int32(src), int32(srcLine), int32(srcCol)
 		}
 		if genCol < 0 || genCol > 1<<30 {
-			return fmt.Errorf("mappings: columna no válida en la línea %d", len(lines)+1)
+			return fmt.Errorf("mappings: invalid column on line %d", len(lines)+1)
 		}
 		cur = append(cur, seg)
 		nf = 0
@@ -213,7 +213,7 @@ func decodeMappings(s string, nSources int) ([][]segment, error) {
 			continue
 		case ',':
 			if nf == 0 {
-				return nil, fmt.Errorf("mappings: segmento vacío en la línea %d", len(lines)+1)
+				return nil, fmt.Errorf("mappings: empty segment on line %d", len(lines)+1)
 			}
 			if err := flushSegment(); err != nil {
 				return nil, err
@@ -223,10 +223,10 @@ func decodeMappings(s string, nSources int) ([][]segment, error) {
 		}
 		v, n, err := decodeVLQ(s[i:])
 		if err != nil {
-			return nil, fmt.Errorf("mappings: %w en la línea %d", err, len(lines)+1)
+			return nil, fmt.Errorf("mappings: %w on line %d", err, len(lines)+1)
 		}
 		if nf == len(fields) {
-			return nil, fmt.Errorf("mappings: segmento con más de 5 campos en la línea %d", len(lines)+1)
+			return nil, fmt.Errorf("mappings: segment with more than 5 fields on line %d", len(lines)+1)
 		}
 		fields[nf] = v
 		nf++
@@ -245,7 +245,7 @@ func decodeVLQ(s string) (int64, int, error) {
 	for i := 0; i < len(s); i++ {
 		d := base64Value[s[i]]
 		if d < 0 {
-			return 0, 0, fmt.Errorf("carácter %q no válido", s[i])
+			return 0, 0, fmt.Errorf("invalid character %q", s[i])
 		}
 		v |= int64(d&31) << shift
 		if d&32 == 0 {
@@ -256,7 +256,7 @@ func decodeVLQ(s string) (int64, int, error) {
 		}
 		shift += 5
 		if shift > 35 {
-			return 0, 0, errors.New("VLQ demasiado largo")
+			return 0, 0, errors.New("VLQ too long")
 		}
 	}
 	return 0, 0, errors.New("VLQ incompleto")

@@ -11,10 +11,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/mcpserver"
-	"github.com/intake-es/intake-errors/internal/search"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/mcpserver"
+	"github.com/intake-es/mothlog/internal/search"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type Options struct {
@@ -32,6 +33,8 @@ type Options struct {
 	Digests Digests
 	// Channels son los canales por defecto; sin él, ninguno está configurado.
 	Channels Channels
+	// Lang es el idioma del Markdown, del MCP y de llms.txt; vacío, inglés.
+	Lang lang.Lang
 }
 
 type handlers struct {
@@ -41,15 +44,16 @@ type handlers struct {
 	integ     Integrations
 	digests   Digests
 	channels  Channels
+	lang      lang.Lang
 }
 
 // Register añade las rutas de la API y del MCP a mux.
 func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
-	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations, digests: opts.Digests, channels: opts.Channels}
+	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations, digests: opts.Digests, channels: opts.Channels, lang: opts.Lang}
 	if opts.PublicURL != "" {
 		u, err := url.Parse(opts.PublicURL)
 		if err != nil || u.Host == "" {
-			return errors.New("PUBLIC_URL no es una URL absoluta")
+			return errors.New("PUBLIC_URL is not an absolute URL")
 		}
 		h.publicURL = u
 	}
@@ -89,6 +93,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	h.registerUptime(route)
 	route("GET /api/0/integrations/{$}", h.integrations)
 	mcpHandler := mcpserver.Handler(st, mcpserver.Options{
+		Lang:   opts.Lang,
 		Actor:  actorFrom,
 		Scopes: scopesFrom,
 		IssueURL: func(ctx context.Context, id int64) string {
@@ -168,7 +173,7 @@ func (h *handlers) setFilters(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo no válido: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return
 	}
 	f, err = h.st.SetFilters(r.Context(), id, f)
@@ -321,7 +326,7 @@ func (h *handlers) stacktrace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	_, _ = w.Write([]byte(markdown.Issue(d)))
+	_, _ = w.Write([]byte(markdown.Issue(d, h.lang)))
 }
 
 func (h *handlers) setStatus(w http.ResponseWriter, r *http.Request) {
@@ -334,7 +339,7 @@ func (h *handlers) setStatus(w http.ResponseWriter, r *http.Request) {
 		Comment string `json:"comment"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<18)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "el cuerpo debe ser {\"status\": \"...\"}")
+		writeError(w, http.StatusBadRequest, "the body must be {\"status\": \"...\"}")
 		return
 	}
 	issue, err := h.st.ChangeIssueStatus(r.Context(), id, body.Status, store.StatusChange{
@@ -359,7 +364,7 @@ func (h *handlers) event(w http.ResponseWriter, r *http.Request) {
 func idParam(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusNotFound, "no encontrado")
+		writeError(w, http.StatusNotFound, "not found")
 		return 0, false
 	}
 	return id, true
@@ -371,7 +376,7 @@ func intParam(w http.ResponseWriter, s, name string) (int, bool) {
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, name+" debe ser un número")
+		writeError(w, http.StatusBadRequest, name+" must be a number")
 		return 0, false
 	}
 	return n, true
@@ -383,7 +388,7 @@ func (h *handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.As(err, &qe):
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": qe.Error(), "query_error": qe})
 	case errors.Is(err, store.ErrNotFound):
-		writeError(w, http.StatusNotFound, "no encontrado")
+		writeError(w, http.StatusNotFound, "not found")
 	case errors.Is(err, store.ErrInvalid):
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, store.ErrNoRelease):
@@ -392,7 +397,7 @@ func (h *handlers) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusForbidden, err.Error())
 	default:
 		slog.ErrorContext(r.Context(), "api", "path", r.URL.Path, "err", err)
-		writeError(w, http.StatusInternalServerError, "error interno")
+		writeError(w, http.StatusInternalServerError, "internal error")
 	}
 }
 

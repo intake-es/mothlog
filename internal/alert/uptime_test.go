@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func (e *env) uptimeMonitor(t *testing.T, slug string) store.UptimeMonitor {
@@ -28,7 +28,7 @@ func (e *env) uptimeCheck(t *testing.T, m store.UptimeMonitor, ok bool, at time.
 	c := store.UptimeCheck{CheckedAt: at, OK: ok, StatusCode: &code, DurationMs: 80}
 	if !ok {
 		code = 502
-		c.Error = "código 502"
+		c.Error = "status 502"
 	}
 	if _, err := e.db.RecordUptimeCheck(context.Background(), m.ID, c, e.alerter); err != nil {
 		t.Fatal(err)
@@ -49,18 +49,18 @@ func TestUptimeDefaultAlerts(t *testing.T) {
 		t.Fatalf("enviados = %d; quería caída y vuelta por Slack y Linear", n)
 	}
 	msgs := e.slack.payloads(t)
-	if len(msgs) != 2 || msgs[0].Text != "Monitor caído en backend: home" || msgs[1].Text != "Monitor recuperado en backend: home" {
+	if len(msgs) != 2 || msgs[0].Text != "Monitor down in backend: home" || msgs[1].Text != "Monitor up in backend: home" {
 		t.Fatalf("slack = %+v", msgs)
 	}
 	body, _ := json.Marshal(msgs[1])
-	if !strings.Contains(string(body), "Caído durante") || !strings.Contains(string(body), "1 min 30 s") {
+	if !strings.Contains(string(body), "Down for") || !strings.Contains(string(body), "1 min 30 s") {
 		t.Errorf("vuelta = %s", body)
 	}
-	if !slices.Equal(buttons(msgs[0]), []string{"Ver el monitor"}) {
+	if !slices.Equal(buttons(msgs[0]), []string{"View monitor"}) {
 		t.Errorf("botones = %v", buttons(msgs[0]))
 	}
 	issues, order := e.linear.snapshot()
-	if len(order) != 1 || !strings.HasPrefix(issues[order[0]].Title, "[backend] Monitor caído: home") ||
+	if len(order) != 1 || !strings.HasPrefix(issues[order[0]].Title, "[backend] Monitor down: home") ||
 		!strings.Contains(issues[order[0]].Description, "GET https://example.com/home") {
 		t.Errorf("linear = %+v", issues)
 	}
@@ -99,7 +99,7 @@ func TestUptimeRuleConditions(t *testing.T) {
 	if got := kinds(home); !slices.Equal(got, []string{"home:uptime_down", "home:uptime_up"}) {
 		t.Errorf("home = %v", got)
 	}
-	if got := e.slack.messages(); len(got) != 1 || !strings.HasPrefix(got[0], "Cron fallido en backend") {
+	if got := e.slack.messages(); len(got) != 1 || !strings.HasPrefix(got[0], "Cron failed in backend") {
 		t.Errorf("slack = %v", got)
 	}
 	r := home.all()[1]
@@ -112,7 +112,7 @@ func TestUptimeRuleConditions(t *testing.T) {
 func TestUptimeRuleValidation(t *testing.T) {
 	r := webhookRule("https://hook.example.com", store.RuleConditions{Uptime: &store.UptimeCondition{}})
 	r.Name = "x"
-	if _, err := r.Normalize(); err == nil || !strings.Contains(err.Error(), "down o up") {
+	if _, err := r.Normalize(); err == nil || !strings.Contains(err.Error(), "down or up") {
 		t.Errorf("uptime vacío: %v", err)
 	}
 	r.Conditions.Uptime = &store.UptimeCondition{Up: true, Monitors: []string{" web ", "web", ""}}
@@ -147,15 +147,15 @@ func TestUptimeEachAction(t *testing.T) {
 			t.Errorf("sin enviar: %+v", o)
 		}
 	}
-	if got := mail.messages(); len(got) != 1 || !strings.Contains(got[0].Data, "Monitor ca") ||
-		!strings.Contains(got[0].Data, "Error: c=C3=B3digo 502") && !strings.Contains(got[0].Data, "Error: código 502") {
+	if got := mail.messages(); len(got) != 1 || !strings.Contains(got[0].Data, "Monitor down") ||
+		!strings.Contains(got[0].Data, "Error: status 502") {
 		t.Errorf("correo = %+v", got)
 	}
 	var dp discordPayload
-	if d := discordSrv.all(); len(d) != 1 || json.Unmarshal(d[0].Body, &dp) != nil || dp.Content != "**Monitor caído** · backend" {
+	if d := discordSrv.all(); len(d) != 1 || json.Unmarshal(d[0].Body, &dp) != nil || dp.Content != "**Monitor down** · backend" {
 		t.Errorf("discord = %+v", dp)
 	}
-	if tg := telegramSrv.all(); len(tg) != 1 || !strings.Contains(string(tg[0].Body), "Ver el monitor") {
+	if tg := telegramSrv.all(); len(tg) != 1 || !strings.Contains(string(tg[0].Body), "View monitor") {
 		t.Errorf("telegram = %+v", tg)
 	}
 	if nt := ntfySrv.all(); len(nt) != 1 || nt[0].Header.Get("Tags") != "red_circle" || nt[0].Header.Get("Priority") != "high" {

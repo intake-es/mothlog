@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 var extensionSchemes = []string{

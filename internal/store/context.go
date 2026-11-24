@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // IssueEnvironments son los entornos del issue con sus eventos, también los
@@ -17,14 +17,14 @@ func (s *Store) IssueEnvironments(ctx context.Context, issueID int64) ([]ValueCo
 		WHERE issue_id = $1 AND environment <> ''
 		GROUP BY environment ORDER BY n DESC, `+s.pool.Dialect().Collate("environment"), issueID)
 	if err != nil {
-		return nil, fmt.Errorf("entornos del issue: %w", err)
+		return nil, fmt.Errorf("issue environments: %w", err)
 	}
 	envs, err := db.CollectRows(rows, func(r db.CollectableRow) (ValueCount, error) {
 		var v ValueCount
 		return v, r.Scan(&v.Value, &v.Count)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("entornos del issue: %w", err)
+		return nil, fmt.Errorf("issue environments: %w", err)
 	}
 	if envs == nil {
 		envs = []ValueCount{}
@@ -39,7 +39,7 @@ func (s *Store) IssueEvent(ctx context.Context, issueID int64, ref string) (Stor
 		return StoredEvent{}, err
 	}
 	if e.IssueID != issueID {
-		return StoredEvent{}, fmt.Errorf("%w: el evento %s no es del issue %s", ErrNotFound, ref, strconv.FormatInt(issueID, 10))
+		return StoredEvent{}, fmt.Errorf("%w: event %s does not belong to issue %s", ErrNotFound, ref, strconv.FormatInt(issueID, 10))
 	}
 	return e, nil
 }

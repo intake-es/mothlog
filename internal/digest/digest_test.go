@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/digest/digesttest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/digest/digesttest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 const base = "https://errors.example.com"

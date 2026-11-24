@@ -184,7 +184,7 @@ func (g *GitHub) issueJSON(is *GitHubIssue) map[string]any {
 		"html_url": g.htmlURL(is), "number": is.Number, "title": is.Title, "body": is.Body, "labels": labels,
 		"state": is.State, "state_reason": reason, "locked": false, "comments": len(is.Comments),
 		"created_at": is.CreatedAt.Format(time.RFC3339), "updated_at": is.UpdatedAt.Format(time.RFC3339), "closed_at": closed,
-		"user": g.user("intake-errors-bot"), "author_association": "NONE",
+		"user": g.user("mothlog-bot"), "author_association": "NONE",
 	}
 }
 

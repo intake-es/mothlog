@@ -37,7 +37,7 @@ func IsSQLiteURL(url string) bool { return strings.HasPrefix(url, "sqlite:") }
 func SQLitePath(raw string) (string, error) {
 	rest, ok := strings.CutPrefix(raw, "sqlite:")
 	if !ok {
-		return "", fmt.Errorf("%q no empieza por sqlite://", raw)
+		return "", fmt.Errorf("%q does not start with sqlite://", raw)
 	}
 	rest = strings.TrimPrefix(rest, "//")
 	if i := strings.IndexByte(rest, '?'); i >= 0 {
@@ -45,10 +45,10 @@ func SQLitePath(raw string) (string, error) {
 	}
 	p, err := url.PathUnescape(rest)
 	if err != nil {
-		return "", fmt.Errorf("ruta de %q: %w", raw, err)
+		return "", fmt.Errorf("path of %q: %w", raw, err)
 	}
 	if p == "" {
-		return "", fmt.Errorf("falta la ruta del fichero en %q, como sqlite:///var/lib/intake/intake.db", raw)
+		return "", fmt.Errorf("missing the file path in %q, like sqlite:///var/lib/mothlog/mothlog.db", raw)
 	}
 	return p, nil
 }
@@ -60,7 +60,7 @@ type SQLiteOptions struct {
 }
 
 // ErrLocked es el error de OpenSQLite cuando otra instancia tiene el fichero.
-var ErrLocked = errors.New("otra instancia tiene abierta la base")
+var ErrLocked = errors.New("another instance has the database open")
 
 // OpenSQLite abre (o crea) el fichero de la URL.
 func OpenSQLite(ctx context.Context, rawURL string, opts SQLiteOptions) (*SQLite, error) {
@@ -89,7 +89,7 @@ func OpenSQLite(ctx context.Context, rawURL string, opts SQLiteOptions) (*SQLite
 	// La primera conexión deja el fichero en WAL antes de que lean las demás.
 	if err := s.write.PingContext(ctx); err != nil {
 		s.Close()
-		return nil, fmt.Errorf("abrir %s: %w", path, err)
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	s.read, err = sql.Open("sqlite", base+"&_pragma=query_only(1)")
 	if err != nil {
@@ -298,7 +298,7 @@ type txState struct{ aborted error }
 type errTxAborted struct{ cause error }
 
 func (e errTxAborted) Error() string {
-	return "la transacción está abortada por un error anterior (" + e.cause.Error() + ")"
+	return "the transaction was aborted by an earlier error (" + e.cause.Error() + ")"
 }
 
 func (t *sqliteTx) check() error {
@@ -415,7 +415,7 @@ func (t *sqliteTx) Commit(ctx context.Context) error {
 			return errTxAborted{aborted}
 		}
 		_ = t.Rollback(ctx)
-		return fmt.Errorf("commit deshecho: %w", errTxAborted{aborted})
+		return fmt.Errorf("commit rolled back: %w", errTxAborted{aborted})
 	}
 	t.done = true
 	if t.sp != "" {

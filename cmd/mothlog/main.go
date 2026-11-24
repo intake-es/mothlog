@@ -14,19 +14,20 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/digest"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/metrics"
-	"github.com/intake-es/intake-errors/internal/monitor"
-	"github.com/intake-es/intake-errors/internal/oauth"
-	"github.com/intake-es/intake-errors/internal/sourcemap"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/ui"
-	"github.com/intake-es/intake-errors/internal/uptime"
-	"github.com/intake-es/intake-errors/internal/webauth"
-	"github.com/intake-es/intake-errors/internal/webhooks"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/digest"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/metrics"
+	"github.com/intake-es/mothlog/internal/monitor"
+	"github.com/intake-es/mothlog/internal/oauth"
+	"github.com/intake-es/mothlog/internal/sourcemap"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/ui"
+	"github.com/intake-es/mothlog/internal/uptime"
+	"github.com/intake-es/mothlog/internal/webauth"
+	"github.com/intake-es/mothlog/internal/webhooks"
 )
 
 type config struct {
@@ -46,6 +47,8 @@ type config struct {
 	// MetricsToken protege /metrics; sin él, la ruta no existe.
 	MetricsToken string
 	Batch        ingest.BatchOptions
+	// Lang es el idioma de los avisos, del Markdown, del MCP y de llms.txt.
+	Lang lang.Lang
 }
 
 func loadConfig() (config, error) {
@@ -75,7 +78,7 @@ func loadConfig() (config, error) {
 	c.UptimeAllowPrivate = os.Getenv("UPTIME_ALLOW_PRIVATE") == "1"
 	c.Alerts.AllowPrivate = os.Getenv(alert.AllowPrivateEnv) == "1"
 	if c.DatabaseURL == "" {
-		return c, errors.New("falta DATABASE_URL")
+		return c, errors.New("DATABASE_URL is required")
 	}
 	if c.Addr == "" {
 		c.Addr = ":8080"
@@ -86,6 +89,10 @@ func loadConfig() (config, error) {
 		}
 	}
 	var err error
+	if c.Lang, err = lang.Parse(os.Getenv(lang.Env)); err != nil {
+		return c, err
+	}
+	c.Alerts.Lang = c.Lang
 	if c.RateLimitPerMinute, err = positiveEnv("RATE_LIMIT_PER_MINUTE", 60); err != nil {
 		return c, err
 	}
@@ -98,7 +105,7 @@ func loadConfig() (config, error) {
 	}
 	if v := os.Getenv("INGEST_BATCH_WAIT"); v != "" {
 		if c.Batch.MaxWait, err = time.ParseDuration(v); err != nil || c.Batch.MaxWait < 0 {
-			return c, fmt.Errorf("INGEST_BATCH_WAIT debe ser una duración como 2ms: %q", v)
+			return c, fmt.Errorf("INGEST_BATCH_WAIT must be a duration like 2ms: %q", v)
 		}
 	}
 	return c, nil
@@ -121,14 +128,14 @@ func positiveEnv(name string, def int) (int, error) {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
-		return 0, fmt.Errorf("%s debe ser un entero positivo: %q", name, v)
+		return 0, fmt.Errorf("%s must be a positive integer: %q", name, v)
 	}
 	return n, nil
 }
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		slog.Error("intake-errors", "err", err)
+		slog.Error("mothlog", "err", err)
 		os.Exit(1)
 	}
 }
@@ -136,6 +143,10 @@ func main() {
 func run(args []string) error {
 	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
 		return printVersion(os.Stdout)
+	}
+	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		_, err := fmt.Fprintln(os.Stdout, usage)
+		return err
 	}
 	cfg, err := loadConfig()
 	if err != nil {
@@ -150,14 +161,14 @@ func run(args []string) error {
 		case "import":
 			return importCommand(cfg, args[1:], os.Stdout, os.Stderr)
 		}
-		return fmt.Errorf("comando desconocido %q\n%s", args[0], usage)
+		return fmt.Errorf("unknown command %q\n%s", args[0], usage)
 	}
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	slog.SetDefault(log)
 	setMemoryLimit(log, "/sys/fs/cgroup")
 	if addr := os.Getenv("PPROF_ADDR"); addr != "" {
 		if !webauth.Loopback(addr) {
-			return fmt.Errorf("PPROF_ADDR solo vale en loopback (127.0.0.1, [::1] o localhost), no en %q", addr)
+			return fmt.Errorf("PPROF_ADDR only works on loopback (127.0.0.1, [::1] or localhost), not on %q", addr)
 		}
 		go servePprof(addr, log)
 	}
@@ -184,10 +195,11 @@ func serve(ctx context.Context, cfg config, log *slog.Logger, ln net.Listener) e
 		return err
 	}
 	defer db.Close()
+	db.SetDefaultLanguage(string(cfg.Lang))
 	auth.SavePeople(db)
 
 	if cfg.SourceMapUploadToken == "" {
-		log.Warn("sin SOURCEMAP_UPLOAD_TOKEN: la subida de source maps solo acepta tokens de la API")
+		log.Warn("no SOURCEMAP_UPLOAD_TOKEN: source map uploads only accept API tokens")
 	}
 	maps := sourcemap.New(db, log, sourcemap.Options{UploadToken: cfg.SourceMapUploadToken})
 	go maps.RunRetention(ctx, time.Duration(cfg.RetentionDays)*24*time.Hour, time.Hour)
@@ -199,7 +211,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger, ln net.Listener) e
 		return err
 	}
 	if len(alerts.Channels()) > 0 && cfg.PublicURL == "" {
-		log.Warn("sin PUBLIC_URL: los avisos van sin enlace a la interfaz")
+		log.Warn("no PUBLIC_URL: alerts go without a link to the UI")
 	}
 	go alerts.Run(ctx)
 	go digest.NewScheduler(db, log, cfg.PublicURL).Run(ctx, digest.TickInterval)
@@ -240,7 +252,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger, ln net.Listener) e
 			go oa.Run(ctx)
 		}
 	}
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, MCPAuth: mcpAuth, Alerts: alerts, Integrations: hooks, Digests: alerts, Channels: alerts}); err != nil {
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Lang: cfg.Lang, Auth: apiAuth, MCPAuth: mcpAuth, Alerts: alerts, Integrations: hooks, Digests: alerts, Channels: alerts}); err != nil {
 		return err
 	}
 	srv := &http.Server{
@@ -253,7 +265,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger, ln net.Listener) e
 	}
 	errc := make(chan error, 1)
 	go func() {
-		log.Info("escuchando", "addr", ln.Addr().String())
+		log.Info("listening", "addr", ln.Addr().String())
 		errc <- srv.Serve(ln)
 	}()
 
@@ -267,7 +279,7 @@ func serve(ctx context.Context, cfg config, log *slog.Logger, ln net.Listener) e
 	err = srv.Shutdown(shutdown)
 	// Lo descartado mientras se cerraban las peticiones.
 	if ferr := drops.Flush(shutdown); ferr != nil {
-		log.Error("guardar descartados", "err", ferr)
+		log.Error("save dropped", "err", ferr)
 	}
 	return err
 }
@@ -287,9 +299,9 @@ func routes(db pinger, envelopes http.Handler, register ...func(*http.ServeMux))
 		defer cancel()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if err := db.Ping(ctx); err != nil {
-			slog.WarnContext(ctx, "healthz: postgres no responde", "err", err)
+			slog.WarnContext(ctx, "healthz: database not responding", "err", err)
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("postgres no responde\n"))
+			_, _ = w.Write([]byte("database not responding\n"))
 			return
 		}
 		_, _ = w.Write([]byte("ok\n"))

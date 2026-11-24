@@ -11,23 +11,35 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Prefijos de los tokens de OAuth del MCP, distintos del de la API.
 const (
-	OAuthAccessPrefix  = "ieo_"
-	OAuthRefreshPrefix = "ier_"
+	OAuthAccessPrefix  = "mlo_"
+	OAuthRefreshPrefix = "mlr_"
 )
+
+// Los de los tokens de OAuth emitidos antes del nombre Mothlog, que siguen
+// valiendo hasta que caducan.
+const (
+	LegacyOAuthAccessPrefix  = "ieo_"
+	LegacyOAuthRefreshPrefix = "ier_"
+)
+
+// IsOAuthAccess dice si secret tiene la forma de un token de acceso de OAuth, nuevo o de antes.
+func IsOAuthAccess(secret string) bool {
+	return strings.HasPrefix(secret, OAuthAccessPrefix) || strings.HasPrefix(secret, LegacyOAuthAccessPrefix)
+}
 
 var (
 	// ErrOAuthReused: un código o un refresco ya gastado; la concesión que
 	// salió de él queda revocada.
-	ErrOAuthReused = errors.New("ya se había usado")
+	ErrOAuthReused = errors.New("already used")
 	// ErrOAuthExpired: el código ha caducado.
 	ErrOAuthExpired = errors.New("ha caducado")
 	// ErrOAuthTooMany: demasiados clientes registrados sin usar.
-	ErrOAuthTooMany = errors.New("demasiados clientes registrados sin usar")
+	ErrOAuthTooMany = errors.New("too many unused registered clients")
 )
 
 // Cuánto viven los clientes registrados sin usar y cuántos puede haber.
@@ -116,18 +128,18 @@ func (s *Store) CreateOAuthClient(ctx context.Context, c OAuthClient, now time.T
 	return db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM oauth_clients WHERE used_at IS NULL AND created_at < $1`,
 			now.Add(-OAuthUnusedClientTTL)); err != nil {
-			return fmt.Errorf("borrar clientes sin usar: %w", err)
+			return fmt.Errorf("delete unused clients: %w", err)
 		}
 		var unused int
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM oauth_clients WHERE used_at IS NULL`).Scan(&unused); err != nil {
-			return fmt.Errorf("contar clientes: %w", err)
+			return fmt.Errorf("count clients: %w", err)
 		}
 		if unused >= maxUnusedClients {
 			return ErrOAuthTooMany
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO oauth_clients (client_id, name, redirect_uris, created_at) VALUES ($1, $2, $3, $4)`,
 			c.ID, c.Name, string(uris), now); err != nil {
-			return fmt.Errorf("registrar cliente: %w", err)
+			return fmt.Errorf("register client: %w", err)
 		}
 		return nil
 	})
@@ -145,10 +157,10 @@ func (s *Store) OAuthClientByID(ctx context.Context, id string, now time.Time) (
 		return OAuthClient{}, ErrNotFound
 	}
 	if err != nil {
-		return OAuthClient{}, fmt.Errorf("leer cliente: %w", err)
+		return OAuthClient{}, fmt.Errorf("read client: %w", err)
 	}
 	if err := json.Unmarshal([]byte(uris), &c.RedirectURIs); err != nil {
-		return OAuthClient{}, fmt.Errorf("leer cliente: %w", err)
+		return OAuthClient{}, fmt.Errorf("read client: %w", err)
 	}
 	return c, nil
 }
@@ -160,7 +172,7 @@ func (s *Store) CreateOAuthRequest(ctx context.Context, r OAuthRequest, now time
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		r.ID, r.ClientID, r.ClientName, r.RedirectURI, joinScopes(r.Scopes), r.State, r.CodeChallenge, r.Resource, now, r.ExpiresAt)
 	if err != nil {
-		return fmt.Errorf("guardar petición de autorización: %w", err)
+		return fmt.Errorf("save authorization request: %w", err)
 	}
 	return nil
 }
@@ -184,7 +196,7 @@ func (s *Store) PendingOAuthRequest(ctx context.Context, id string, now time.Tim
 		return OAuthRequest{}, ErrNotFound
 	}
 	if err != nil {
-		return OAuthRequest{}, fmt.Errorf("leer petición de autorización: %w", err)
+		return OAuthRequest{}, fmt.Errorf("read authorization request: %w", err)
 	}
 	return r, nil
 }
@@ -204,7 +216,7 @@ func (s *Store) ApproveOAuthRequest(ctx context.Context, id, login string, scope
 		return OAuthRequest{}, "", ErrNotFound
 	}
 	if err != nil {
-		return OAuthRequest{}, "", fmt.Errorf("consentir: %w", err)
+		return OAuthRequest{}, "", fmt.Errorf("consent: %w", err)
 	}
 	r.Login, r.Granted = login, scopes
 	return r, code, nil
@@ -219,7 +231,7 @@ func (s *Store) DenyOAuthRequest(ctx context.Context, id string, now time.Time) 
 		return OAuthRequest{}, ErrNotFound
 	}
 	if err != nil {
-		return OAuthRequest{}, fmt.Errorf("denegar: %w", err)
+		return OAuthRequest{}, fmt.Errorf("deny: %w", err)
 	}
 	return r, nil
 }
@@ -276,7 +288,7 @@ func (s *Store) ExchangeOAuthCode(ctx context.Context, code string, check func(O
 			INSERT INTO oauth_grants (login, client_id, client_name, redirect_uri, scopes, resource, created_at)
 			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
 			r.Login, r.ClientID, r.ClientName, r.RedirectURI, joinScopes(r.Granted), r.Resource, now).Scan(&grantID); err != nil {
-			return fmt.Errorf("crear concesión: %w", err)
+			return fmt.Errorf("create grant: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE oauth_requests SET grant_id = $2 WHERE id = $1`, r.ID, grantID); err != nil {
 			return err
@@ -288,7 +300,7 @@ func (s *Store) ExchangeOAuthCode(ctx context.Context, code string, check func(O
 		return err
 	})
 	if err != nil {
-		return OAuthTokens{}, fmt.Errorf("canjear código: %w", err)
+		return OAuthTokens{}, fmt.Errorf("redeem code: %w", err)
 	}
 	return out, failed
 }
@@ -307,7 +319,7 @@ func issueOAuthTokens(ctx context.Context, q Querier, grantID int64, scopes []st
 		INSERT INTO oauth_tokens (token_sha256, grant_id, kind, scopes, created_at, expires_at)
 		VALUES ($1, $2, 'access', $3, $4, $5), ($6, $2, 'refresh', $3, $4, $7)`,
 		hashToken(access), grantID, sc, now, now.Add(ttl.Access), hashToken(refresh), now.Add(ttl.Refresh)); err != nil {
-		return OAuthTokens{}, fmt.Errorf("guardar tokens: %w", err)
+		return OAuthTokens{}, fmt.Errorf("save tokens: %w", err)
 	}
 	return OAuthTokens{Access: access, Refresh: refresh, Scopes: scopes, ExpiresIn: ttl.Access}, nil
 }
@@ -359,7 +371,7 @@ func (s *Store) RefreshOAuth(ctx context.Context, refresh, clientID string, scop
 		if len(scopes) > 0 {
 			for _, sc := range scopes {
 				if !slices.Contains(granted, sc) {
-					failed = fmt.Errorf("%w: el permiso %q no estaba concedido", ErrInvalid, sc)
+					failed = fmt.Errorf("%w: scope %q was not granted", ErrInvalid, sc)
 					return nil
 				}
 			}
@@ -377,7 +389,7 @@ func (s *Store) RefreshOAuth(ctx context.Context, refresh, clientID string, scop
 		return err
 	})
 	if err != nil {
-		return OAuthTokens{}, fmt.Errorf("refrescar token: %w", err)
+		return OAuthTokens{}, fmt.Errorf("refresh token: %w", err)
 	}
 	return out, failed
 }
@@ -386,7 +398,7 @@ func (s *Store) RefreshOAuth(ctx context.Context, refresh, clientID string, scop
 // apunta cuándo y desde qué dirección se usó (como mucho una vez por minuto,
 // o al cambiar de dirección). ErrNotFound si no vale.
 func (s *Store) AuthenticateOAuth(ctx context.Context, access, ip string, now time.Time) (OAuthAccess, error) {
-	if !strings.HasPrefix(access, OAuthAccessPrefix) {
+	if !IsOAuthAccess(access) {
 		return OAuthAccess{}, ErrNotFound
 	}
 	var a OAuthAccess
@@ -402,13 +414,13 @@ func (s *Store) AuthenticateOAuth(ctx context.Context, access, ip string, now ti
 		return OAuthAccess{}, ErrNotFound
 	}
 	if err != nil {
-		return OAuthAccess{}, fmt.Errorf("buscar token de OAuth: %w", err)
+		return OAuthAccess{}, fmt.Errorf("find OAuth token: %w", err)
 	}
 	a.Scopes = splitScopes(scopes)
 	if lastUsed == nil || now.Sub(*lastUsed) > time.Minute || lastIP == nil || *lastIP != ip {
 		if _, err := s.pool.Exec(ctx, `UPDATE oauth_grants SET last_used_at = $2, last_used_ip = $3 WHERE id = $1`,
 			a.GrantID, now, ip); err != nil {
-			return OAuthAccess{}, fmt.Errorf("marcar uso de la concesión: %w", err)
+			return OAuthAccess{}, fmt.Errorf("mark grant use: %w", err)
 		}
 	}
 	return a, nil
@@ -427,7 +439,7 @@ func (s *Store) RevokeOAuthToken(ctx context.Context, token, clientID string, no
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("revocar token: %w", err)
+		return fmt.Errorf("revoke token: %w", err)
 	}
 	if kind == "access" {
 		_, err = s.pool.Exec(ctx, `DELETE FROM oauth_tokens WHERE token_sha256 = $1`, hashToken(token))
@@ -435,7 +447,7 @@ func (s *Store) RevokeOAuthToken(ctx context.Context, token, clientID string, no
 		_, err = s.pool.Exec(ctx, `UPDATE oauth_grants SET revoked_at = $2 WHERE id = $1 AND revoked_at IS NULL`, grantID, now)
 	}
 	if err != nil {
-		return fmt.Errorf("revocar token: %w", err)
+		return fmt.Errorf("revoke token: %w", err)
 	}
 	return nil
 }
@@ -450,7 +462,7 @@ func (s *Store) OAuthGrants(ctx context.Context, login string, now time.Time) ([
 			SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id AND t.expires_at > $2 AND t.used_at IS NULL)
 		ORDER BY g.created_at DESC, g.id DESC`, login, now)
 	if err != nil {
-		return nil, fmt.Errorf("listar concesiones: %w", err)
+		return nil, fmt.Errorf("list grants: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (OAuthGrant, error) {
 		var g OAuthGrant
@@ -467,7 +479,7 @@ func (s *Store) RevokeOAuthGrant(ctx context.Context, login string, id int64, no
 	tag, err := s.pool.Exec(ctx, `UPDATE oauth_grants SET revoked_at = $3 WHERE id = $1 AND login = $2 AND revoked_at IS NULL`,
 		id, login, now)
 	if err != nil {
-		return fmt.Errorf("revocar concesión: %w", err)
+		return fmt.Errorf("revoke grant: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -482,7 +494,7 @@ func (s *Store) RevokeOAuthGrantsOf(ctx context.Context, login string, now time.
 		UPDATE oauth_grants SET revoked_at = $2
 		WHERE login IN (SELECT login FROM people WHERE lower(login) = lower($1)) AND revoked_at IS NULL`, login, now)
 	if err != nil {
-		return 0, fmt.Errorf("revocar concesiones: %w", err)
+		return 0, fmt.Errorf("revoke grants: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }
@@ -501,7 +513,7 @@ func (s *Store) PruneOAuth(ctx context.Context, now time.Time) error {
 		{`DELETE FROM oauth_grants WHERE revoked_at < $1`, now.Add(-30 * 24 * time.Hour)},
 	} {
 		if _, err := s.pool.Exec(ctx, q.sql, q.at); err != nil {
-			return fmt.Errorf("limpiar OAuth: %w", err)
+			return fmt.Errorf("clean up OAuth: %w", err)
 		}
 	}
 	return nil

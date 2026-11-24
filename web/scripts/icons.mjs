@@ -72,7 +72,7 @@ const ICONS = {
     'eye',
     'pencil-simple-line',
   ],
-  fill: ['bug'],
+  fill: ['butterfly'],
   duotone: [
     'check-circle',
     'lock-key',

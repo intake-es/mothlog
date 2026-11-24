@@ -42,7 +42,7 @@ func (sqliteDialect) unnest(alias, num string, first int, cols []string) string 
 	for i, c := range cols {
 		name, typ, ok := strings.Cut(c, " ")
 		if !ok {
-			panic("db: columna de Unnest sin tipo: " + c)
+			panic("db: Unnest column without type: " + c)
 		}
 		v := "j.value"
 		if i > 0 {

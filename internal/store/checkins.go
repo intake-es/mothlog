@@ -7,8 +7,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // MonitorConfig es el monitor_config de un check-in: crea el monitor o lo
@@ -124,11 +124,11 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 	switch in.Status {
 	case CheckInInProgress, CheckInOK, CheckInError:
 	default:
-		return CheckInResult{Outcome: CheckInIgnored, Reason: "estado desconocido: " + in.Status}, nil
+		return CheckInResult{Outcome: CheckInIgnored, Reason: "unknown status: " + in.Status}, nil
 	}
 	in.Slug = Slugify(in.Slug)
 	if in.Slug == "" {
-		return CheckInResult{Outcome: CheckInIgnored, Reason: "sin monitor_slug"}, nil
+		return CheckInResult{Outcome: CheckInIgnored, Reason: "no monitor_slug"}, nil
 	}
 	if in.CheckInID == "" {
 		in.CheckInID = newCheckInID()
@@ -141,7 +141,7 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 		if in.Config != nil {
 			c, err := in.Config.input(in.Slug)
 			if err != nil {
-				res.Reason = "monitor_config no válido: " + err.Error()
+				res.Reason = "invalid monitor_config: " + err.Error()
 			} else {
 				cfg = &c
 			}
@@ -151,17 +151,17 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 			if cfg == nil {
 				res.Outcome = CheckInIgnored
 				if res.Reason == "" {
-					res.Reason = "el monitor no existe y el check-in no trae monitor_config"
+					res.Reason = "the monitor doesn't exist and the check-in has no monitor_config"
 				}
 				return nil
 			}
 			var n int
 			if err := tx.QueryRow(ctx, `SELECT count(*) FROM monitors WHERE project_id = $1`, projectID).Scan(&n); err != nil {
-				return fmt.Errorf("contar monitores: %w", err)
+				return fmt.Errorf("count monitors: %w", err)
 			}
 			if n >= MaxAutoMonitors {
 				res.Outcome = CheckInIgnored
-				res.Reason = fmt.Sprintf("el proyecto ya tiene %d monitores; los demás se crean por la API", n)
+				res.Reason = fmt.Sprintf("the project already has %d monitors; more can be created with the API", n)
 				return nil
 			}
 			// Sin entorno: vale cualquiera. Se fija a mano por la API.
@@ -175,7 +175,7 @@ func (s *Store) ProcessCheckIn(ctx context.Context, projectID int64, in CheckInI
 		res.Monitor = m
 		// Un check-in de otro entorno no cambia nada del monitor, tampoco su horario.
 		if m.Environment != "" && in.Environment != m.Environment {
-			res.Outcome, res.Reason = CheckInIgnored, "el monitor vigila el entorno "+m.Environment
+			res.Outcome, res.Reason = CheckInIgnored, "the monitor watches environment "+m.Environment
 			return nil
 		}
 		if !res.Created && cfg != nil {
@@ -202,7 +202,7 @@ func createMonitorTx(ctx context.Context, tx db.Tx, projectID int64, in MonitorI
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (project_id, slug) DO NOTHING`, projectID, m.Slug, m.Name, m.Schedule.Type, sched, every, unit,
 		m.Timezone, m.CheckinMargin, m.MaxRuntime, m.Environment); err != nil {
-		return Monitor{}, fmt.Errorf("crear monitor: %w", err)
+		return Monitor{}, fmt.Errorf("create monitor: %w", err)
 	}
 	return lockMonitor(ctx, tx, projectID, m.Slug)
 }
@@ -230,7 +230,7 @@ func configureMonitor(ctx context.Context, tx db.Tx, m Monitor, in MonitorInput)
 		WHERE id = $1`, m.ID, m.Schedule.Type, sched, every, unit, m.Timezone, m.CheckinMargin, m.MaxRuntime,
 		m.NextCheckinAt)
 	if err != nil {
-		return m, fmt.Errorf("actualizar monitor: %w", err)
+		return m, fmt.Errorf("update monitor: %w", err)
 	}
 	return m, nil
 }
@@ -252,7 +252,7 @@ func (s *Store) saveCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, i
 	switch {
 	case errors.Is(err, db.ErrNoRows):
 	case err != nil:
-		return fmt.Errorf("leer check-in: %w", err)
+		return fmt.Errorf("read check-in: %w", err)
 	default:
 		return s.closeCheckIn(ctx, tx, res, old, in, dur, now, notify)
 	}
@@ -278,7 +278,7 @@ func (s *Store) saveCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, i
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, `+checkInIDColumn, c.MonitorID, c.CheckInID, c.Status, c.DurationMs, c.Environment, c.Release,
 		c.ExpectedAt, c.StartedAt, c.FinishedAt, c.TimeoutAt, c.ReceivedAt).Scan(&c.ID, &c.CheckInID); err != nil {
-		return fmt.Errorf("guardar check-in: %w", err)
+		return fmt.Errorf("save check-in: %w", err)
 	}
 	res.Outcome, res.CheckIn = CheckInCreated, c
 
@@ -289,7 +289,7 @@ func (s *Store) saveCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, i
 	}
 	if _, err := tx.Exec(ctx, `UPDATE monitors SET last_checkin_at = $2, next_checkin_at = $3 WHERE id = $1`,
 		m.ID, m.LastCheckinAt, m.NextCheckinAt); err != nil {
-		return fmt.Errorf("actualizar monitor: %w", err)
+		return fmt.Errorf("update monitor: %w", err)
 	}
 	if c.Status == CheckInInProgress {
 		return nil
@@ -305,7 +305,7 @@ func (s *Store) closeCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, 
 	res.CheckIn = c
 	if in.Status == CheckInInProgress || (c.Status != CheckInInProgress && c.Status != CheckInTimeout) ||
 		(c.Status == CheckInTimeout && c.FinishedAt != nil) {
-		res.Outcome, res.Reason = CheckInIgnored, "el check-in ya está "+c.Status
+		res.Outcome, res.Reason = CheckInIgnored, "the check-in is already "+c.Status
 		return nil
 	}
 	if dur == nil {
@@ -320,7 +320,7 @@ func (s *Store) closeCheckIn(ctx context.Context, tx db.Tx, res *CheckInResult, 
 		UPDATE monitor_checkins SET status = $2, duration_ms = $3, finished_at = $4, timeout_at = NULL,
 			environment = COALESCE(NULLIF($5, ''), environment), release = COALESCE(NULLIF($6, ''), release)
 		WHERE id = $1`, c.ID, status, dur, now, in.Environment, in.Release); err != nil {
-		return fmt.Errorf("cerrar check-in: %w", err)
+		return fmt.Errorf("close check-in: %w", err)
 	}
 	c.Status, c.DurationMs, c.FinishedAt, c.TimeoutAt = status, dur, &now, nil
 	res.Outcome, res.CheckIn = CheckInUpdated, c
@@ -336,7 +336,7 @@ func setMonitorStatus(ctx context.Context, tx db.Tx, m *Monitor, c CheckIn, noti
 		return nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE monitors SET status = $2 WHERE id = $1`, m.ID, c.Status); err != nil {
-		return fmt.Errorf("actualizar monitor: %w", err)
+		return fmt.Errorf("update monitor: %w", err)
 	}
 	m.Status = c.Status
 	kind := changeKind(prev, c.Status)
@@ -388,17 +388,17 @@ func (s *Store) sweepTimeout(ctx context.Context, now time.Time, notify MonitorN
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("buscar check-ins pasados de tiempo: %w", err)
+			return fmt.Errorf("find timed-out check-ins: %w", err)
 		}
 		found = true
 		m, err := scanMonitor(tx.QueryRow(ctx, `SELECT `+monitorColumns+monitorFrom+` WHERE m.id = $1`, monitorID))
 		if err != nil {
-			return fmt.Errorf("leer monitor: %w", err)
+			return fmt.Errorf("read monitor: %w", err)
 		}
 		c, err := scanCheckIn(tx.QueryRow(ctx, `UPDATE monitor_checkins SET status = 'timeout'
 			WHERE id = $1 RETURNING `+checkInColumns, checkinID))
 		if err != nil {
-			return fmt.Errorf("marcar timeout: %w", err)
+			return fmt.Errorf("mark timeout: %w", err)
 		}
 		return setMonitorStatus(ctx, tx, &m, c, notify)
 	})
@@ -416,7 +416,7 @@ func (s *Store) sweepMissed(ctx context.Context, now time.Time, notify MonitorNo
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("buscar monitores sin check-in: %w", err)
+			return fmt.Errorf("find monitors without check-in: %w", err)
 		}
 		found = true
 		expected := *m.NextCheckinAt
@@ -429,7 +429,7 @@ func (s *Store) sweepMissed(ctx context.Context, now time.Time, notify MonitorNo
 				WHERE monitor_id = $1 AND status <> 'missed' ORDER BY received_at DESC, id DESC LIMIT 1), ''), $4, $4, $5)
 			RETURNING id, `+checkInIDColumn+`, environment`,
 			m.ID, c.CheckInID, m.Environment, expected, now).Scan(&c.ID, &c.CheckInID, &c.Environment); err != nil {
-			return fmt.Errorf("guardar missed: %w", err)
+			return fmt.Errorf("save missed: %w", err)
 		}
 		// Si se han perdido varias, se apunta una y se sigue desde la que aún puede llegar.
 		loc := m.Location()
@@ -443,7 +443,7 @@ func (s *Store) sweepMissed(ctx context.Context, now time.Time, notify MonitorNo
 			nextPtr = &next
 		}
 		if _, err := tx.Exec(ctx, `UPDATE monitors SET next_checkin_at = $2 WHERE id = $1`, m.ID, nextPtr); err != nil {
-			return fmt.Errorf("actualizar monitor: %w", err)
+			return fmt.Errorf("update monitor: %w", err)
 		}
 		m.NextCheckinAt = nextPtr
 		return setMonitorStatus(ctx, tx, &m, c, notify)

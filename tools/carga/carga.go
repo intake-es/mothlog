@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // sembrar crea los proyectos de los fixtures con sus claves y sube los

@@ -122,13 +122,13 @@ func serve(w http.ResponseWriter, r *http.Request, name string, f file) {
 }
 
 const placeholder = `<!doctype html>
-<html lang="es">
-<head><meta charset="utf-8"><title>intake-errors</title>
+<html lang="en">
+<head><meta charset="utf-8"><title>Mothlog</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"></head>
 <body style="font-family: system-ui, sans-serif; max-width: 36rem; margin: 4rem auto; padding: 0 1rem; color: #1a1a1a">
-<h1 style="font-size: 1.25rem">La interfaz no está compilada</h1>
-<p>Este binario se compiló sin la web. Para incluirla, <code>cd web && npm ci && npm run build</code> y vuelve a compilar Go.
-La API (<code>/api/0/</code>) y el MCP (<code>/mcp</code>) funcionan igual.</p>
+<h1 style="font-size: 1.25rem">The UI is not built</h1>
+<p>This binary was built without the web app. To include it, <code>cd web && npm ci && npm run build</code> and build Go again.
+The API (<code>/api/0/</code>) and the MCP (<code>/mcp</code>) work the same.</p>
 </body>
 </html>
 `

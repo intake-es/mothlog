@@ -117,25 +117,25 @@ func TestRuleValidation(t *testing.T) {
 		change func(*Rule)
 		want   string
 	}{
-		"sin nombre":         {func(r *Rule) { r.Name = " " }, "nombre"},
-		"sin condición":      {func(r *Rule) { r.Conditions.New = false }, "al menos una condición"},
-		"sin acciones":       {func(r *Rule) { r.Actions = nil }, "al menos una acción"},
+		"sin nombre":         {func(r *Rule) { r.Name = " " }, "name"},
+		"sin condición":      {func(r *Rule) { r.Conditions.New = false }, "at least one condition"},
+		"sin acciones":       {func(r *Rule) { r.Actions = nil }, "at least one action"},
 		"ventana enorme":     {func(r *Rule) { r.Conditions.Frequency = &FrequencyCondition{Events: 1, WindowMinutes: 2000} }, "window_minutes"},
 		"cero eventos":       {func(r *Rule) { r.Conditions.Frequency = &FrequencyCondition{Events: 0, WindowMinutes: 5} }, "frequency.events"},
 		"cero usuarios":      {func(r *Rule) { r.Conditions.Users = &UsersCondition{} }, "users.users"},
-		"nivel raro":         {func(r *Rule) { r.Conditions.Levels = []string{"critical"} }, "nivel"},
-		"etiqueta sin clave": {func(r *Rule) { r.Conditions.Tags = []TagFilter{{Value: "x"}} }, "etiqueta"},
+		"nivel raro":         {func(r *Rule) { r.Conditions.Levels = []string{"critical"} }, "level"},
+		"etiqueta sin clave": {func(r *Rule) { r.Conditions.Tags = []TagFilter{{Value: "x"}} }, "tag"},
 		"límite negativo":    {func(r *Rule) { r.ThrottleMinutes = -1 }, "throttle_minutes"},
-		"tipo raro":          {func(r *Rule) { r.Actions[0].Type = "sms" }, "no existe"},
+		"tipo raro":          {func(r *Rule) { r.Actions[0].Type = "sms" }, "does not exist"},
 		"url no http":        {func(r *Rule) { r.Actions[0].URL = "ftp://x" }, "http"},
-		"slack sin url":      {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionSlack} }, "falta url"},
-		"correo malo":        {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionEmail, To: []string{"no es"}} }, "correo"},
-		"correo vacío":       {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionEmail} }, "falta to"},
+		"slack sin url":      {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionSlack} }, "missing url"},
+		"correo malo":        {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionEmail, To: []string{"no es"}} }, "email address"},
+		"correo vacío":       {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionEmail} }, "missing to"},
 		"telegram sin chat":  {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionTelegram, BotToken: "1:x"} }, "chat_id"},
 		"token raro":         {func(r *Rule) { r.Actions[0] = RuleAction{Type: ActionTelegram, BotToken: "1/x", ChatID: "1"} }, "bot_token"},
 		"ids repetidos": {func(r *Rule) {
 			r.Actions = []RuleAction{{ID: "a", Type: ActionNtfy, URL: "https://n.test/a"}, {ID: "a", Type: ActionNtfy, URL: "https://n.test/b"}}
-		}, "repetido"},
+		}, "duplicate"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

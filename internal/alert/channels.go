@@ -95,9 +95,9 @@ func telegramText(p *pending) (text string, isHTML bool) {
 		b.WriteString(e(f[0]) + ": " + e(f[1]) + "\n")
 	}
 	if p.link != "" {
-		label := "Ver el error"
+		label := p.l.T("View error", "Ver el error")
 		if p.isMonitor() {
-			label = "Ver el monitor"
+			label = p.l.T("View monitor", "Ver el monitor")
 		}
 		b.WriteString(`<a href="` + e(p.link) + `">` + label + `</a>`)
 	}

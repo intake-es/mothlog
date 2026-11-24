@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func (h *handlers) registerHistory(route func(string, http.HandlerFunc)) {
@@ -79,12 +79,12 @@ func (h *handlers) addComment(w http.ResponseWriter, r *http.Request) {
 		Body string `json:"body"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<18)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "el cuerpo debe ser {\"body\": \"...\"}")
+		writeError(w, http.StatusBadRequest, "the body must be {\"body\": \"...\"}")
 		return
 	}
 	a := actorFrom(r.Context())
 	if a == nil {
-		writeError(w, http.StatusForbidden, "no se sabe quién comenta")
+		writeError(w, http.StatusForbidden, "unknown commenter")
 		return
 	}
 	c, err := h.st.AddComment(r.Context(), id, *a, body.Body)
@@ -102,7 +102,7 @@ func (h *handlers) deleteComment(w http.ResponseWriter, r *http.Request) {
 	}
 	comment, err := strconv.ParseInt(r.PathValue("comment"), 10, 64)
 	if err != nil || comment <= 0 {
-		writeError(w, http.StatusNotFound, "no encontrado")
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	a := actorFrom(r.Context())
@@ -129,7 +129,7 @@ func (h *handlers) contextMD(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-	_, _ = w.Write([]byte(markdown.Context(c, h.issueURL(r, id), markdown.MaxContextBytes)))
+	_, _ = w.Write([]byte(markdown.Context(c, h.issueURL(r, id), markdown.MaxContextBytes, h.lang)))
 }
 
 // baseURL es PUBLIC_URL o, sin ella, la de la petición.
@@ -152,11 +152,15 @@ func (h *handlers) issueURL(r *http.Request, id int64) string {
 	return h.baseURL(r).String() + "/issues/" + strconv.FormatInt(id, 10)
 }
 
-//go:embed llms.txt
-var llmsTxt string
+var (
+	//go:embed llms.en.txt
+	llmsEN string
+	//go:embed llms.es.txt
+	llmsES string
+)
 
 // llms es /llms.txt: qué es el servicio y cómo usarlo, sin token.
 func (h *handlers) llms(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(strings.ReplaceAll(llmsTxt, "{base}", h.baseURL(r).String())))
+	_, _ = w.Write([]byte(strings.ReplaceAll(h.lang.T(llmsEN, llmsES), "{base}", h.baseURL(r).String())))
 }

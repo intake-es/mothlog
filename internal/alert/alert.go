@@ -18,12 +18,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/digest"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/netguard"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/digest"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/netguard"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -70,6 +71,19 @@ type Options struct {
 	// DestinationClient es el de las URL que pone quien edita las reglas y los
 	// resúmenes (Slack, Discord, ntfy y webhook); vacío, uno con netguard.
 	DestinationClient *http.Client
+	// Lang es el idioma de los avisos de todos los canales; vacío, inglés.
+	Lang lang.Lang
+}
+
+// UserAgent es el de las peticiones que salen hacia los avisos y las APIs.
+const UserAgent = "Mothlog"
+
+// subjectPrefix va delante del asunto de los correos.
+const subjectPrefix = "[Mothlog] "
+
+// viewIn es el enlace a la interfaz que llevan los avisos en Markdown.
+func viewIn(l lang.Lang, link string) string {
+	return l.F("[View in Mothlog](%s)", "[Ver en Mothlog](%s)", link)
 }
 
 // AllowPrivateEnv es la variable que deja a los avisos ir a redes privadas.
@@ -88,6 +102,7 @@ func DestinationClient(allowPrivate bool) *http.Client {
 }
 
 type Alerter struct {
+	lang     lang.Lang
 	st       *store.Store
 	log      *slog.Logger
 	interval time.Duration
@@ -135,6 +150,8 @@ type sender interface {
 }
 
 type pending struct {
+	// l es el idioma del aviso.
+	l           lang.Lang
 	id          int64
 	issueID     int64
 	kind        string
@@ -176,7 +193,7 @@ type pending struct {
 }
 
 func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
-	a := &Alerter{st: st, log: log, interval: o.Interval, channels: map[string]sender{}, now: time.Now,
+	a := &Alerter{lang: o.Lang, st: st, log: log, interval: o.Interval, channels: map[string]sender{}, now: time.Now,
 		linears: map[string]*linear{}, projects: map[int64]projectSeen{}}
 	if a.interval <= 0 {
 		a.interval = DefaultInterval
@@ -217,7 +234,7 @@ func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 	}
 	if o.LinearAPIKey != "" {
 		if o.LinearTeamID == "" {
-			return nil, errors.New("con LINEAR_API_KEY hace falta LINEAR_TEAM_ID")
+			return nil, errors.New("LINEAR_API_KEY needs LINEAR_TEAM_ID")
 		}
 		a.channels[channelLinear] = a.linearFor(o.LinearTeamID, o.LinearLabelIDs)
 		a.order = append(a.order, channelLinear)
@@ -241,7 +258,7 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, r
 	if res.ProjectID != 0 {
 		seen, err := a.project(ctx, tx, res.ProjectID)
 		if err != nil {
-			a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
+			a.log.ErrorContext(ctx, "enqueue alert", "issue", issueID, "err", err)
 			return nil
 		}
 		defaults = a.defaultChannels(seen.defaults)
@@ -253,7 +270,7 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, r
 	}
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
+		a.log.ErrorContext(ctx, "enqueue alert", "issue", issueID, "err", err)
 		return nil
 	}
 	rules, err := store.RulesOfIssue(ctx, sp, issueID)
@@ -270,7 +287,7 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, r
 	}
 	if err != nil {
 		_ = sp.Rollback(ctx)
-		a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
+		a.log.ErrorContext(ctx, "enqueue alert", "issue", issueID, "err", err)
 	}
 	return nil
 }
@@ -367,10 +384,10 @@ func (a *Alerter) Run(ctx context.Context) {
 	defer t.Stop()
 	for {
 		if _, err := a.SendPending(ctx); err != nil && ctx.Err() == nil {
-			a.log.ErrorContext(ctx, "enviar avisos", "err", err)
+			a.log.ErrorContext(ctx, "send alerts", "err", err)
 		}
 		if _, err := a.SyncLinks(ctx); err != nil && ctx.Err() == nil {
-			a.log.ErrorContext(ctx, "llevar estados a los enlaces", "err", err)
+			a.log.ErrorContext(ctx, "push statuses to links", "err", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -402,7 +419,7 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	now := a.now().UTC()
-	var p pending
+	p := pending{l: a.lang}
 	var channel string
 	var attempts int
 	var ruleID, issueID, monitorID, checkinID, uptimeID, incidentID, digestID *int64
@@ -436,11 +453,11 @@ func (a *Alerter) sendOne(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("coger aviso: %w", err)
+		return false, fmt.Errorf("take alert: %w", err)
 	}
 	if len(detail) > 0 && digestID == nil {
 		if err := json.Unmarshal(detail, &p.detail); err != nil {
-			return false, fmt.Errorf("aviso %d: %w", p.id, err)
+			return false, fmt.Errorf("alert %d: %w", p.id, err)
 		}
 	}
 	var snd sender
@@ -499,10 +516,10 @@ func (a *Alerter) deliver(ctx context.Context, tx db.Tx, p *pending, snd sender,
 		return a.finish(ctx, tx, p, channel, attempts, now, sendErr)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE alert_outbox SET next_attempt_at = $2 WHERE id = $1`, p.id, now.Add(SendLease)); err != nil {
-		return false, fmt.Errorf("apartar aviso %d: %w", p.id, err)
+		return false, fmt.Errorf("set aside alert %d: %w", p.id, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("apartar aviso %d: %w", p.id, err)
+		return false, fmt.Errorf("set aside alert %d: %w", p.id, err)
 	}
 	sendCtx, cancel := context.WithTimeout(ctx, SendLease/2)
 	sendErr = snd.send(sendCtx, p)
@@ -525,7 +542,7 @@ func (a *Alerter) deliver(ctx context.Context, tx db.Tx, p *pending, snd sender,
 	if sendErr == nil {
 		for _, f := range p.after {
 			if err := f(ctx, tx); err != nil {
-				return false, fmt.Errorf("guardar aviso %d: %w", p.id, err)
+				return false, fmt.Errorf("save alert %d: %w", p.id, err)
 			}
 		}
 	}
@@ -550,7 +567,7 @@ func (a *Alerter) loadIssue(ctx context.Context, tx db.Querier, p *pending) erro
 		WHERE i.id = $1`), p.issueID).
 		Scan(&p.project, &p.labels, &p.title, &p.culprit, &p.count, &p.linear, &p.linearIdentifier, &p.linearURL)
 	if err != nil {
-		return fmt.Errorf("leer issue %d: %w", p.issueID, err)
+		return fmt.Errorf("read issue %d: %w", p.issueID, err)
 	}
 	p.link = issueLink(a.base, p.issueID)
 	return nil
@@ -565,23 +582,23 @@ func (a *Alerter) finish(ctx context.Context, tx db.Tx, p *pending, channel stri
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, sent_at = $3, last_error = NULL WHERE id = $1`,
 			p.id, attempts, a.now().UTC())
 	case attempts >= MaxAttempts || errors.Is(sendErr, errGone):
-		a.log.ErrorContext(ctx, "aviso abandonado", "canal", channel, p.target(), "intentos", attempts, "err", sendErr)
+		a.log.ErrorContext(ctx, "alert abandoned", "channel", channel, p.target(), "attempts", attempts, "err", sendErr)
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, failed_at = $3, last_error = $4 WHERE id = $1`,
 			p.id, attempts, a.now().UTC(), sendErr.Error())
 	default:
 		next := now.Add(Backoff[min(attempts, len(Backoff))-1])
-		a.log.WarnContext(ctx, "aviso fallido", "canal", channel, p.target(), "intentos", attempts, "siguiente", next, "err", sendErr)
+		a.log.WarnContext(ctx, "alert failed", "channel", channel, p.target(), "attempts", attempts, "next", next, "err", sendErr)
 		_, err = tx.Exec(ctx, `UPDATE alert_outbox SET attempts = $2, next_attempt_at = $3, last_error = $4 WHERE id = $1`,
 			p.id, attempts, next, sendErr.Error())
 	}
 	if err != nil {
-		return false, fmt.Errorf("guardar aviso %d: %w", p.id, err)
+		return false, fmt.Errorf("save alert %d: %w", p.id, err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("guardar aviso %d: %w", p.id, err)
+		return false, fmt.Errorf("save alert %d: %w", p.id, err)
 	}
 	if sendErr == nil {
-		a.log.InfoContext(ctx, "aviso enviado", "canal", channel, p.target(), "tipo", p.kind, "regla", p.ruleID)
+		a.log.InfoContext(ctx, "alert sent", "channel", channel, p.target(), "kind", p.kind, "rule", p.ruleID)
 	}
 	return true, nil
 }
@@ -589,13 +606,13 @@ func (a *Alerter) finish(ctx context.Context, tx db.Tx, p *pending, channel stri
 // target es de qué es el aviso, para el registro: el issue o el monitor.
 func (p *pending) target() slog.Attr {
 	if p.digestProject != 0 {
-		return slog.Int64("resumen", p.digestProject)
+		return slog.Int64("digest", p.digestProject)
 	}
 	if p.cron != nil {
 		return slog.Int64("monitor", p.cron.monitorID)
 	}
 	if p.uptime != nil {
-		return slog.Int64("monitor_disponibilidad", p.uptime.monitorID)
+		return slog.Int64("uptime_monitor", p.uptime.monitorID)
 	}
 	return slog.Int64("issue", p.issueID)
 }
@@ -610,7 +627,7 @@ func issueDetail(ctx context.Context, st *store.Store, p *pending) (store.IssueD
 	}
 	d, err := st.IssueDetail(ctx, p.issueID, time.Now())
 	if err != nil {
-		return d, fmt.Errorf("leer issue %d: %w", p.issueID, err)
+		return d, fmt.Errorf("read issue %d: %w", p.issueID, err)
 	}
 	p.issue = &d
 	return d, nil

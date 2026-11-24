@@ -57,7 +57,7 @@ Los mapas traen `sourcesContent`. esbuild escribe las fuentes relativas a `dist/
 
 ## testdata/sentry-cli/
 
-Lo que mandó sentry-cli 3.8.2 al subir el build de `navegador/` a intake-errors, petición a petición: `NNN.body` y `NNN.meta.json` (método, ruta, cabeceras sin `Authorization`, y el código y la respuesta que dio el servidor). Las dos subidas son de cuatro peticiones: las opciones de la subida por trozos, el primer ensamblado (que responde `not_found` con el trozo que falta), el trozo en gzip y el ensamblado que responde `ok`.
+Lo que mandó sentry-cli 3.8.2 al subir el build de `navegador/` a mothlog, petición a petición: `NNN.body` y `NNN.meta.json` (método, ruta, cabeceras sin `Authorization`, y el código y la respuesta que dio el servidor). Las dos subidas son de cuatro peticiones: las opciones de la subida por trozos, el primer ensamblado (que responde `not_found` con el trozo que falta), el trozo en gzip y el ensamblado que responde `ok`.
 
 - `upload/`: `sourcemaps upload --release prueba-upload`, sin debug IDs.
 - `inject/`: `sourcemaps inject` y `sourcemaps upload` sin release; el debug ID del chunk es `174ab4b5-75a1-56fb-be73-185871cd4267` y el de `main-V7FHULKG.js`, `5cb45e20-41a8-5fea-a9ea-8edaf705a1dc`.

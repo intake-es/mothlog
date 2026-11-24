@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // DefaultEventsPerIssuePerHour es el tope de eventos guardados por issue y
@@ -113,32 +113,32 @@ func (f *Filters) Normalize() error {
 			}
 			switch {
 			case s == "":
-				return fmt.Errorf("%w: %s no admite valores vacíos", ErrInvalid, l.name)
+				return fmt.Errorf("%w: %s does not allow empty values", ErrInvalid, l.name)
 			case len(s) > maxFilterItemLen:
-				return fmt.Errorf("%w: %s admite valores de hasta %d caracteres", ErrInvalid, l.name, maxFilterItemLen)
+				return fmt.Errorf("%w: %s allows values up to %d characters", ErrInvalid, l.name, maxFilterItemLen)
 			}
 			if !slices.Contains(out, s) {
 				out = append(out, s)
 			}
 		}
 		if len(out) > maxFilterItems {
-			return fmt.Errorf("%w: %s admite hasta %d valores", ErrInvalid, l.name, maxFilterItems)
+			return fmt.Errorf("%w: %s allows up to %d values", ErrInvalid, l.name, maxFilterItems)
 		}
 		*l.v = out
 	}
 	for _, m := range f.Messages {
 		if _, err := regexp.Compile(m); err != nil {
-			return fmt.Errorf("%w: messages: %q no es una expresión regular válida: %v", ErrInvalid, m, err)
+			return fmt.Errorf("%w: messages: %q is not a valid regular expression: %v", ErrInvalid, m, err)
 		}
 	}
 	if math.IsNaN(f.SampleRate) || f.SampleRate < 0 || f.SampleRate > 1 {
-		return fmt.Errorf("%w: sample_rate va de 0 a 1", ErrInvalid)
+		return fmt.Errorf("%w: sample_rate goes from 0 to 1", ErrInvalid)
 	}
 	if n := f.EventsPerIssuePerHour; n != nil && (*n <= 0 || *n > 1_000_000) {
-		return fmt.Errorf("%w: events_per_issue_per_hour va de 1 a 1000000", ErrInvalid)
+		return fmt.Errorf("%w: events_per_issue_per_hour goes from 1 to 1000000", ErrInvalid)
 	}
 	if n := f.RateLimitPerMinute; n != nil && (*n <= 0 || *n > 1_000_000) {
-		return fmt.Errorf("%w: rate_limit_per_minute va de 1 a 1000000", ErrInvalid)
+		return fmt.Errorf("%w: rate_limit_per_minute goes from 1 to 1000000", ErrInvalid)
 	}
 	return nil
 }
@@ -158,7 +158,7 @@ func (s *Store) Filters(ctx context.Context, projectID int64) (Filters, error) {
 		return Filters{}, ErrNotFound
 	}
 	if err != nil {
-		return Filters{}, fmt.Errorf("leer filtros: %w", err)
+		return Filters{}, fmt.Errorf("read filters: %w", err)
 	}
 	// Sin fila de filtros, las listas vacías.
 	for _, l := range []*[]string{&f.Messages, &f.ExceptionTypes, &f.Environments, &f.Releases} {
@@ -187,7 +187,7 @@ func (s *Store) SetFilters(ctx context.Context, projectID int64, f Filters) (Fil
 		projectID, f.Messages, f.ExceptionTypes, f.BrowserExtensions, f.WebCrawlers, f.Localhost,
 		f.Environments, f.Releases, f.EventsPerIssuePerHour, f.SampleRate, f.RateLimitPerMinute)
 	if err != nil {
-		return Filters{}, fmt.Errorf("guardar filtros: %w", err)
+		return Filters{}, fmt.Errorf("save filters: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return Filters{}, ErrNotFound
@@ -228,7 +228,7 @@ func (s *Store) AddDropped(ctx context.Context, ds []Dropped) error {
 		ON CONFLICT (project_id, day, reason) DO UPDATE SET count = dropped_events.count + EXCLUDED.count`,
 		projects, reasons, days, counts)
 	if err != nil {
-		return fmt.Errorf("contar descartados: %w", err)
+		return fmt.Errorf("count dropped: %w", err)
 	}
 	return nil
 }
@@ -253,7 +253,7 @@ type DroppedStats struct {
 // DroppedSince cuenta lo descartado del proyecto en los últimos days días (UTC), hoy incluido.
 func (s *Store) DroppedSince(ctx context.Context, projectID int64, days int, now time.Time) (DroppedStats, error) {
 	if days <= 0 || days > 3660 {
-		return DroppedStats{}, fmt.Errorf("%w: days va de 1 a 3660", ErrInvalid)
+		return DroppedStats{}, fmt.Errorf("%w: days goes from 1 to 3660", ErrInvalid)
 	}
 	if _, err := s.ProjectByID(ctx, projectID); err != nil {
 		return DroppedStats{}, err
@@ -275,7 +275,7 @@ func (s *Store) DroppedSince(ctx context.Context, projectID int64, days int, now
 	}
 	rows, err := s.pool.Query(ctx, q, projectID, from)
 	if err != nil {
-		return DroppedStats{}, fmt.Errorf("leer descartados: %w", err)
+		return DroppedStats{}, fmt.Errorf("read dropped: %w", err)
 	}
 	var d DroppedDay
 	err = db.ForEachRow(rows, []any{&d.Date, &d.Reason, &d.Count}, func() error {
@@ -287,7 +287,7 @@ func (s *Store) DroppedSince(ctx context.Context, projectID int64, days int, now
 		return nil
 	})
 	if err != nil {
-		return DroppedStats{}, fmt.Errorf("leer descartados: %w", err)
+		return DroppedStats{}, fmt.Errorf("read dropped: %w", err)
 	}
 	return st, nil
 }

@@ -86,7 +86,7 @@ func TestPgxRuleCatchesImports(t *testing.T) {
 	}
 	write("internal/alert/alert.go", "package alert\n\nimport \"github.com/jackc/pgx/v5\"\n\nvar _ pgx.Tx\n")
 	write("internal/ingest/ingest_test.go", "package ingest\n\nimport (\n\t\"fmt\"\n\tpool \"github.com/jackc/pgx/v5/pgxpool\"\n)\n")
-	write("cmd/intake-errors/main.go", "package main\n\nimport \"github.com/intake-es/intake-errors/internal/db\"\n")
+	write("cmd/mothlog/main.go", "package main\n\nimport \"github.com/intake-es/mothlog/internal/db\"\n")
 	write("internal/db/postgres.go", "package db\n\nimport \"github.com/jackc/pgx/v5\"\n")
 	write("internal/store/storetest/storetest.go", "package storetest\n\nimport \"github.com/jackc/pgx/v5/pgconn\"\n")
 	write("internal/dbx/x.go", "package dbx\n\nimport \"github.com/jackc/pgx/v5\"\n")

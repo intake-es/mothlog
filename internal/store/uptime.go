@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/netguard"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/netguard"
 )
 
 // Estados de un monitor de disponibilidad.
@@ -155,18 +155,18 @@ func ParseStatusCodes(s string) ([]StatusRange, string, error) {
 			from, err1 := strconv.Atoi(strings.TrimSpace(a))
 			to, err2 := strconv.Atoi(strings.TrimSpace(b))
 			if err1 != nil || err2 != nil {
-				return nil, "", fmt.Errorf("%w: %q no es un código ni un tramo de códigos", ErrInvalid, part)
+				return nil, "", fmt.Errorf("%w: %q is not a status code or a range of codes", ErrInvalid, part)
 			}
 			r = StatusRange{from, to}
 		default:
 			n, err := strconv.Atoi(part)
 			if err != nil {
-				return nil, "", fmt.Errorf("%w: %q no es un código ni un tramo de códigos", ErrInvalid, part)
+				return nil, "", fmt.Errorf("%w: %q is not a status code or a range of codes", ErrInvalid, part)
 			}
 			r = StatusRange{n, n}
 		}
 		if r.From < 100 || r.To > 599 || r.From > r.To {
-			return nil, "", fmt.Errorf("%w: los códigos van de 100 a 599: %q", ErrInvalid, part)
+			return nil, "", fmt.Errorf("%w: codes go from 100 to 599: %q", ErrInvalid, part)
 		}
 		out = append(out, r)
 		if r.From == r.To {
@@ -176,10 +176,10 @@ func ParseStatusCodes(s string) ([]StatusRange, string, error) {
 		}
 	}
 	if len(out) == 0 {
-		return nil, "", fmt.Errorf("%w: faltan los códigos que cuentan como bien", ErrInvalid)
+		return nil, "", fmt.Errorf("%w: missing the codes that count as up", ErrInvalid)
 	}
 	if len(out) > maxStatusRanges {
-		return nil, "", fmt.Errorf("%w: admite hasta %d códigos o tramos", ErrInvalid, maxStatusRanges)
+		return nil, "", fmt.Errorf("%w: allows up to %d codes or ranges", ErrInvalid, maxStatusRanges)
 	}
 	return out, strings.Join(canon, ","), nil
 }
@@ -207,11 +207,11 @@ func CheckUptimeURL(s string) (string, error) {
 	u, err := url.Parse(s)
 	switch {
 	case s == "" || err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "":
-		return "", fmt.Errorf("%w: la URL debe ser http o https", ErrInvalid)
+		return "", fmt.Errorf("%w: the URL must be http or https", ErrInvalid)
 	case len(s) > maxUptimeURL:
-		return "", fmt.Errorf("%w: la URL admite hasta %d caracteres", ErrInvalid, maxUptimeURL)
+		return "", fmt.Errorf("%w: the URL allows up to %d characters", ErrInvalid, maxUptimeURL)
 	case u.User != nil:
-		return "", fmt.Errorf("%w: la URL no puede llevar usuario ni clave", ErrInvalid)
+		return "", fmt.Errorf("%w: the URL can't include a user or password", ErrInvalid)
 	}
 	if err := checkHost(u.Hostname()); err != nil {
 		return "", err
@@ -225,10 +225,10 @@ func CheckUptimeURL(s string) (string, error) {
 func checkHost(hostname string) error {
 	host := strings.ToLower(strings.TrimSuffix(hostname, "."))
 	if blockedHosts[host] {
-		return fmt.Errorf("%w: la URL apunta a los metadatos de la nube", ErrInvalid)
+		return fmt.Errorf("%w: the URL points to the cloud metadata", ErrInvalid)
 	}
 	if a, err := netip.ParseAddr(host); err == nil && netguard.Classify(a) == netguard.Blocked {
-		return fmt.Errorf("%w: la URL apunta a %s, una dirección de metadatos, link-local o reservada", ErrInvalid, a.Unmap())
+		return fmt.Errorf("%w: the URL points to %s, a metadata, link-local or reserved address", ErrInvalid, a.Unmap())
 	}
 	return nil
 }
@@ -263,19 +263,19 @@ func (in UptimeInput) apply(m *UptimeMonitor) error {
 	}
 	switch {
 	case m.Slug == "" || len(m.Slug) > maxSlug || !reSlug.MatchString(m.Slug):
-		return fmt.Errorf("%w: el slug va en minúsculas, números, - y _, hasta %d caracteres", ErrInvalid, maxSlug)
+		return fmt.Errorf("%w: the slug is lowercase letters, digits, - and _, up to %d characters", ErrInvalid, maxSlug)
 	case len([]rune(m.Name)) > maxMonitorName:
-		return fmt.Errorf("%w: el nombre admite hasta %d caracteres", ErrInvalid, maxMonitorName)
+		return fmt.Errorf("%w: the name allows up to %d characters", ErrInvalid, maxMonitorName)
 	case m.Method != "GET" && m.Method != "HEAD":
-		return fmt.Errorf("%w: el método es GET o HEAD", ErrInvalid)
+		return fmt.Errorf("%w: the method is GET or HEAD", ErrInvalid)
 	case m.IntervalSeconds < MinUptimeInterval || m.IntervalSeconds > MaxUptimeInterval:
-		return fmt.Errorf("%w: interval_seconds va de %d a %d", ErrInvalid, MinUptimeInterval, MaxUptimeInterval)
+		return fmt.Errorf("%w: interval_seconds goes from %d to %d", ErrInvalid, MinUptimeInterval, MaxUptimeInterval)
 	case m.TimeoutSeconds < 1 || m.TimeoutSeconds > MaxUptimeTimeout:
-		return fmt.Errorf("%w: timeout_seconds va de 1 a %d", ErrInvalid, MaxUptimeTimeout)
+		return fmt.Errorf("%w: timeout_seconds goes from 1 to %d", ErrInvalid, MaxUptimeTimeout)
 	case m.TimeoutSeconds > m.IntervalSeconds:
-		return fmt.Errorf("%w: timeout_seconds no puede pasar de interval_seconds", ErrInvalid)
+		return fmt.Errorf("%w: timeout_seconds can't exceed interval_seconds", ErrInvalid)
 	case m.FailureThreshold < 1 || m.FailureThreshold > MaxUptimeThreshold:
-		return fmt.Errorf("%w: failure_threshold va de 1 a %d", ErrInvalid, MaxUptimeThreshold)
+		return fmt.Errorf("%w: failure_threshold goes from 1 to %d", ErrInvalid, MaxUptimeThreshold)
 	}
 	var err error
 	if m.URL, err = CheckUptimeURL(m.URL); err != nil {
@@ -336,17 +336,17 @@ func (s *Store) ListUptimeMonitors(ctx context.Context, f UptimeFilter, now time
 		args = append(args, f.Status)
 		where = append(where, "m.status = $"+strconv.Itoa(len(args))+" AND NOT m.paused")
 	default:
-		return nil, fmt.Errorf("%w: status es up, down, pending o paused", ErrInvalid)
+		return nil, fmt.Errorf("%w: status is up, down, pending or paused", ErrInvalid)
 	}
 	rows, err := s.pool.Query(ctx, `SELECT `+uptimeColumns+uptimeFrom+`
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY m.status = 'down' AND NOT m.paused DESC, `+s.pool.Dialect().Collate("p.name")+`, `+s.pool.Dialect().Collate("m.name")+`, `+s.pool.Dialect().Collate("m.slug"), args...)
 	if err != nil {
-		return nil, fmt.Errorf("leer monitores de disponibilidad: %w", err)
+		return nil, fmt.Errorf("read uptime monitors: %w", err)
 	}
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (UptimeMonitor, error) { return scanUptime(r) })
 	if err != nil {
-		return nil, fmt.Errorf("leer monitores de disponibilidad: %w", err)
+		return nil, fmt.Errorf("read uptime monitors: %w", err)
 	}
 	if len(out) == 0 {
 		return []UptimeMonitor{}, nil
@@ -375,14 +375,14 @@ func (s *Store) ListUptimeMonitors(ctx context.Context, f UptimeFilter, now time
 			WHERE monitor_id = m.id ORDER BY checked_at DESC, id DESC LIMIT $2)
 		ORDER BY c.monitor_id, c.checked_at DESC, c.id DESC`), ids, RecentUptimeChecks)
 	if err != nil {
-		return nil, fmt.Errorf("leer comprobaciones: %w", err)
+		return nil, fmt.Errorf("read checks: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
 		var c UptimeCheck
 		if err := rows.Scan(&id, &c.CheckedAt, &c.OK, &c.StatusCode, &c.DurationMs, &c.Error); err != nil {
-			return nil, fmt.Errorf("leer comprobaciones: %w", err)
+			return nil, fmt.Errorf("read checks: %w", err)
 		}
 		out[idx[id]].Recent = append(out[idx[id]].Recent, c)
 	}
@@ -398,7 +398,7 @@ func (s *Store) fillAvailability(ctx context.Context, list []UptimeMonitor, idx 
 		SELECT monitor_id, started_at, ended_at FROM uptime_incidents
 		WHERE `+s.pool.Dialect().InList("monitor_id", "$1")+` AND (ended_at IS NULL OR ended_at > $2)`, ids, now.Add(-uptimeAvailabilityWindow))
 	if err != nil {
-		return fmt.Errorf("leer incidentes: %w", err)
+		return fmt.Errorf("read incidents: %w", err)
 	}
 	down := map[int64][]span{}
 	for rows.Next() {
@@ -407,7 +407,7 @@ func (s *Store) fillAvailability(ctx context.Context, list []UptimeMonitor, idx 
 		var end *time.Time
 		if err := rows.Scan(&id, &sp.from, &end); err != nil {
 			rows.Close()
-			return fmt.Errorf("leer incidentes: %w", err)
+			return fmt.Errorf("read incidents: %w", err)
 		}
 		sp.to = now
 		if end != nil {
@@ -417,7 +417,7 @@ func (s *Store) fillAvailability(ctx context.Context, list []UptimeMonitor, idx 
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("leer incidentes: %w", err)
+		return fmt.Errorf("read incidents: %w", err)
 	}
 	for _, id := range ids {
 		m := &list[idx[id]]
@@ -468,7 +468,7 @@ func (s *Store) UptimeMonitor(ctx context.Context, projectID int64, slug string)
 		return UptimeMonitor{}, ErrNotFound
 	}
 	if err != nil {
-		return UptimeMonitor{}, fmt.Errorf("leer monitor de disponibilidad: %w", err)
+		return UptimeMonitor{}, fmt.Errorf("read uptime monitor: %w", err)
 	}
 	return m, nil
 }
@@ -494,27 +494,27 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 		SELECT id, monitor_id, started_at, ended_at, duration_ms, first_error FROM uptime_incidents
 		WHERE monitor_id = $1 ORDER BY started_at DESC, id DESC LIMIT $2`, m.ID, uptimeDetailIncidents)
 	if err != nil {
-		return d, fmt.Errorf("leer incidentes: %w", err)
+		return d, fmt.Errorf("read incidents: %w", err)
 	}
 	if d.Incidents, err = db.CollectRows(rows, func(r db.CollectableRow) (UptimeIncident, error) {
 		var i UptimeIncident
 		err := r.Scan(&i.ID, &i.MonitorID, &i.StartedAt, &i.EndedAt, &i.DurationMs, &i.FirstError)
 		return i, err
 	}); err != nil {
-		return d, fmt.Errorf("leer incidentes: %w", err)
+		return d, fmt.Errorf("read incidents: %w", err)
 	}
 	rows, err = s.pool.Query(ctx, `
 		SELECT checked_at, ok, status_code, duration_ms, error FROM uptime_checks
 		WHERE monitor_id = $1 ORDER BY checked_at DESC, id DESC LIMIT $2`, m.ID, uptimeDetailChecks)
 	if err != nil {
-		return d, fmt.Errorf("leer comprobaciones: %w", err)
+		return d, fmt.Errorf("read checks: %w", err)
 	}
 	if d.Checks, err = db.CollectRows(rows, func(r db.CollectableRow) (UptimeCheck, error) {
 		var c UptimeCheck
 		err := r.Scan(&c.CheckedAt, &c.OK, &c.StatusCode, &c.DurationMs, &c.Error)
 		return c, err
 	}); err != nil {
-		return d, fmt.Errorf("leer comprobaciones: %w", err)
+		return d, fmt.Errorf("read checks: %w", err)
 	}
 	since := now.Add(-ResponseTimeWindow).Truncate(ResponseTimeBucket)
 	// El tramo de cada comprobación; en SQLite, con las fechas y el paso en microsegundos.
@@ -528,14 +528,14 @@ func (s *Store) UptimeDetail(ctx context.Context, m UptimeMonitor, now time.Time
 		FROM uptime_checks WHERE monitor_id = $1 AND checked_at >= $2 AND checked_at <= $4
 		GROUP BY at ORDER BY at`, m.ID, since, step, now)
 	if err != nil {
-		return d, fmt.Errorf("leer tiempos de respuesta: %w", err)
+		return d, fmt.Errorf("read response times: %w", err)
 	}
 	if d.ResponseTimes, err = db.CollectRows(rows, func(r db.CollectableRow) (ResponseTimes, error) {
 		var b ResponseTimes
 		err := r.Scan(&b.At, &b.AvgMs, &b.MaxMs, &b.Checks, &b.Failures)
 		return b, err
 	}); err != nil {
-		return d, fmt.Errorf("leer tiempos de respuesta: %w", err)
+		return d, fmt.Errorf("read response times: %w", err)
 	}
 	if d.Incidents == nil {
 		d.Incidents = []UptimeIncident{}
@@ -573,10 +573,10 @@ func (s *Store) CreateUptimeMonitor(ctx context.Context, projectID int64, in Upt
 		return UptimeMonitor{}, ErrNotFound
 	}
 	if uniqueViolation(err) {
-		return UptimeMonitor{}, fmt.Errorf("%w: ya hay un monitor de disponibilidad %q en el proyecto", ErrInvalid, m.Slug)
+		return UptimeMonitor{}, fmt.Errorf("%w: there is already an uptime monitor %q in the project", ErrInvalid, m.Slug)
 	}
 	if err != nil {
-		return UptimeMonitor{}, fmt.Errorf("guardar monitor de disponibilidad: %w", err)
+		return UptimeMonitor{}, fmt.Errorf("save uptime monitor: %w", err)
 	}
 	return s.UptimeMonitor(ctx, projectID, m.Slug)
 }
@@ -619,7 +619,7 @@ func (s *Store) UpdateUptimeMonitor(ctx context.Context, projectID int64, slug s
 					UPDATE uptime_incidents SET ended_at = `+end+`,
 						duration_ms = CAST((`+tx.Dialect().SecondsBetween(end, "started_at")+` * 1000) AS bigint)
 					WHERE monitor_id = $1 AND ended_at IS NULL`, m.ID, now.UTC()); err != nil {
-					return fmt.Errorf("cerrar incidente: %w", err)
+					return fmt.Errorf("close incident: %w", err)
 				}
 				m.Status = UptimePending
 			}
@@ -632,7 +632,7 @@ func (s *Store) UpdateUptimeMonitor(ctx context.Context, projectID int64, slug s
 			WHERE id = $1`, m.ID, m.Slug, m.Name, m.URL, m.Method, m.IntervalSeconds, m.TimeoutSeconds,
 			m.ExpectedStatus, m.FailureThreshold, m.Paused, next, failures, firstAt, firstErr, m.Status)
 		if uniqueViolation(err) {
-			return fmt.Errorf("%w: ya hay un monitor de disponibilidad %q en el proyecto", ErrInvalid, m.Slug)
+			return fmt.Errorf("%w: there is already an uptime monitor %q in the project", ErrInvalid, m.Slug)
 		}
 		out = m
 		return err
@@ -654,7 +654,7 @@ func nullIfEmpty(s string) *string {
 func (s *Store) DeleteUptimeMonitor(ctx context.Context, projectID int64, slug string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM uptime_monitors WHERE project_id = $1 AND slug = $2`, projectID, slug)
 	if err != nil {
-		return fmt.Errorf("borrar monitor de disponibilidad: %w", err)
+		return fmt.Errorf("delete uptime monitor: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -683,7 +683,7 @@ func (s *Store) ClaimUptimeChecks(ctx context.Context, now time.Time, limit int)
 		WHERE m.id = due.due_id
 		RETURNING id, url, method, timeout_seconds, expected_status`, now.UTC(), limit)
 	if err != nil {
-		return nil, fmt.Errorf("reservar comprobaciones: %w", err)
+		return nil, fmt.Errorf("reserve checks: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (UptimeTarget, error) {
 		var t UptimeTarget
@@ -722,7 +722,7 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("leer monitor de disponibilidad: %w", err)
+			return fmt.Errorf("read uptime monitor: %w", err)
 		}
 		if m.Paused {
 			return nil
@@ -730,7 +730,7 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO uptime_checks (monitor_id, checked_at, ok, status_code, duration_ms, error)
 			VALUES ($1, $2, $3, $4, $5, $6)`, m.ID, c.CheckedAt, c.OK, c.StatusCode, c.DurationMs, c.Error); err != nil {
-			return fmt.Errorf("guardar comprobación: %w", err)
+			return fmt.Errorf("save check: %w", err)
 		}
 		var inc UptimeIncident
 		if c.OK {
@@ -745,7 +745,7 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 				if err == nil {
 					kind = KindUptimeUp
 				} else if !errors.Is(err, db.ErrNoRows) {
-					return fmt.Errorf("cerrar incidente: %w", err)
+					return fmt.Errorf("close incident: %w", err)
 				}
 			}
 			m.Status, m.ConsecutiveFailures, m.firstFailureAt, m.firstFailureError = UptimeUp, 0, nil, ""
@@ -762,7 +762,7 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 					m.ID, *m.firstFailureAt, m.firstFailureError).
 					Scan(&inc.ID, &inc.MonitorID, &inc.StartedAt, &inc.EndedAt, &inc.DurationMs, &inc.FirstError)
 				if err != nil {
-					return fmt.Errorf("abrir incidente: %w", err)
+					return fmt.Errorf("open incident: %w", err)
 				}
 				m.Status, m.DownSince, kind = UptimeDown, &inc.StartedAt, KindUptimeDown
 			}
@@ -774,7 +774,7 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 				first_failure_error = $5, last_checked_at = $6, last_status_code = $7, last_duration_ms = $8, last_error = $9
 			WHERE id = $1`, m.ID, m.Status, m.ConsecutiveFailures, m.firstFailureAt, nullIfEmpty(m.firstFailureError),
 			c.CheckedAt, c.StatusCode, c.DurationMs, c.Error); err != nil {
-			return fmt.Errorf("actualizar monitor de disponibilidad: %w", err)
+			return fmt.Errorf("update uptime monitor: %w", err)
 		}
 		if kind == "" || notify == nil {
 			return nil
@@ -791,7 +791,7 @@ func (s *Store) RecordUptimeCheck(ctx context.Context, monitorID int64, c Uptime
 func (s *Store) PurgeUptimeChecks(ctx context.Context, cutoff time.Time) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM uptime_checks WHERE checked_at < $1`, cutoff)
 	if err != nil {
-		return 0, fmt.Errorf("borrar comprobaciones: %w", err)
+		return 0, fmt.Errorf("delete checks: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }

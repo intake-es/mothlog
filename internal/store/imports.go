@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // maxImportedTitle es el mismo tope que pone la ingesta a los títulos.
@@ -67,7 +67,7 @@ func findOrigin(ctx context.Context, q Querier, o Origin, kind, externalID strin
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("buscar lo importado: %w", err)
+		return nil, fmt.Errorf("find imported: %w", err)
 	}
 	return &r, nil
 }
@@ -87,7 +87,7 @@ func saveOrigin(ctx context.Context, q Querier, o Origin, kind, externalID strin
 			deploy_id = EXCLUDED.deploy_id, imported = EXCLUDED.imported, updated_at = now()`,
 		o.Source, o.Server, o.Org, kind, externalID, localID, json.RawMessage(data))
 	if err != nil {
-		return fmt.Errorf("apuntar de dónde viene: %w", err)
+		return fmt.Errorf("record origin: %w", err)
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func saveOrigin(ctx context.Context, q Querier, o Origin, kind, externalID strin
 // que se usa tal cual, y si no hay ninguno lo crea. En una prueba, un
 // proyecto que se crearía devuelve id 0.
 func (s *Store) ImportProject(ctx context.Context, o Origin, externalID, name string, dry bool) (int64, ImportAction, error) {
-	name, err := validName("el nombre del proyecto", name)
+	name, err := validName("the project name", name)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -121,10 +121,10 @@ func (s *Store) ImportProject(ctx context.Context, o Origin, externalID, name st
 			_, _ = rand.Read(key)
 			if err := tx.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ($1, $2) RETURNING id`,
 				name, hex.EncodeToString(key)).Scan(&id); err != nil {
-				return fmt.Errorf("crear proyecto: %w", err)
+				return fmt.Errorf("create project: %w", err)
 			}
 		case err != nil:
-			return fmt.Errorf("buscar proyecto: %w", err)
+			return fmt.Errorf("find project: %w", err)
 		}
 		if dry {
 			return nil
@@ -182,12 +182,12 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 				if err := tx.QueryRow(ctx, `
 					INSERT INTO releases (project_id, version, first_seen, finalized_at, declared_at) VALUES ($1, $2, $3, $4, $5)
 					RETURNING id`, projectID, version, r.Created, r.Released, time.Now()).Scan(&id); err != nil {
-					return fmt.Errorf("crear release: %w", err)
+					return fmt.Errorf("create release: %w", err)
 				}
 				return saveOrigin(ctx, tx, o, "release", r.ExternalID, id, r)
 			}
 			if err != nil {
-				return fmt.Errorf("buscar release: %w", err)
+				return fmt.Errorf("find release: %w", err)
 			}
 		}
 		var changed bool
@@ -195,7 +195,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 			SELECT first_seen > $2 OR (finalized_at IS NULL AND `+tx.Dialect().Typed("$3", "timestamptz")+` IS NOT NULL)
 			FROM releases WHERE id = $1`, id, r.Created, r.Released).Scan(&changed)
 		if err != nil {
-			return fmt.Errorf("leer release: %w", err)
+			return fmt.Errorf("read release: %w", err)
 		}
 		if changed || prev != nil {
 			act = ImportUpdated
@@ -207,7 +207,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 			if _, err := tx.Exec(ctx, `
 				UPDATE releases SET first_seen = `+tx.Dialect().Least("first_seen", "$2")+`, finalized_at = COALESCE(finalized_at, $3)
 				WHERE id = $1`, id, r.Created, r.Released); err != nil {
-				return fmt.Errorf("actualizar release: %w", err)
+				return fmt.Errorf("update release: %w", err)
 			}
 		}
 		if err := declareRelease(ctx, tx, id, time.Now()); err != nil {
@@ -222,7 +222,7 @@ func (s *Store) ImportRelease(ctx context.Context, o Origin, projectID int64, r 
 // resolvió allí ya viene en el estado de cada issue.
 func (s *Store) ImportDeploy(ctx context.Context, o Origin, releaseID int64, externalID, environment string,
 	at time.Time, dry bool) (ImportAction, error) {
-	environment, err := validName("el entorno", environment)
+	environment, err := validName("the environment", environment)
 	if err != nil {
 		return 0, err
 	}
@@ -239,7 +239,7 @@ func (s *Store) ImportDeploy(ctx context.Context, o Origin, releaseID int64, ext
 		var id int64
 		if err := tx.QueryRow(ctx, `INSERT INTO deploys (release_id, environment, deployed_at) VALUES ($1, $2, $3) RETURNING id`,
 			releaseID, environment, at).Scan(&id); err != nil {
-			return fmt.Errorf("crear despliegue: %w", err)
+			return fmt.Errorf("create deploy: %w", err)
 		}
 		return saveOrigin(ctx, tx, o, "deploy", externalID, id, map[string]any{"environment": environment, "at": at.UTC()})
 	})
@@ -305,7 +305,7 @@ func importFingerprint(o Origin, externalID string) string {
 func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in ImportedIssue, dry bool) (ImportIssueResult, error) {
 	in.FirstSeen, in.LastSeen = in.FirstSeen.UTC(), in.LastSeen.UTC()
 	if in.Title == "" {
-		in.Title = "(sin mensaje)"
+		in.Title = "(no message)"
 	}
 	if r := []rune(in.Title); len(r) > maxImportedTitle {
 		in.Title = string(r[:maxImportedTitle-1]) + "…"
@@ -343,13 +343,13 @@ func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in I
 				lock = ""
 			}
 			if err := tx.QueryRow(ctx, `SELECT fingerprint FROM issues WHERE id = $1`+lock, res.ID).Scan(&current); err != nil {
-				return fmt.Errorf("leer issue: %w", err)
+				return fmt.Errorf("read issue: %w", err)
 			}
 			fp = current
 		}
 		switch in.Fingerprint {
 		case "":
-			res.NotGrouped = "no tiene ningún evento del que sacar la huella"
+			res.NotGrouped = "it has no event to take the fingerprint from"
 		case current:
 			res.Grouped = true
 		default:
@@ -360,9 +360,9 @@ func (s *Store) ImportIssue(ctx context.Context, o Origin, projectID int64, in I
 			case errors.Is(err, db.ErrNoRows):
 				fp, res.Grouped = in.Fingerprint, true
 			case err != nil:
-				return fmt.Errorf("buscar huella: %w", err)
+				return fmt.Errorf("find fingerprint: %w", err)
 			default:
-				res.NotGrouped = fmt.Sprintf("su huella ya es la del issue %d", other)
+				res.NotGrouped = fmt.Sprintf("its fingerprint already belongs to issue %d", other)
 			}
 		}
 		if prev == nil {
@@ -390,7 +390,7 @@ func createImportedIssue(ctx context.Context, tx db.Tx, o Origin, projectID int6
 		projectID, fp, in.Title, in.Culprit, in.Type, in.Level, in.Status, nullIfEmpty(in.FixedIn), nullIfEmpty(in.ResolvedIn),
 		in.FirstSeen, in.LastSeen, in.Count, in.UserCount, nullIfEmpty(in.FirstRelease)).Scan(&res.ID)
 	if err != nil {
-		return fmt.Errorf("crear issue: %w", err)
+		return fmt.Errorf("create issue: %w", err)
 	}
 	if in.Status != "open" {
 		if err := recordStatusChange(ctx, tx, res.ID, nil, SourceImport, "open", in.Status, statusRelease(in), nil); err != nil {
@@ -416,7 +416,7 @@ func updateImportedIssue(ctx context.Context, tx db.Tx, o Origin, in, old Import
 		FROM issues WHERE id = $1`, res.ID).Scan(&cur.fingerprint, &cur.title, &cur.culprit, &cur.typ, &cur.level,
 		&cur.status, &cur.fixedIn, &cur.resolvedIn, &cur.count, &cur.users, &cur.firstSeen, &cur.lastSeen, &cur.firstRelease)
 	if err != nil {
-		return fmt.Errorf("leer issue: %w", err)
+		return fmt.Errorf("read issue: %w", err)
 	}
 	next := cur
 	if next.firstRelease == "" {
@@ -462,7 +462,7 @@ func updateImportedIssue(ctx context.Context, tx db.Tx, o Origin, in, old Import
 		nullIfEmpty(next.fixedIn), nullIfEmpty(next.resolvedIn), next.count, next.users, next.firstSeen, next.lastSeen,
 		nullIfEmpty(next.firstRelease))
 	if err != nil {
-		return fmt.Errorf("actualizar issue: %w", err)
+		return fmt.Errorf("update issue: %w", err)
 	}
 	if next.status != cur.status || next.fixedIn != cur.fixedIn || next.resolvedIn != cur.resolvedIn {
 		if StatusCategory(cur.status) != StatusCategory(next.status) {
@@ -494,7 +494,7 @@ func (s *Store) HasEvent(ctx context.Context, projectID int64, eventID string) (
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM events WHERE project_id = $1 AND event_id = $2)`,
 		projectID, eventID).Scan(&ok)
 	if err != nil {
-		return false, fmt.Errorf("buscar evento: %w", err)
+		return false, fmt.Errorf("find event: %w", err)
 	}
 	return ok, nil
 }
@@ -509,7 +509,7 @@ func (s *Store) SettleImportedUsers(ctx context.Context, issueID, users int64) e
 		WHERE id = $1 AND user_count IS DISTINCT FROM `+n,
 		issueID, users)
 	if err != nil {
-		return fmt.Errorf("contar usuarios: %w", err)
+		return fmt.Errorf("count users: %w", err)
 	}
 	return nil
 }

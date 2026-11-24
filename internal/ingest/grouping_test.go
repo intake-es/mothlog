@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 func ptr[T any](v T) *T { return &v }

@@ -14,14 +14,15 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/netguard"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/netguard"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // errGone es un aviso que ya no se puede enviar nunca, como el de una acción
 // que se ha quitado de su regla: se abandona sin reintentos.
-var errGone = errors.New("la acción ya no existe en la regla")
+var errGone = errors.New("the action no longer exists in the rule")
 
 // ruleDetail es lo que hizo saltar la regla, para escribirlo en el aviso.
 type ruleDetail struct {
@@ -35,25 +36,27 @@ const kindTest = "test"
 // kindText da qué ha pasado («Nuevo error») y el principio del texto de
 // respaldo («Nuevo error en »), al que sigue el proyecto.
 func kindText(p *pending) (string, string) {
+	tr := p.l.T
+	in := tr(" in ", " en ")
 	switch p.kind {
 	case "regressed":
-		return "Ha vuelto", "Ha vuelto un error en "
+		return tr("Regression", "Ha vuelto"), tr("Regression in ", "Ha vuelto un error en ")
 	case "frequency":
-		s := fmt.Sprintf("Más de %d eventos en %s", p.detail.Events, windowText(p.detail.WindowMinutes))
-		return s, s + " en "
+		s := p.l.F("More than %d events in %s", "Más de %d eventos en %s", p.detail.Events, windowText(p.detail.WindowMinutes))
+		return s, s + in
 	case "users":
-		s := fmt.Sprintf("Más de %d usuarios afectados", p.detail.Users)
-		return s, s + " en "
+		s := p.l.F("More than %d affected users", "Más de %d usuarios afectados", p.detail.Users)
+		return s, s + in
 	case kindTest:
-		return "Aviso de prueba", "Aviso de prueba de "
+		return tr("Test alert", "Aviso de prueba"), tr("Test alert from ", "Aviso de prueba de ")
 	case store.KindCronFailed, store.KindCronMissed, store.KindCronTimeout, store.KindCronRecovered:
-		s := cronKindText(p.kind)
-		return s, s + " en "
+		s := cronKindText(p.kind, p.l)
+		return s, s + in
 	case store.KindUptimeDown, store.KindUptimeUp:
-		s := uptimeKindText(p.kind)
-		return s, s + " en "
+		s := uptimeKindText(p.kind, p.l)
+		return s, s + in
 	default:
-		return "Nuevo error", "Nuevo error en "
+		return tr("New error", "Nuevo error"), tr("New error in ", "Nuevo error en ")
 	}
 }
 
@@ -100,10 +103,10 @@ func summarize(p *pending) summary {
 		s.Meta = append(s.Meta, p.environment)
 	}
 	if p.kind == "regressed" && p.resolvedAt != nil {
-		s.Meta = append(s.Meta, "se resolvió el "+spanishDate(*p.resolvedAt, p.eventAt))
+		s.Meta = append(s.Meta, resolvedOn(p.l, *p.resolvedAt, p.eventAt))
 	}
 	if f := failingFrame(p.ev); f != nil {
-		s.Location = frameLocation(f)
+		s.Location = frameLocation(f, p.l)
 		s.Code = strings.TrimSpace(oneLine(f.ContextLine))
 	} else if c := oneLine(p.culprit); c != "" {
 		s.Location = c
@@ -121,20 +124,20 @@ func summarize(p *pending) summary {
 	}
 	add("Release", release)
 	if p.kind == "regressed" || p.kind == "frequency" || p.kind == "users" {
-		add("Eventos", strconv.FormatInt(p.count, 10)+" en total")
+		add(p.l.T("Events", "Eventos"), p.l.F("%d in total", "%d en total", p.count))
 	}
 	if ev := p.ev; ev != nil {
 		if ev.User != nil && strings.TrimSpace(ev.User.ID) != "" {
-			add("Usuario", ev.User.ID)
+			add(p.l.T("User", "Usuario"), ev.User.ID)
 		} else if r := requestText(ev.Request); r != "" {
-			add("Petición", r)
+			add(p.l.T("Request", "Petición"), r)
 		}
 	}
 	return s
 }
 
 // frameLocation es «fichero:línea en función».
-func frameLocation(f *event.Frame) string {
+func frameLocation(f *event.Frame, l lang.Lang) string {
 	file := f.Filename
 	if file == "" {
 		file = f.AbsPath
@@ -146,7 +149,7 @@ func frameLocation(f *event.Frame) string {
 		file += ":" + strconv.Itoa(f.Line)
 	}
 	if fn := oneLine(f.Function); fn != "" {
-		return file + " en " + fn
+		return file + l.T(" in ", " en ") + fn
 	}
 	return file
 }
@@ -197,7 +200,7 @@ func post(ctx context.Context, client *http.Client, name, url string, body []byt
 		req.Header[k] = v
 	}
 	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "intake-errors")
+		req.Header.Set("User-Agent", UserAgent)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -236,9 +239,9 @@ func publicError(err error) string {
 	case errors.As(err, &be):
 		return ce.name + ": " + be.Reason()
 	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &ne) && ne.Timeout():
-		return ce.name + ": sin respuesta del destino"
+		return ce.name + ": no response from the destination"
 	}
-	return ce.name + ": no se pudo conectar con el destino"
+	return ce.name + ": could not connect to the destination"
 }
 
 func newUUID() string {

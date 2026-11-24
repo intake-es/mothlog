@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -91,11 +91,11 @@ func (s *Service) check(ctx context.Context, t store.UptimeTarget) {
 	kind, err := s.st.RecordUptimeCheck(ctx, t.ID, res, s.notify)
 	switch {
 	case err != nil:
-		s.log.ErrorContext(ctx, "guardar comprobación", "monitor", t.ID, "err", err)
+		s.log.ErrorContext(ctx, "save check", "monitor", t.ID, "err", err)
 	case kind == store.KindUptimeDown:
-		s.log.WarnContext(ctx, "monitor caído", "monitor", t.ID, "error", res.Error)
+		s.log.WarnContext(ctx, "monitor down", "monitor", t.ID, "error", res.Error)
 	case kind == store.KindUptimeUp:
-		s.log.InfoContext(ctx, "monitor recuperado", "monitor", t.ID)
+		s.log.InfoContext(ctx, "monitor up", "monitor", t.ID)
 	}
 }
 
@@ -107,14 +107,14 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 	var purged time.Time
 	for {
 		if _, err := s.Tick(ctx); err != nil && ctx.Err() == nil {
-			s.log.ErrorContext(ctx, "comprobar monitores de disponibilidad", "err", err)
+			s.log.ErrorContext(ctx, "check uptime monitors", "err", err)
 		}
 		if now := s.Now(); now.Sub(purged) >= time.Hour {
 			purged = now
 			if n, err := s.st.PurgeUptimeChecks(ctx, now.Add(-Retention)); err != nil && ctx.Err() == nil {
-				s.log.ErrorContext(ctx, "retención de comprobaciones", "err", err)
+				s.log.ErrorContext(ctx, "check retention", "err", err)
 			} else if n > 0 {
-				s.log.InfoContext(ctx, "retención", "comprobaciones", n)
+				s.log.InfoContext(ctx, "retention", "checks", n)
 			}
 		}
 		select {

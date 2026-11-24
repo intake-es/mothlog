@@ -93,7 +93,7 @@ func sqliteValue(a any) (any, error) {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		u := rv.Uint()
 		if u > math.MaxInt64 {
-			return nil, fmt.Errorf("%d no cabe en un entero de SQLite", u)
+			return nil, fmt.Errorf("%d doesn't fit in an SQLite integer", u)
 		}
 		return int64(u), nil
 	case reflect.Float32, reflect.Float64:
@@ -119,7 +119,7 @@ func sqliteValue(a any) (any, error) {
 		}
 		return string(b), nil
 	}
-	return nil, fmt.Errorf("tipo %T sin conversión a SQLite", a)
+	return nil, fmt.Errorf("type %T has no conversion to SQLite", a)
 }
 
 // jsonList es una lista como array JSON, con los elementos como los guarda
@@ -185,7 +185,7 @@ func assign(dest, src any) error {
 	}
 	dv := reflect.ValueOf(dest)
 	if dv.Kind() != reflect.Pointer || dv.IsNil() {
-		return fmt.Errorf("destino %T no es un puntero", dest)
+		return fmt.Errorf("destination %T is not a pointer", dest)
 	}
 	return assignValue(dv.Elem(), src)
 }
@@ -234,7 +234,7 @@ func assignValue(v reflect.Value, src any) error {
 			case string:
 				v.SetBytes([]byte(s))
 			default:
-				return fmt.Errorf("no se puede leer %T en %s", src, t)
+				return fmt.Errorf("can't read %T into %s", src, t)
 			}
 			return nil
 		}
@@ -248,17 +248,17 @@ func assignValue(v reflect.Value, src any) error {
 		case []byte:
 			b = s
 		default:
-			return fmt.Errorf("no se puede leer %T en %s", src, t)
+			return fmt.Errorf("can't read %T into %s", src, t)
 		}
 		n := reflect.New(t)
 		if err := json.Unmarshal(b, n.Interface()); err != nil {
-			return fmt.Errorf("leer JSON en %s: %w", t, err)
+			return fmt.Errorf("read JSON into %s: %w", t, err)
 		}
 		v.Set(n.Elem())
 		return nil
 	}
 	if src == nil {
-		return fmt.Errorf("no se puede leer NULL en %s", t)
+		return fmt.Errorf("can't read NULL into %s", t)
 	}
 	switch t.Kind() {
 	case reflect.String:
@@ -272,7 +272,7 @@ func assignValue(v reflect.Value, src any) error {
 		case float64:
 			v.SetString(strconv.FormatFloat(s, 'g', -1, 64))
 		default:
-			return fmt.Errorf("no se puede leer %T en %s", src, t)
+			return fmt.Errorf("can't read %T into %s", src, t)
 		}
 	case reflect.Bool:
 		switch s := src.(type) {
@@ -289,7 +289,7 @@ func assignValue(v reflect.Value, src any) error {
 			}
 			v.SetBool(b)
 		default:
-			return fmt.Errorf("no se puede leer %T en %s", src, t)
+			return fmt.Errorf("can't read %T into %s", src, t)
 		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		n, err := toInt(src)
@@ -297,7 +297,7 @@ func assignValue(v reflect.Value, src any) error {
 			return err
 		}
 		if v.OverflowInt(n) {
-			return fmt.Errorf("%d no cabe en %s", n, t)
+			return fmt.Errorf("%d doesn't fit in %s", n, t)
 		}
 		v.SetInt(n)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -306,7 +306,7 @@ func assignValue(v reflect.Value, src any) error {
 			return err
 		}
 		if n < 0 || v.OverflowUint(uint64(n)) {
-			return fmt.Errorf("%d no cabe en %s", n, t)
+			return fmt.Errorf("%d doesn't fit in %s", n, t)
 		}
 		v.SetUint(uint64(n))
 	case reflect.Float32, reflect.Float64:
@@ -322,10 +322,10 @@ func assignValue(v reflect.Value, src any) error {
 			}
 			v.SetFloat(f)
 		default:
-			return fmt.Errorf("no se puede leer %T en %s", src, t)
+			return fmt.Errorf("can't read %T into %s", src, t)
 		}
 	default:
-		return fmt.Errorf("no se puede leer %T en %s", src, t)
+		return fmt.Errorf("can't read %T into %s", src, t)
 	}
 	return nil
 }
@@ -346,7 +346,7 @@ func toInt(src any) (int64, error) {
 	case []byte:
 		return strconv.ParseInt(string(s), 10, 64)
 	}
-	return 0, fmt.Errorf("no se puede leer %T como entero", src)
+	return 0, fmt.Errorf("can't read %T as an integer", src)
 }
 
 // toTime lee una fecha: microsegundos desde 1970, o un día AAAA-MM-DD.
@@ -366,7 +366,7 @@ func toTime(src any) (time.Time, error) {
 		}
 		return time.Parse(time.RFC3339Nano, s)
 	case nil:
-		return time.Time{}, fmt.Errorf("no se puede leer NULL en time.Time")
+		return time.Time{}, fmt.Errorf("can't read NULL into time.Time")
 	}
-	return time.Time{}, fmt.Errorf("no se puede leer %T como fecha", src)
+	return time.Time{}, fmt.Errorf("can't read %T as a time", src)
 }

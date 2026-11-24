@@ -19,8 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -63,13 +63,13 @@ type Metrics struct {
 func New(src Source, log *slog.Logger) *Metrics {
 	return &Metrics{
 		src: src, log: log, now: time.Now,
-		received: newVec("intake_events_received_total", "Eventos recibidos en envíos con clave válida.", "project"),
-		saved:    newVec("intake_events_saved_total", "Eventos guardados.", "project"),
-		dropped:  newVec("intake_events_dropped_total", "Eventos descartados, por motivo.", "project", "reason"),
-		rejected: newVec("intake_envelopes_rejected_total", "Envíos rechazados por la ingesta, por código HTTP.", "code"),
-		checkIns: newVec("intake_checkins_received_total", "Check-ins de cron recibidos, por estado.", "status"),
-		requests: newVec("intake_http_requests_total", "Peticiones a la API y al MCP, por ruta y código.", "method", "route", "code"),
-		ingest:   newHistogram("intake_ingest_duration_seconds", "Tiempo de ingesta de cada envío aceptado.", IngestBuckets),
+		received: newVec("mothlog_events_received_total", "Events received in envelopes with a valid key.", "project"),
+		saved:    newVec("mothlog_events_saved_total", "Events saved.", "project"),
+		dropped:  newVec("mothlog_events_dropped_total", "Events dropped, by reason.", "project", "reason"),
+		rejected: newVec("mothlog_envelopes_rejected_total", "Envelopes rejected by ingestion, by HTTP status.", "code"),
+		checkIns: newVec("mothlog_checkins_received_total", "Cron check-ins received, by status.", "status"),
+		requests: newVec("mothlog_http_requests_total", "Requests to the API and the MCP, by route and status.", "method", "route", "code"),
+		ingest:   newHistogram("mothlog_ingest_duration_seconds", "Ingestion time of each accepted envelope.", IngestBuckets),
 	}
 }
 
@@ -123,7 +123,7 @@ func (m *Metrics) Handler(token string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="metrics"`)
-			http.Error(w, "token no válido", http.StatusUnauthorized)
+			http.Error(w, "invalid token", http.StatusUnauthorized)
 			return
 		}
 		var buf bytes.Buffer
@@ -161,7 +161,7 @@ func (m *Metrics) snapshot(ctx context.Context) (store.MetricsSnapshot, bool, ti
 	m.snapAt = m.now()
 	m.snap, m.snapOK = snap, err == nil
 	if err != nil && m.log != nil {
-		m.log.WarnContext(ctx, "métricas: no se pudo leer la base", "err", err)
+		m.log.WarnContext(ctx, "metrics: could not read the database", "err", err)
 	}
 	return m.snap, m.snapOK, m.snapTook
 }
@@ -173,49 +173,49 @@ var (
 
 func (m *Metrics) writeSnapshot(ctx context.Context, w *bufio.Writer) {
 	snap, ok, took := m.snapshot(ctx)
-	family(w, "intake_metrics_db_up", "1 si la última lectura de la base para /metrics fue bien.", "gauge")
-	sample(w, "intake_metrics_db_up", nil, boolFloat(ok))
-	family(w, "intake_metrics_db_duration_seconds", "Lo que tardó la última lectura de la base para /metrics.", "gauge")
-	sample(w, "intake_metrics_db_duration_seconds", nil, took.Seconds())
+	family(w, "mothlog_metrics_db_up", "1 if the last database read for /metrics succeeded.", "gauge")
+	sample(w, "mothlog_metrics_db_up", nil, boolFloat(ok))
+	family(w, "mothlog_metrics_db_duration_seconds", "How long the last database read for /metrics took.", "gauge")
+	sample(w, "mothlog_metrics_db_duration_seconds", nil, took.Seconds())
 	if ok {
-		family(w, "intake_alert_outbox", "Avisos en la tabla de salida, por canal y estado.", "gauge")
+		family(w, "mothlog_alert_outbox", "Alerts in the outbox, by channel and status.", "gauge")
 		for _, o := range snap.Outbox {
-			sample(w, "intake_alert_outbox", []string{"channel", o.Channel, "status", "pending"}, float64(o.Pending))
-			sample(w, "intake_alert_outbox", []string{"channel", o.Channel, "status", "sent"}, float64(o.Sent))
-			sample(w, "intake_alert_outbox", []string{"channel", o.Channel, "status", "failed"}, float64(o.Failed))
+			sample(w, "mothlog_alert_outbox", []string{"channel", o.Channel, "status", "pending"}, float64(o.Pending))
+			sample(w, "mothlog_alert_outbox", []string{"channel", o.Channel, "status", "sent"}, float64(o.Sent))
+			sample(w, "mothlog_alert_outbox", []string{"channel", o.Channel, "status", "failed"}, float64(o.Failed))
 		}
-		family(w, "intake_alert_outbox_oldest_pending_seconds", "Antigüedad del aviso pendiente más viejo de cada canal; 0 si no hay.", "gauge")
+		family(w, "mothlog_alert_outbox_oldest_pending_seconds", "Age of the oldest pending alert of each channel; 0 if there is none.", "gauge")
 		for _, o := range snap.Outbox {
-			sample(w, "intake_alert_outbox_oldest_pending_seconds", []string{"channel", o.Channel}, o.OldestPendingSeconds)
+			sample(w, "mothlog_alert_outbox_oldest_pending_seconds", []string{"channel", o.Channel}, o.OldestPendingSeconds)
 		}
-		family(w, "intake_digests_sent_total", "Resúmenes enviados, por canal.", "counter")
+		family(w, "mothlog_digests_sent_total", "Digests sent, by channel.", "counter")
 		for _, o := range snap.Outbox {
-			sample(w, "intake_digests_sent_total", []string{"channel", o.Channel}, float64(o.DigestsSent))
+			sample(w, "mothlog_digests_sent_total", []string{"channel", o.Channel}, float64(o.DigestsSent))
 		}
-		statuses(w, "intake_cron_monitors", "Monitores de cron, por estado.", cronStatuses, snap.CronMonitors)
-		statuses(w, "intake_uptime_monitors", "Monitores de disponibilidad, por estado.", uptimeStatuses, snap.UptimeMonitors)
-		family(w, "intake_project_info", "Nombre de cada proyecto, para cruzarlo con la etiqueta project.", "gauge")
+		statuses(w, "mothlog_cron_monitors", "Cron monitors, by status.", cronStatuses, snap.CronMonitors)
+		statuses(w, "mothlog_uptime_monitors", "Uptime monitors, by status.", uptimeStatuses, snap.UptimeMonitors)
+		family(w, "mothlog_project_info", "Name of each project, to join with the project label.", "gauge")
 		ids := make([]int64, 0, len(snap.Projects))
 		for id := range snap.Projects {
 			ids = append(ids, id)
 		}
 		slices.Sort(ids)
 		for _, id := range ids {
-			sample(w, "intake_project_info", []string{"project", projectLabel(id), "name", snap.Projects[id]}, 1)
+			sample(w, "mothlog_project_info", []string{"project", projectLabel(id), "name", snap.Projects[id]}, 1)
 		}
 	}
 
 	st := m.src.Pool().Stats()
-	family(w, "intake_db_pool_connections", "Conexiones del pool de la base, por estado.", "gauge")
-	sample(w, "intake_db_pool_connections", []string{"state", "in_use"}, float64(st.InUse))
-	sample(w, "intake_db_pool_connections", []string{"state", "idle"}, float64(st.Idle))
-	sample(w, "intake_db_pool_connections", []string{"state", "constructing"}, float64(st.Constructing))
-	family(w, "intake_db_pool_max_connections", "Tope de conexiones del pool.", "gauge")
-	sample(w, "intake_db_pool_max_connections", nil, float64(st.Max))
-	family(w, "intake_db_pool_waits_total", "Veces que pedir una conexión tuvo que esperar porque no había libre.", "counter")
-	sample(w, "intake_db_pool_waits_total", nil, float64(st.Waits))
-	family(w, "intake_db_pool_wait_seconds_total", "Tiempo total esperando una conexión libre.", "counter")
-	sample(w, "intake_db_pool_wait_seconds_total", nil, st.WaitTime.Seconds())
+	family(w, "mothlog_db_pool_connections", "Database pool connections, by state.", "gauge")
+	sample(w, "mothlog_db_pool_connections", []string{"state", "in_use"}, float64(st.InUse))
+	sample(w, "mothlog_db_pool_connections", []string{"state", "idle"}, float64(st.Idle))
+	sample(w, "mothlog_db_pool_connections", []string{"state", "constructing"}, float64(st.Constructing))
+	family(w, "mothlog_db_pool_max_connections", "Pool connection limit.", "gauge")
+	sample(w, "mothlog_db_pool_max_connections", nil, float64(st.Max))
+	family(w, "mothlog_db_pool_waits_total", "Times a connection request had to wait because none was free.", "counter")
+	sample(w, "mothlog_db_pool_waits_total", nil, float64(st.Waits))
+	family(w, "mothlog_db_pool_wait_seconds_total", "Total time waiting for a free connection.", "counter")
+	sample(w, "mothlog_db_pool_wait_seconds_total", nil, st.WaitTime.Seconds())
 }
 
 func statuses(w *bufio.Writer, name, help string, known []string, got map[string]int64) {
@@ -234,16 +234,16 @@ func statuses(w *bufio.Writer, name, help string, known []string, got map[string
 func (m *Metrics) writeRuntime(w *bufio.Writer) {
 	var ms runtime.MemStats
 	runtime.ReadMemStats(&ms)
-	family(w, "go_goroutines", "Goroutines en marcha.", "gauge")
+	family(w, "go_goroutines", "Running goroutines.", "gauge")
 	sample(w, "go_goroutines", nil, float64(runtime.NumGoroutine()))
-	family(w, "go_memstats_heap_alloc_bytes", "Bytes del heap en uso por objetos vivos.", "gauge")
+	family(w, "go_memstats_heap_alloc_bytes", "Heap bytes in use by live objects.", "gauge")
 	sample(w, "go_memstats_heap_alloc_bytes", nil, float64(ms.HeapAlloc))
-	family(w, "go_memstats_sys_bytes", "Bytes pedidos al sistema por el runtime de Go.", "gauge")
+	family(w, "go_memstats_sys_bytes", "Bytes obtained from the system by the Go runtime.", "gauge")
 	sample(w, "go_memstats_sys_bytes", nil, float64(ms.Sys))
-	family(w, "go_gc_cycles_total", "Ciclos del recolector de basura.", "counter")
+	family(w, "go_gc_cycles_total", "Garbage collector cycles.", "counter")
 	sample(w, "go_gc_cycles_total", nil, float64(ms.NumGC))
 	if rss, ok := residentBytes(); ok {
-		family(w, "process_resident_memory_bytes", "Memoria residente del proceso.", "gauge")
+		family(w, "process_resident_memory_bytes", "Resident memory of the process.", "gauge")
 		sample(w, "process_resident_memory_bytes", nil, rss)
 	}
 }

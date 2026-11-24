@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type fakeSource struct {
@@ -149,26 +149,26 @@ func TestFormat(t *testing.T) {
 	text := output(t, filled(t))
 	checkFormat(t, text)
 	for _, want := range []string{
-		`intake_events_received_total{project="1"} 3`,
-		`intake_events_dropped_total{project="1",reason="exception_type"} 2`,
-		`intake_envelopes_rejected_total{code="401"} 1`,
-		`intake_ingest_duration_seconds_bucket{le="0.025"} 0`,
-		`intake_ingest_duration_seconds_bucket{le="0.05"} 1`,
-		`intake_ingest_duration_seconds_bucket{le="2.5"} 1`,
-		`intake_ingest_duration_seconds_bucket{le="5"} 2`,
-		`intake_ingest_duration_seconds_bucket{le="+Inf"} 2`,
-		`intake_ingest_duration_seconds_count 2`,
-		`intake_checkins_received_total{status="other"} 1`,
-		`intake_alert_outbox{channel="slack",status="pending"} 2`,
-		`intake_alert_outbox_oldest_pending_seconds{channel="slack"} 42.5`,
-		`intake_digests_sent_total{channel="slack"} 3`,
-		`intake_cron_monitors{status="missed"} 1`,
-		`intake_cron_monitors{status="timeout"} 0`,
-		`intake_uptime_monitors{status="down"} 1`,
-		`intake_project_info{project="1",name="api \"uno\""} 1`,
-		`intake_project_info{project="2",name="web\\dos"} 1`,
-		`intake_db_pool_connections{state="in_use"} 0`,
-		`intake_metrics_db_up 1`,
+		`mothlog_events_received_total{project="1"} 3`,
+		`mothlog_events_dropped_total{project="1",reason="exception_type"} 2`,
+		`mothlog_envelopes_rejected_total{code="401"} 1`,
+		`mothlog_ingest_duration_seconds_bucket{le="0.025"} 0`,
+		`mothlog_ingest_duration_seconds_bucket{le="0.05"} 1`,
+		`mothlog_ingest_duration_seconds_bucket{le="2.5"} 1`,
+		`mothlog_ingest_duration_seconds_bucket{le="5"} 2`,
+		`mothlog_ingest_duration_seconds_bucket{le="+Inf"} 2`,
+		`mothlog_ingest_duration_seconds_count 2`,
+		`mothlog_checkins_received_total{status="other"} 1`,
+		`mothlog_alert_outbox{channel="slack",status="pending"} 2`,
+		`mothlog_alert_outbox_oldest_pending_seconds{channel="slack"} 42.5`,
+		`mothlog_digests_sent_total{channel="slack"} 3`,
+		`mothlog_cron_monitors{status="missed"} 1`,
+		`mothlog_cron_monitors{status="timeout"} 0`,
+		`mothlog_uptime_monitors{status="down"} 1`,
+		`mothlog_project_info{project="1",name="api \"uno\""} 1`,
+		`mothlog_project_info{project="2",name="web\\dos"} 1`,
+		`mothlog_db_pool_connections{state="in_use"} 0`,
+		`mothlog_metrics_db_up 1`,
 		"go_goroutines ",
 		"go_memstats_heap_alloc_bytes ",
 	} {
@@ -223,7 +223,7 @@ func TestPromtool(t *testing.T) {
 	if out, err := checkMetrics(t, cmdline, output(t, filled(t))); err != nil {
 		t.Fatalf("promtool: %v\n%s", err, out)
 	}
-	broken := "# TYPE intake_x counter\nintake_x{a=\"1\" 1\n"
+	broken := "# TYPE mothlog_x counter\nmothlog_x{a=\"1\" 1\n"
 	if out, err := checkMetrics(t, cmdline, broken); err == nil {
 		t.Fatalf("promtool acepta una salida rota:\n%s", out)
 	}
@@ -246,10 +246,10 @@ func TestSnapshotCacheAndErrors(t *testing.T) {
 		t.Fatalf("%d lecturas pasada la caché, quiero 2", src.calls)
 	}
 	checkFormat(t, text)
-	if !strings.Contains(text, "intake_metrics_db_up 0\n") || strings.Contains(text, "intake_alert_outbox{") {
+	if !strings.Contains(text, "mothlog_metrics_db_up 0\n") || strings.Contains(text, "mothlog_alert_outbox{") {
 		t.Errorf("sin base, quiero db_up 0 y sin avisos:\n%s", text)
 	}
-	if !strings.Contains(text, "intake_db_pool_connections") || !strings.Contains(text, "go_goroutines") {
+	if !strings.Contains(text, "mothlog_db_pool_connections") || !strings.Contains(text, "go_goroutines") {
 		t.Error("sin base faltan las métricas que no dependen de ella")
 	}
 }
@@ -277,7 +277,7 @@ func TestHandlerToken(t *testing.T) {
 		if tc.want == http.StatusOK && !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/plain; version=0.0.4") {
 			t.Errorf("Content-Type %q", rec.Header().Get("Content-Type"))
 		}
-		if tc.want != http.StatusOK && strings.Contains(rec.Body.String(), "intake_") {
+		if tc.want != http.StatusOK && strings.Contains(rec.Body.String(), "mothlog_") {
 			t.Error("sin token deja ver las métricas")
 		}
 	}
@@ -307,10 +307,10 @@ func TestRoutesWithoutIDs(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", nil))
 	text := output(t, m)
 	for _, want := range []string{
-		`intake_http_requests_total{method="GET",route="/api/0/issues/{id}/{$}",code="200"} 2`,
-		`intake_http_requests_total{method="GET",route="/api/0/issues/{id}/{$}",code="404"} 1`,
-		`intake_http_requests_total{method="GET",route="unmatched",code="404"} 1`,
-		`intake_http_requests_total{method="POST",route="/mcp",code="202"} 1`,
+		`mothlog_http_requests_total{method="GET",route="/api/0/issues/{id}/{$}",code="200"} 2`,
+		`mothlog_http_requests_total{method="GET",route="/api/0/issues/{id}/{$}",code="404"} 1`,
+		`mothlog_http_requests_total{method="GET",route="unmatched",code="404"} 1`,
+		`mothlog_http_requests_total{method="POST",route="/mcp",code="202"} 1`,
 	} {
 		if !strings.Contains(text, want+"\n") {
 			t.Errorf("falta %q", want)
@@ -346,16 +346,16 @@ func TestRoutesMethodIsBounded(t *testing.T) {
 		t.Fatalf("la etiqueta method copia métodos inventados:\n%s", text)
 	}
 	for _, want := range []string{
-		`intake_http_requests_total{method="other",route="/mcp",code="405"} 50`,
-		`intake_http_requests_total{method="other",route="unmatched",code="404"} 50`,
-		`intake_http_requests_total{method="other",route="unmatched",code="405"} 50`,
-		`intake_http_requests_total{method="DELETE",route="/mcp",code="405"} 1`,
+		`mothlog_http_requests_total{method="other",route="/mcp",code="405"} 50`,
+		`mothlog_http_requests_total{method="other",route="unmatched",code="404"} 50`,
+		`mothlog_http_requests_total{method="other",route="unmatched",code="405"} 50`,
+		`mothlog_http_requests_total{method="DELETE",route="/mcp",code="405"} 1`,
 	} {
 		if !strings.Contains(text, want+"\n") {
 			t.Errorf("falta %q en:\n%s", want, text)
 		}
 	}
-	if n := strings.Count(text, "intake_http_requests_total{"); n != 4 {
+	if n := strings.Count(text, "mothlog_http_requests_total{"); n != 4 {
 		t.Errorf("%d series de peticiones, quiero 4", n)
 	}
 }

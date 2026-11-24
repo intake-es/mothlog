@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/metrics"
-	"github.com/intake-es/intake-errors/internal/monitor"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/metrics"
+	"github.com/intake-es/mothlog/internal/monitor"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Pattern es la ruta del envelope para http.ServeMux.
@@ -102,7 +102,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.metrics.Envelope(code(), time.Since(start))
 	default:
 		hdr.Set("Allow", "POST, OPTIONS")
-		fail(w, http.StatusMethodNotAllowed, "método no permitido")
+		fail(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -113,42 +113,42 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	defer arrived()
 	projectID, err := strconv.ParseInt(r.PathValue("project_id"), 10, 64)
 	if err != nil {
-		fail(w, http.StatusNotFound, "proyecto no encontrado")
+		fail(w, http.StatusNotFound, "project not found")
 		return
 	}
 	project, err := h.projects.ProjectByID(ctx, projectID)
 	if errors.Is(err, store.ErrNotFound) {
-		fail(w, http.StatusNotFound, "proyecto no encontrado")
+		fail(w, http.StatusNotFound, "project not found")
 		return
 	}
 	if err != nil {
-		h.log.ErrorContext(ctx, "buscar proyecto", "proyecto", projectID, "err", err)
-		fail(w, http.StatusInternalServerError, "error interno")
+		h.log.ErrorContext(ctx, "find project", "project", projectID, "err", err)
+		fail(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	key, err := envelope.PublicKey(r.Header, r.URL.Query())
 	if err != nil || subtle.ConstantTimeCompare([]byte(key), []byte(project.PublicKey)) != 1 {
-		fail(w, http.StatusUnauthorized, "clave pública no válida")
+		fail(w, http.StatusUnauthorized, "invalid public key")
 		return
 	}
 
 	if r.ContentLength > MaxCompressed {
-		fail(w, http.StatusRequestEntityTooLarge, "envelope demasiado grande")
+		fail(w, http.StatusRequestEntityTooLarge, "envelope too large")
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxCompressed))
 	if err != nil {
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) {
-			fail(w, http.StatusRequestEntityTooLarge, "envelope demasiado grande")
+			fail(w, http.StatusRequestEntityTooLarge, "envelope too large")
 			return
 		}
-		fail(w, http.StatusBadRequest, "no se pudo leer el cuerpo")
+		fail(w, http.StatusBadRequest, "could not read the body")
 		return
 	}
 	data, err := envelope.Decompress(bytes.NewReader(body), r.Header.Get("Content-Encoding"), MaxDecompressed)
 	if errors.Is(err, envelope.ErrTooLarge) {
-		fail(w, http.StatusRequestEntityTooLarge, "envelope demasiado grande")
+		fail(w, http.StatusRequestEntityTooLarge, "envelope too large")
 		return
 	}
 	if err != nil {
@@ -196,7 +196,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 			}
 			if err != nil {
 				// Un check-in roto no tumba los eventos que viajan con él.
-				h.log.WarnContext(ctx, "check-in ignorado", "proyecto", project.ID, "err", err)
+				h.log.WarnContext(ctx, "check-in ignored", "project", project.ID, "err", err)
 				continue
 			}
 			checkIns = append(checkIns, in)
@@ -210,8 +210,8 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	if len(events) > 0 || len(checkIns) > 0 || len(sessions) > 0 {
 		filters, err := h.projects.Filters(ctx, project.ID)
 		if err != nil {
-			h.log.ErrorContext(ctx, "leer filtros", "proyecto", project.ID, "err", err)
-			fail(w, http.StatusInternalServerError, "error interno")
+			h.log.ErrorContext(ctx, "read filters", "project", project.ID, "err", err)
+			fail(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		lim = LimitsOf(filters)
@@ -230,7 +230,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		for _, ev := range events {
 			if reason := fl.Drop(ev); reason != "" {
 				h.drop(project.ID, reason, 1)
-				h.log.DebugContext(ctx, "evento descartado", "proyecto", project.ID, "event_id", ev.ID, "motivo", reason)
+				h.log.DebugContext(ctx, "event dropped", "project", project.ID, "event_id", ev.ID, "reason", reason)
 				continue
 			}
 			kept = append(kept, ev)
@@ -288,7 +288,7 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 	failed := false
 	for i, ev := range events {
 		if err := errs[i]; err != nil {
-			h.log.ErrorContext(ctx, "guardar evento", "proyecto", project.ID, "event_id", ev.ID, "err", err)
+			h.log.ErrorContext(ctx, "save event", "project", project.ID, "event_id", ev.ID, "err", err)
 			failed = true
 			continue
 		}
@@ -301,18 +301,18 @@ func (h *Handler) envelope(w http.ResponseWriter, r *http.Request) {
 		default:
 			h.metrics.Saved(project.ID)
 		}
-		h.log.DebugContext(ctx, "evento", "proyecto", project.ID, "event_id", ev.ID, "issue", res.IssueID,
-			"resultado", res.Outcome.String(), "repetido", res.Duplicate, "descartado", res.Dropped, "duración", time.Since(start))
+		h.log.DebugContext(ctx, "event", "project", project.ID, "event_id", ev.ID, "issue", res.IssueID,
+			"outcome", res.Outcome.String(), "duplicate", res.Duplicate, "dropped", res.Dropped, "duration", time.Since(start))
 	}
 	if failed {
-		fail(w, http.StatusInternalServerError, "error interno")
+		fail(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	for _, in := range checkIns {
 		res, err := h.checkIns.CheckIn(ctx, project.ID, in)
 		if err != nil {
-			h.log.ErrorContext(ctx, "guardar check-in", "proyecto", project.ID, "monitor", in.Slug, "err", err)
-			fail(w, http.StatusInternalServerError, "error interno")
+			h.log.ErrorContext(ctx, "save check-in", "project", project.ID, "monitor", in.Slug, "err", err)
+			fail(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		if res.Outcome == store.CheckInIgnored {
@@ -333,7 +333,7 @@ func rateLimited(w http.ResponseWriter, wait time.Duration, cats []string) {
 	hdr := w.Header()
 	hdr.Set("Retry-After", secs)
 	hdr.Set("X-Sentry-Rate-Limits", secs+":"+strings.Join(cats, ";")+":project")
-	fail(w, http.StatusTooManyRequests, "demasiados eventos")
+	fail(w, http.StatusTooManyRequests, "too many events")
 }
 
 func fail(w http.ResponseWriter, code int, detail string) {

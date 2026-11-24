@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // slowDestination tiene las peticiones esperando hasta que se llama a release,

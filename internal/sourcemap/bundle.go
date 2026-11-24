@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // manifest es el manifest.json de un artifact bundle de sentry-cli.
@@ -52,7 +52,7 @@ func readBundle(b []byte, maxFile, maxTotal int64, check func(string, *Map) erro
 	var m manifest
 	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
-		return m, nil, fmt.Errorf("el bundle no es un zip válido: %w", err)
+		return m, nil, fmt.Errorf("the bundle is not a valid zip: %w", err)
 	}
 	entries := make(map[string]*zip.File, len(zr.File))
 	for _, f := range zr.File {
@@ -60,14 +60,14 @@ func readBundle(b []byte, maxFile, maxTotal int64, check func(string, *Map) erro
 	}
 	mf, ok := entries["manifest.json"]
 	if !ok {
-		return m, nil, errors.New("el bundle no trae manifest.json")
+		return m, nil, errors.New("the bundle has no manifest.json")
 	}
 	raw, err := readZipFile(mf, maxFile)
 	if err != nil {
 		return m, nil, err
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return m, nil, fmt.Errorf("manifest.json no es válido: %w", err)
+		return m, nil, fmt.Errorf("manifest.json is not valid: %w", err)
 	}
 
 	// El .js de cada mapa, por la URL del mapa que dice su cabecera sourcemap.
@@ -92,14 +92,14 @@ func readBundle(b []byte, maxFile, maxTotal int64, check func(string, *Map) erro
 		}
 		zf, ok := entries[name]
 		if !ok {
-			return m, nil, fmt.Errorf("manifest.json cita %s, que no está en el bundle", name)
+			return m, nil, fmt.Errorf("manifest.json lists %s, which is not in the bundle", name)
 		}
 		data, err := readZipFile(zf, maxFile)
 		if err != nil {
 			return m, nil, err
 		}
 		if total += int64(len(data)); total > maxTotal {
-			return m, nil, fmt.Errorf("los mapas del bundle pasan de %d MiB descomprimidos", maxTotal>>20)
+			return m, nil, fmt.Errorf("the bundle's maps are over %d MiB uncompressed", maxTotal>>20)
 		}
 		label := f.URL
 		if label == "" {
@@ -107,7 +107,7 @@ func readBundle(b []byte, maxFile, maxTotal int64, check func(string, *Map) erro
 		}
 		sm, err := Parse(data)
 		if err != nil {
-			return m, nil, fmt.Errorf("%s no es un source map v3 válido: %v", label, err)
+			return m, nil, fmt.Errorf("%s is not a valid v3 source map: %v", label, err)
 		}
 		if err := check(label, sm); err != nil {
 			return m, nil, err
@@ -127,7 +127,7 @@ func readBundle(b []byte, maxFile, maxTotal int64, check func(string, *Map) erro
 		files = append(files, store.SourceMapFile{File: path.Base(jsURL), URL: jsURL, DebugID: id, Map: data})
 	}
 	if len(files) == 0 {
-		return m, nil, errors.New("el bundle no trae ningún source map")
+		return m, nil, errors.New("the bundle has no source maps")
 	}
 	return m, files, nil
 }
@@ -149,19 +149,19 @@ func mapDebugID(b []byte) string {
 
 func readZipFile(f *zip.File, maxFile int64) ([]byte, error) {
 	if f.UncompressedSize64 > uint64(maxFile) {
-		return nil, fmt.Errorf("%s pasa de %d MiB", f.Name, maxFile>>20)
+		return nil, fmt.Errorf("%s is over %d MiB", f.Name, maxFile>>20)
 	}
 	rc, err := f.Open()
 	if err != nil {
-		return nil, fmt.Errorf("no se puede leer %s del bundle: %w", f.Name, err)
+		return nil, fmt.Errorf("can't read %s from the bundle: %w", f.Name, err)
 	}
 	defer func() { _ = rc.Close() }()
 	b, err := io.ReadAll(io.LimitReader(rc, maxFile+1))
 	if err != nil {
-		return nil, fmt.Errorf("no se puede leer %s del bundle: %w", f.Name, err)
+		return nil, fmt.Errorf("can't read %s from the bundle: %w", f.Name, err)
 	}
 	if int64(len(b)) > maxFile {
-		return nil, fmt.Errorf("%s pasa de %d MiB", f.Name, maxFile>>20)
+		return nil, fmt.Errorf("%s is over %d MiB", f.Name, maxFile>>20)
 	}
 	return b, nil
 }

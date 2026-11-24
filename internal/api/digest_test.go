@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/digest/digesttest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/digest/digesttest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 func setupDigest(t *testing.T) *env {
@@ -48,7 +49,7 @@ func TestDigestAPI(t *testing.T) {
 
 	var c store.DigestConfig
 	e.get(t, base, &c)
-	if c.Enabled || c.Frequency != "daily" || c.Hour != 9 || c.Language != "es" || len(c.Destinations) != 0 || c.NextSendAt != nil {
+	if c.Enabled || c.Frequency != "daily" || c.Hour != 9 || c.Language != "en" || len(c.Destinations) != 0 || c.NextSendAt != nil {
 		t.Fatalf("por defecto = %+v", c)
 	}
 
@@ -134,7 +135,7 @@ func TestDigestAPI(t *testing.T) {
 }
 
 func TestDigestMCP(t *testing.T) {
-	e := setup(t)
+	e := setupLang(t, lang.ES)
 	p := e.db.AddProject(t, "tienda")
 	end := time.Date(2026, 11, 22, 8, 0, 0, 0, time.UTC)
 	digesttest.Seed(t, e.db, p.ID, end)

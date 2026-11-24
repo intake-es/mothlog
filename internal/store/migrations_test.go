@@ -13,10 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 	"github.com/pressly/goose/v3"
 
-	"github.com/intake-es/intake-errors/migrations"
+	"github.com/intake-es/mothlog/migrations"
 )
 
 // migrationsOnlyPostgres es por qué los tests de las migraciones de Postgres

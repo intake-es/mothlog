@@ -14,7 +14,7 @@ import (
 )
 
 // ErrTooLarge se devuelve cuando el cuerpo descomprimido supera el límite.
-var ErrTooLarge = errors.New("envelope demasiado grande")
+var ErrTooLarge = errors.New("envelope too large")
 
 // Decompress devuelve el cuerpo descomprimido según Content-Encoding, sin
 // pasar de limit bytes.
@@ -48,7 +48,7 @@ func decoder(body io.Reader, contentEncoding string) (io.Reader, error) {
 	case "br":
 		return brotli.NewReader(body), nil
 	default:
-		return nil, fmt.Errorf("%w: Content-Encoding no soportado: %q", ErrMalformed, contentEncoding)
+		return nil, fmt.Errorf("%w: unsupported Content-Encoding: %q", ErrMalformed, contentEncoding)
 	}
 }
 

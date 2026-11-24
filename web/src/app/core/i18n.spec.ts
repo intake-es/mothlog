@@ -30,7 +30,7 @@ const ICON_NAMES = new Set(Object.values(ICONS).flatMap((byName) => Object.keys(
  * API, opciones de Intl o de Angular, nombres de campos o de menús.
  */
 const ALLOWED = new Set([
-  'intake-errors',
+  'Mothlog',
   'Español',
   'English',
   ...['open', 'resolved', 'silenced', 'all', 'count', 'daily', 'limit', 'cursor', 'project'],
@@ -416,10 +416,10 @@ describe('PageTitle', () => {
     await TestBed.inject(Router).navigateByUrl('/');
     TestBed.tick();
     const title = TestBed.inject(Title);
-    expect(title.getTitle()).toBe('Errores · intake-errors');
+    expect(title.getTitle()).toBe('Errores · Mothlog');
     TestBed.inject(I18n).set('en');
     TestBed.tick();
-    expect(title.getTitle()).toBe('Errors · intake-errors');
+    expect(title.getTitle()).toBe('Errors · Mothlog');
   });
 
   it('el título de la pantalla también sigue al idioma', () => {

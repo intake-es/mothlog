@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func peopleCommand(ctx context.Context, db *store.Store, args []string, out io.Writer, now func() time.Time) error {
@@ -20,13 +20,13 @@ func peopleCommand(ctx context.Context, db *store.Store, args []string, out io.W
 			return err
 		}
 		tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "LOGIN\tNOMBRE\tPROVEEDOR\tID\tÚLTIMO LOGIN\tSESIONES REVOCADAS")
+		_, _ = fmt.Fprintln(tw, "LOGIN\tNAME\tPROVIDER\tID\tLAST LOGIN\tSESSIONS REVOKED")
 		for _, p := range people {
 			id := p.Subject
 			// Una fila de GitHub de antes de identificar por id: la reclama
 			// la próxima cuenta que entre con ese login.
 			if p.Provider == store.LoginGitHub && strings.HasPrefix(p.Subject, store.LegacyGitHubSubject("")) {
-				id = "pendiente"
+				id = "pending"
 			}
 			revoked := "-"
 			if p.SessionsValidSince.Unix() > 0 {
@@ -38,7 +38,7 @@ func peopleCommand(ctx context.Context, db *store.Store, args []string, out io.W
 	case len(args) == 2 && args[0] == "revoke":
 		login, err := db.RevokeSessions(ctx, args[1], now())
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("nadie ha entrado con el login %q", args[1])
+			return fmt.Errorf("nobody has signed in with the login %q", args[1])
 		}
 		if err != nil {
 			return err
@@ -47,9 +47,9 @@ func peopleCommand(ctx context.Context, db *store.Store, args []string, out io.W
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(out, "sesiones de %q revocadas: tiene que volver a entrar\n", login)
+		_, err = fmt.Fprintf(out, "sessions of %q revoked: they have to sign in again\n", login)
 		if err == nil && grants > 0 {
-			_, err = fmt.Fprintf(out, "concesiones de OAuth del MCP revocadas: %d\n", grants)
+			_, err = fmt.Fprintf(out, "MCP OAuth grants revoked: %d\n", grants)
 		}
 		return err
 	}

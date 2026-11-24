@@ -17,8 +17,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/netguard"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/netguard"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -27,7 +27,9 @@ const (
 	maxRedirectURI   = 2000
 	maxMetadataBytes = 16 << 10
 	metadataTimeout  = 5 * time.Second
-	clientIDPrefix   = "iec_"
+	// clientIDPrefix va delante de los clientes registrados; los de antes del
+	// nombre Mothlog llevan iec_ y siguen valiendo, porque se buscan por id.
+	clientIDPrefix = "mlc_"
 )
 
 // client es un cliente, registrado o identificado por su URL.
@@ -56,14 +58,14 @@ func metadataClient() *http.Client {
 // sin fragmento ni usuario.
 func validRedirectURI(raw string) error {
 	if raw == "" || len(raw) > maxRedirectURI {
-		return errors.New("la URI de vuelta está vacía o es demasiado larga")
+		return errors.New("the redirect URI is empty or too long")
 	}
 	u, err := url.Parse(raw)
 	if err != nil || !u.IsAbs() || u.Host == "" {
-		return fmt.Errorf("%q no es una URL absoluta", raw)
+		return fmt.Errorf("%q is not an absolute URL", raw)
 	}
 	if u.Fragment != "" || strings.Contains(raw, "#") || u.User != nil {
-		return fmt.Errorf("%q no puede llevar fragmento ni usuario", raw)
+		return fmt.Errorf("%q can't have a fragment or a user", raw)
 	}
 	switch {
 	case u.Scheme == "https":
@@ -71,7 +73,7 @@ func validRedirectURI(raw string) error {
 	case u.Scheme == "http" && loopback(u.Hostname()):
 		return nil
 	}
-	return fmt.Errorf("%q tiene que ser https, o http a 127.0.0.1, [::1] o localhost", raw)
+	return fmt.Errorf("%q must be https, or http to 127.0.0.1, [::1] or localhost", raw)
 }
 
 func loopback(host string) bool {
@@ -135,7 +137,7 @@ type registration struct {
 
 func (r registration) validate() error {
 	if len(r.RedirectURIs) == 0 || len(r.RedirectURIs) > maxRedirectURIs {
-		return fmt.Errorf("hacen falta de 1 a %d redirect_uris", maxRedirectURIs)
+		return fmt.Errorf("1 to %d redirect_uris are needed", maxRedirectURIs)
 	}
 	for _, u := range r.RedirectURIs {
 		if err := validRedirectURI(u); err != nil {
@@ -144,12 +146,12 @@ func (r registration) validate() error {
 	}
 	for _, g := range r.GrantTypes {
 		if g != "authorization_code" && g != "refresh_token" {
-			return fmt.Errorf("grant_type %q no está admitido", g)
+			return fmt.Errorf("grant_type %q is not supported", g)
 		}
 	}
 	for _, t := range r.ResponseTypes {
 		if t != "code" {
-			return fmt.Errorf("response_type %q no está admitido", t)
+			return fmt.Errorf("response_type %q is not supported", t)
 		}
 	}
 	return nil
@@ -161,13 +163,13 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	cors(w)
 	if !s.registers.allow(clientIP(r), s.cfg.Now()) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(limitWindow.Seconds())))
-		oauthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "demasiados registros desde esta dirección; vuelve a probar en unos minutos")
+		oauthError(w, http.StatusTooManyRequests, "temporarily_unavailable", "too many registrations from this address; try again in a few minutes")
 		return
 	}
 	var in registration
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
 	if err := dec.Decode(&in); err != nil {
-		oauthError(w, http.StatusBadRequest, "invalid_client_metadata", "el cuerpo tiene que ser un JSON")
+		oauthError(w, http.StatusBadRequest, "invalid_client_metadata", "the body must be JSON")
 		return
 	}
 	if err := in.validate(); err != nil {
@@ -185,11 +187,11 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 			oauthError(w, http.StatusTooManyRequests, "temporarily_unavailable", err.Error())
 			return
 		}
-		s.log.Error("oauth: registrar cliente", "err", err)
-		oauthError(w, http.StatusInternalServerError, "server_error", "error interno")
+		s.log.Error("oauth: register client", "err", err)
+		oauthError(w, http.StatusInternalServerError, "server_error", "internal error")
 		return
 	}
-	s.log.Info("oauth: cliente registrado", "client_id", c.ID, "name", c.Name)
+	s.log.Info("oauth: client registered", "client_id", c.ID, "name", c.Name)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"client_id":                  c.ID,
 		"client_id_issued_at":        now.Unix(),
@@ -216,7 +218,7 @@ func metadataURL(id string) (*url.URL, bool) {
 }
 
 // errClient: el client_id no existe o su documento no vale.
-var errClient = errors.New("cliente desconocido")
+var errClient = errors.New("unknown client")
 
 func (s *Server) lookupClient(ctx context.Context, id string) (client, error) {
 	if strings.HasPrefix(id, "https://") {
@@ -236,7 +238,7 @@ func (s *Server) lookupClient(ctx context.Context, id string) (client, error) {
 func (s *Server) fetchMetadata(ctx context.Context, id string) (client, error) {
 	u, ok := metadataURL(id)
 	if !ok {
-		return client{}, fmt.Errorf("%w: el client_id %q no es una URL https válida", errClient, id)
+		return client{}, fmt.Errorf("%w: client_id %q is not a valid https URL", errClient, id)
 	}
 	ctx, cancel := context.WithTimeout(ctx, metadataTimeout)
 	defer cancel()
@@ -248,30 +250,30 @@ func (s *Server) fetchMetadata(ctx context.Context, id string) (client, error) {
 	res, err := s.http.Do(req)
 	if err != nil {
 		if errors.Is(err, netguard.ErrBlocked) {
-			return client{}, fmt.Errorf("%w: el documento del cliente está en una dirección privada, de metadatos o reservada", errClient)
+			return client{}, fmt.Errorf("%w: the client document is at a private, metadata or reserved address", errClient)
 		}
-		return client{}, fmt.Errorf("%w: no se pudo pedir el documento del cliente", errClient)
+		return client{}, fmt.Errorf("%w: could not fetch the client document", errClient)
 	}
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK {
-		return client{}, fmt.Errorf("%w: el documento del cliente respondió %d", errClient, res.StatusCode)
+		return client{}, fmt.Errorf("%w: the client document responded %d", errClient, res.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxMetadataBytes+1))
 	if err != nil || len(body) > maxMetadataBytes {
-		return client{}, fmt.Errorf("%w: el documento del cliente pasa de %d bytes o no se pudo leer", errClient, maxMetadataBytes)
+		return client{}, fmt.Errorf("%w: the client document is over %d bytes or could not be read", errClient, maxMetadataBytes)
 	}
 	var doc struct {
 		registration
 		ClientID string `json:"client_id"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
-		return client{}, fmt.Errorf("%w: el documento del cliente no es un JSON", errClient)
+		return client{}, fmt.Errorf("%w: the client document is not JSON", errClient)
 	}
 	if doc.ClientID != id {
-		return client{}, fmt.Errorf("%w: el client_id del documento no es su URL", errClient)
+		return client{}, fmt.Errorf("%w: the document's client_id is not its URL", errClient)
 	}
 	if m := doc.TokenEndpointAuthMethod; m != "" && m != "none" {
-		return client{}, fmt.Errorf("%w: solo se admiten clientes públicos (token_endpoint_auth_method none)", errClient)
+		return client{}, fmt.Errorf("%w: only public clients are supported (token_endpoint_auth_method none)", errClient)
 	}
 	if err := doc.validate(); err != nil {
 		return client{}, fmt.Errorf("%w: %v", errClient, err)

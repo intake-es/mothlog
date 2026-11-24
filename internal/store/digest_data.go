@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // DigestIssue es un issue en un resumen, con sus eventos en el periodo y en el anterior.
@@ -50,12 +50,12 @@ func (s *Store) DigestNewIssues(ctx context.Context, projectID int64, start, end
 		WHERE i.project_id = $1 AND i.first_seen >= $2 AND i.first_seen < $3
 		ORDER BY n DESC, i.first_seen, i.id LIMIT $4`, "$2", "$3"), projectID, start, end, limit)
 	if err != nil {
-		return nil, 0, fmt.Errorf("issues nuevos del resumen: %w", err)
+		return nil, 0, fmt.Errorf("digest new issues: %w", err)
 	}
 	var total int
 	out, err := scanDigestIssues(rows, &total)
 	if err != nil {
-		return nil, 0, fmt.Errorf("issues nuevos del resumen: %w", err)
+		return nil, 0, fmt.Errorf("digest new issues: %w", err)
 	}
 	return out, total, nil
 }
@@ -81,7 +81,7 @@ func (s *Store) DigestRegressions(ctx context.Context, projectID int64, start, e
 		WHERE i.project_id = $1 AND i.first_seen < $2 AND EXISTS (SELECT 1 `+changes+`)
 		ORDER BY n DESC, i.id LIMIT $4`), "$2", "$3"), projectID, start, end, limit)
 	if err != nil {
-		return nil, 0, fmt.Errorf("regresiones del resumen: %w", err)
+		return nil, 0, fmt.Errorf("digest regressions: %w", err)
 	}
 	var total int
 	var release string
@@ -94,7 +94,7 @@ func (s *Store) DigestRegressions(ctx context.Context, projectID int64, start, e
 		return nil
 	})
 	if err != nil {
-		return nil, 0, fmt.Errorf("regresiones del resumen: %w", err)
+		return nil, 0, fmt.Errorf("digest regressions: %w", err)
 	}
 	if out == nil {
 		out = []DigestIssue{}
@@ -128,11 +128,11 @@ func (s *Store) DigestGrowing(ctx context.Context, projectID int64, start, end t
 		ORDER BY c.cur - c.prev DESC, i.id LIMIT $7`,
 		projectID, start, end, prev, GrowthMinEvents, GrowthFactor, limit)
 	if err != nil {
-		return nil, fmt.Errorf("issues que crecen: %w", err)
+		return nil, fmt.Errorf("growing issues: %w", err)
 	}
 	out, err := scanDigestIssues(rows)
 	if err != nil {
-		return nil, fmt.Errorf("issues que crecen: %w", err)
+		return nil, fmt.Errorf("growing issues: %w", err)
 	}
 	return out, nil
 }
@@ -177,14 +177,14 @@ func (s *Store) DigestTotals(ctx context.Context, projectID int64, start, end ti
 		WHERE e.project_id = $1 AND e.occurred_at >= $4 AND e.occurred_at < $3`,
 		projectID, start, end, prev).Scan(&t.Events, &t.PreviousEvents, &t.Issues, &t.Users)
 	if err != nil {
-		return t, fmt.Errorf("totales del resumen: %w", err)
+		return t, fmt.Errorf("digest totals: %w", err)
 	}
 	err = s.pool.QueryRow(ctx, `
 		SELECT count(DISTINCT c.issue_id) FROM issue_status_changes c JOIN issues i ON i.id = c.issue_id
 		WHERE i.project_id = $1 AND c.to_status IN ('resolved', 'resolved_next') AND c.from_status NOT IN ('resolved', 'resolved_next')
 			AND c.created_at >= $2 AND c.created_at < $3`, projectID, start, end).Scan(&t.Resolved)
 	if err != nil {
-		return t, fmt.Errorf("resueltos del resumen: %w", err)
+		return t, fmt.Errorf("digest resolved: %w", err)
 	}
 	return t, nil
 }
@@ -212,7 +212,7 @@ func (s *Store) DigestCrons(ctx context.Context, projectID int64, start, end tim
 		GROUP BY m.id
 		ORDER BY count(*) DESC, `+s.pool.Dialect().Collate("m.slug"), projectID, start, end)
 	if err != nil {
-		return nil, fmt.Errorf("crons del resumen: %w", err)
+		return nil, fmt.Errorf("digest crons: %w", err)
 	}
 	out := []DigestCron{}
 	var c DigestCron
@@ -221,7 +221,7 @@ func (s *Store) DigestCrons(ctx context.Context, projectID int64, start, end tim
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("crons del resumen: %w", err)
+		return nil, fmt.Errorf("digest crons: %w", err)
 	}
 	return out, nil
 }
@@ -250,7 +250,7 @@ func (s *Store) DigestUptime(ctx context.Context, projectID int64, start, end ti
 		GROUP BY m.id
 		ORDER BY 4 DESC, `+d.Collate("m.slug"), projectID, start, end)
 	if err != nil {
-		return nil, fmt.Errorf("disponibilidad del resumen: %w", err)
+		return nil, fmt.Errorf("digest uptime: %w", err)
 	}
 	out := []DigestUptime{}
 	var u DigestUptime
@@ -259,7 +259,7 @@ func (s *Store) DigestUptime(ctx context.Context, projectID int64, start, end ti
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("disponibilidad del resumen: %w", err)
+		return nil, fmt.Errorf("digest uptime: %w", err)
 	}
 	return out, nil
 }
@@ -273,7 +273,7 @@ func (s *Store) LatestRelease(ctx context.Context, projectID int64, end time.Tim
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("última release: %w", err)
+		return nil, fmt.Errorf("latest release: %w", err)
 	}
 	r, err := s.Release(ctx, projectID, version, "")
 	if err != nil {

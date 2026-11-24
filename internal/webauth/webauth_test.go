@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
+	"github.com/intake-es/mothlog/internal/api"
 )
 
 const (

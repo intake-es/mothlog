@@ -1,0 +1,1033 @@
+=== new slack
+{
+  "text": "New error in web: TypeError: x is undefined",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*New error* · web · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*TypeError: x is undefined*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`src/app/total.ts:12` in `leerTotal`\n```return x.total;```"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Release*\nweb@1.4.0"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*User*\nu_1834"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View error",
+            "emoji": false
+          },
+          "url": "https://errors.test/issues/42",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== new discord
+{
+  "content": "**New error** · web · production",
+  "embeds": [
+    {
+      "title": "TypeError: x is undefined",
+      "url": "https://errors.test/issues/42",
+      "description": "`src/app/total.ts:12 in leerTotal`\n```\nreturn x.total;\n```",
+      "fields": [
+        {
+          "name": "Release",
+          "value": "web@​1.4.0",
+          "inline": true
+        },
+        {
+          "name": "User",
+          "value": "u\\_1834",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== new telegram
+<b>New error</b> · web · production
+<b>TypeError: x is undefined</b>
+<code>src/app/total.ts:12 in leerTotal</code>
+<pre>return x.total;</pre>
+Release: web@1.4.0
+User: u_1834
+<a href="https://errors.test/issues/42">View error</a>
+=== new ntfy y correo
+Title: New error · web
+Subject: [Mothlog] New error in web: TypeError: x is undefined
+
+TypeError: x is undefined
+New error · web · production
+
+src/app/total.ts:12 in leerTotal
+    return x.total;
+
+Release: web@1.4.0
+User: u_1834
+
+https://errors.test/issues/42
+=== regressed slack
+{
+  "text": "Regression in web: TypeError: x is undefined",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Regression* · web · production · resolved on November 12"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*TypeError: x is undefined*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`src/app/total.ts:12` in `leerTotal`\n```return x.total;```"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Release*\nweb@1.4.0"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Events*\n7 in total"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*User*\nu_1834"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View error",
+            "emoji": false
+          },
+          "url": "https://errors.test/issues/42",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== regressed discord
+{
+  "content": "**Regression** · web · production · resolved on November 12",
+  "embeds": [
+    {
+      "title": "TypeError: x is undefined",
+      "url": "https://errors.test/issues/42",
+      "description": "`src/app/total.ts:12 in leerTotal`\n```\nreturn x.total;\n```",
+      "fields": [
+        {
+          "name": "Release",
+          "value": "web@​1.4.0",
+          "inline": true
+        },
+        {
+          "name": "Events",
+          "value": "7 in total",
+          "inline": true
+        },
+        {
+          "name": "User",
+          "value": "u\\_1834",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== regressed telegram
+<b>Regression</b> · web · production · resolved on November 12
+<b>TypeError: x is undefined</b>
+<code>src/app/total.ts:12 in leerTotal</code>
+<pre>return x.total;</pre>
+Release: web@1.4.0
+Events: 7 in total
+User: u_1834
+<a href="https://errors.test/issues/42">View error</a>
+=== regressed ntfy y correo
+Title: Regression · web
+Subject: [Mothlog] Regression in web: TypeError: x is undefined
+
+TypeError: x is undefined
+Regression · web · production · resolved on November 12
+
+src/app/total.ts:12 in leerTotal
+    return x.total;
+
+Release: web@1.4.0
+Events: 7 in total
+User: u_1834
+
+https://errors.test/issues/42
+=== frequency slack
+{
+  "text": "More than 50 events in 1 h 30 min in web: TypeError: x is undefined",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*More than 50 events in 1 h 30 min* · web · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*TypeError: x is undefined*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`src/app/total.ts:12` in `leerTotal`\n```return x.total;```"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Release*\nweb@1.4.0"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Events*\n7 in total"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*User*\nu_1834"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View error",
+            "emoji": false
+          },
+          "url": "https://errors.test/issues/42",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== frequency discord
+{
+  "content": "**More than 50 events in 1 h 30 min** · web · production",
+  "embeds": [
+    {
+      "title": "TypeError: x is undefined",
+      "url": "https://errors.test/issues/42",
+      "description": "`src/app/total.ts:12 in leerTotal`\n```\nreturn x.total;\n```",
+      "fields": [
+        {
+          "name": "Release",
+          "value": "web@​1.4.0",
+          "inline": true
+        },
+        {
+          "name": "Events",
+          "value": "7 in total",
+          "inline": true
+        },
+        {
+          "name": "User",
+          "value": "u\\_1834",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== frequency telegram
+<b>More than 50 events in 1 h 30 min</b> · web · production
+<b>TypeError: x is undefined</b>
+<code>src/app/total.ts:12 in leerTotal</code>
+<pre>return x.total;</pre>
+Release: web@1.4.0
+Events: 7 in total
+User: u_1834
+<a href="https://errors.test/issues/42">View error</a>
+=== frequency ntfy y correo
+Title: More than 50 events in 1 h 30 min · web
+Subject: [Mothlog] More than 50 events in 1 h 30 min in web: TypeError: x is undefined
+
+TypeError: x is undefined
+More than 50 events in 1 h 30 min · web · production
+
+src/app/total.ts:12 in leerTotal
+    return x.total;
+
+Release: web@1.4.0
+Events: 7 in total
+User: u_1834
+
+https://errors.test/issues/42
+=== users slack
+{
+  "text": "More than 10 affected users in web: TypeError: x is undefined",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*More than 10 affected users* · web · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*TypeError: x is undefined*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`src/app/total.ts:12` in `leerTotal`\n```return x.total;```"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Release*\nweb@1.4.0"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Events*\n7 in total"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*User*\nu_1834"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View error",
+            "emoji": false
+          },
+          "url": "https://errors.test/issues/42",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== users discord
+{
+  "content": "**More than 10 affected users** · web · production",
+  "embeds": [
+    {
+      "title": "TypeError: x is undefined",
+      "url": "https://errors.test/issues/42",
+      "description": "`src/app/total.ts:12 in leerTotal`\n```\nreturn x.total;\n```",
+      "fields": [
+        {
+          "name": "Release",
+          "value": "web@​1.4.0",
+          "inline": true
+        },
+        {
+          "name": "Events",
+          "value": "7 in total",
+          "inline": true
+        },
+        {
+          "name": "User",
+          "value": "u\\_1834",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== users telegram
+<b>More than 10 affected users</b> · web · production
+<b>TypeError: x is undefined</b>
+<code>src/app/total.ts:12 in leerTotal</code>
+<pre>return x.total;</pre>
+Release: web@1.4.0
+Events: 7 in total
+User: u_1834
+<a href="https://errors.test/issues/42">View error</a>
+=== users ntfy y correo
+Title: More than 10 affected users · web
+Subject: [Mothlog] More than 10 affected users in web: TypeError: x is undefined
+
+TypeError: x is undefined
+More than 10 affected users · web · production
+
+src/app/total.ts:12 in leerTotal
+    return x.total;
+
+Release: web@1.4.0
+Events: 7 in total
+User: u_1834
+
+https://errors.test/issues/42
+=== cron_failed slack
+{
+  "text": "Cron failed in web: Copia nocturna",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Cron failed* · web · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Copia nocturna*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`copia · every 2 hour (Europe/Madrid)`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Duration*\n1 min 35 s"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View monitor",
+            "emoji": false
+          },
+          "url": "https://errors.test/monitors/1/copia",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== cron_failed discord
+{
+  "content": "**Cron failed** · web · production",
+  "embeds": [
+    {
+      "title": "Copia nocturna",
+      "url": "https://errors.test/monitors/1/copia",
+      "description": "`copia · every 2 hour (Europe/Madrid)`",
+      "fields": [
+        {
+          "name": "Duration",
+          "value": "1 min 35 s",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== cron_failed telegram
+<b>Cron failed</b> · web · production
+<b>Copia nocturna</b>
+<code>copia · every 2 hour (Europe/Madrid)</code>
+Duration: 1 min 35 s
+<a href="https://errors.test/monitors/1/copia">View monitor</a>
+=== cron_failed ntfy y correo
+Title: Cron failed · web
+Subject: [Mothlog] Cron failed in web: Copia nocturna
+
+Copia nocturna
+Cron failed · web · production
+
+copia · every 2 hour (Europe/Madrid)
+
+Duration: 1 min 35 s
+
+https://errors.test/monitors/1/copia
+=== cron_failed markdown
+# Cron failed: Copia nocturna
+
+- Project: web
+- Monitor: `copia`
+- Schedule: `every 2 hour (Europe/Madrid)`
+- Environment: production
+- Duration: 1 min 35 s
+
+[View in Mothlog](https://errors.test/monitors/1/copia)
+=== cron_missed slack
+{
+  "text": "Cron missed in web: Copia nocturna",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Cron missed* · web · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Copia nocturna*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`copia · every 2 hour (Europe/Madrid)`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Expected*\n2026-11-22 11:10 CET"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Margin*\n5 min"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View monitor",
+            "emoji": false
+          },
+          "url": "https://errors.test/monitors/1/copia",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== cron_missed discord
+{
+  "content": "**Cron missed** · web · production",
+  "embeds": [
+    {
+      "title": "Copia nocturna",
+      "url": "https://errors.test/monitors/1/copia",
+      "description": "`copia · every 2 hour (Europe/Madrid)`",
+      "fields": [
+        {
+          "name": "Expected",
+          "value": "2026-11-22 11:10 CET",
+          "inline": true
+        },
+        {
+          "name": "Margin",
+          "value": "5 min",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== cron_missed telegram
+<b>Cron missed</b> · web · production
+<b>Copia nocturna</b>
+<code>copia · every 2 hour (Europe/Madrid)</code>
+Expected: 2026-11-22 11:10 CET
+Margin: 5 min
+<a href="https://errors.test/monitors/1/copia">View monitor</a>
+=== cron_missed ntfy y correo
+Title: Cron missed · web
+Subject: [Mothlog] Cron missed in web: Copia nocturna
+
+Copia nocturna
+Cron missed · web · production
+
+copia · every 2 hour (Europe/Madrid)
+
+Expected: 2026-11-22 11:10 CET
+Margin: 5 min
+
+https://errors.test/monitors/1/copia
+=== cron_missed markdown
+# Cron missed: Copia nocturna
+
+- Project: web
+- Monitor: `copia`
+- Schedule: `every 2 hour (Europe/Madrid)`
+- Environment: production
+- Expected: 2026-11-22 11:10 CET
+- Margin: 5 min
+
+[View in Mothlog](https://errors.test/monitors/1/copia)
+=== cron_timeout slack
+{
+  "text": "Cron timed out in web: Copia nocturna",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Cron timed out* · web · production"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Copia nocturna*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`copia · every 2 hour (Europe/Madrid)`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Started*\n2026-11-18 11:30 CET"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Max runtime*\n30 min"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View monitor",
+            "emoji": false
+          },
+          "url": "https://errors.test/monitors/1/copia",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== cron_timeout discord
+{
+  "content": "**Cron timed out** · web · production",
+  "embeds": [
+    {
+      "title": "Copia nocturna",
+      "url": "https://errors.test/monitors/1/copia",
+      "description": "`copia · every 2 hour (Europe/Madrid)`",
+      "fields": [
+        {
+          "name": "Started",
+          "value": "2026-11-18 11:30 CET",
+          "inline": true
+        },
+        {
+          "name": "Max runtime",
+          "value": "30 min",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== cron_timeout telegram
+<b>Cron timed out</b> · web · production
+<b>Copia nocturna</b>
+<code>copia · every 2 hour (Europe/Madrid)</code>
+Started: 2026-11-18 11:30 CET
+Max runtime: 30 min
+<a href="https://errors.test/monitors/1/copia">View monitor</a>
+=== cron_timeout ntfy y correo
+Title: Cron timed out · web
+Subject: [Mothlog] Cron timed out in web: Copia nocturna
+
+Copia nocturna
+Cron timed out · web · production
+
+copia · every 2 hour (Europe/Madrid)
+
+Started: 2026-11-18 11:30 CET
+Max runtime: 30 min
+
+https://errors.test/monitors/1/copia
+=== cron_timeout markdown
+# Cron timed out: Copia nocturna
+
+- Project: web
+- Monitor: `copia`
+- Schedule: `every 2 hour (Europe/Madrid)`
+- Environment: production
+- Started: 2026-11-18 11:30 CET
+- Max runtime: 30 min
+
+[View in Mothlog](https://errors.test/monitors/1/copia)
+=== uptime_down slack
+{
+  "text": "Monitor down in web: home",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Monitor down* · web"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*home*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`GET https://example.com/`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Since*\n2026-11-18 11:30:00 CET"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Error*\nstatus 502"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Consecutive failures*\n3"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View monitor",
+            "emoji": false
+          },
+          "url": "https://errors.test/monitors/1/uptime/home",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== uptime_down discord
+{
+  "content": "**Monitor down** · web",
+  "embeds": [
+    {
+      "title": "home",
+      "url": "https://errors.test/monitors/1/uptime/home",
+      "description": "`GET https://example.com/`",
+      "fields": [
+        {
+          "name": "Since",
+          "value": "2026-11-18 11:30:00 CET",
+          "inline": true
+        },
+        {
+          "name": "Error",
+          "value": "status 502",
+          "inline": true
+        },
+        {
+          "name": "Consecutive failures",
+          "value": "3",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== uptime_down telegram
+<b>Monitor down</b> · web
+<b>home</b>
+<code>GET https://example.com/</code>
+Since: 2026-11-18 11:30:00 CET
+Error: status 502
+Consecutive failures: 3
+<a href="https://errors.test/monitors/1/uptime/home">View monitor</a>
+=== uptime_down ntfy y correo
+Title: Monitor down · web
+Subject: [Mothlog] Monitor down in web: home
+
+home
+Monitor down · web
+
+GET https://example.com/
+
+Since: 2026-11-18 11:30:00 CET
+Error: status 502
+Consecutive failures: 3
+
+https://errors.test/monitors/1/uptime/home
+=== uptime_down markdown
+# Monitor down: home
+
+- Project: web
+- Monitor: `home`
+- URL: `GET https://example.com/`
+- Since: 2026-11-18 11:30:00 CET
+- Error: status 502
+- Consecutive failures: 3
+
+[View in Mothlog](https://errors.test/monitors/1/uptime/home)
+=== uptime_up slack
+{
+  "text": "Monitor up in web: home",
+  "blocks": [
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "*Monitor up* · web"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*home*"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "`GET https://example.com/`"
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Down for*\n3 min 0 s"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Since*\n2026-11-18 11:30:00 CET"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Until*\n2026-11-22 11:03:00 CET"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View monitor",
+            "emoji": false
+          },
+          "url": "https://errors.test/monitors/1/uptime/home",
+          "style": "primary"
+        }
+      ]
+    }
+  ]
+}
+=== uptime_up discord
+{
+  "content": "**Monitor up** · web",
+  "embeds": [
+    {
+      "title": "home",
+      "url": "https://errors.test/monitors/1/uptime/home",
+      "description": "`GET https://example.com/`",
+      "fields": [
+        {
+          "name": "Down for",
+          "value": "3 min 0 s",
+          "inline": true
+        },
+        {
+          "name": "Since",
+          "value": "2026-11-18 11:30:00 CET",
+          "inline": true
+        },
+        {
+          "name": "Until",
+          "value": "2026-11-22 11:03:00 CET",
+          "inline": true
+        }
+      ]
+    }
+  ],
+  "allowed_mentions": {
+    "parse": []
+  }
+}
+=== uptime_up telegram
+<b>Monitor up</b> · web
+<b>home</b>
+<code>GET https://example.com/</code>
+Down for: 3 min 0 s
+Since: 2026-11-18 11:30:00 CET
+Until: 2026-11-22 11:03:00 CET
+<a href="https://errors.test/monitors/1/uptime/home">View monitor</a>
+=== uptime_up ntfy y correo
+Title: Monitor up · web
+Subject: [Mothlog] Monitor up in web: home
+
+home
+Monitor up · web
+
+GET https://example.com/
+
+Down for: 3 min 0 s
+Since: 2026-11-18 11:30:00 CET
+Until: 2026-11-22 11:03:00 CET
+
+https://errors.test/monitors/1/uptime/home
+=== uptime_up markdown
+# Monitor up: home
+
+- Project: web
+- Monitor: `home`
+- URL: `GET https://example.com/`
+- Down for: 3 min 0 s
+- Since: 2026-11-18 11:30:00 CET
+- Until: 2026-11-22 11:03:00 CET
+
+[View in Mothlog](https://errors.test/monitors/1/uptime/home)

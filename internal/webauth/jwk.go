@@ -89,7 +89,7 @@ func parseJWK(raw json.RawMessage) (jwk, bool) {
 // con el tipo de clave y con su alg si lo trae. none y HS* no valen.
 func (k jwk) verify(alg string, signed, sig []byte) error {
 	if k.alg != "" && k.alg != alg {
-		return fmt.Errorf("la clave es %s, el token %s", k.alg, alg)
+		return fmt.Errorf("the key is %s, the token %s", k.alg, alg)
 	}
 	hashOf := func(h crypto.Hash) []byte {
 		w := h.New()
@@ -107,7 +107,7 @@ func (k jwk) verify(alg string, signed, sig []byte) error {
 		case "RS512", "PS512":
 			h = crypto.SHA512
 		default:
-			return fmt.Errorf("alg %q con clave RSA", alg)
+			return fmt.Errorf("alg %q with an RSA key", alg)
 		}
 		if alg[0] == 'P' {
 			return rsa.VerifyPSS(pub, h, hashOf(h), sig, &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash})
@@ -124,25 +124,25 @@ func (k jwk) verify(alg string, signed, sig []byte) error {
 		case "ES512":
 			h, curve = crypto.SHA512, elliptic.P521()
 		default:
-			return fmt.Errorf("alg %q con clave EC", alg)
+			return fmt.Errorf("alg %q with an EC key", alg)
 		}
 		size := (curve.Params().BitSize + 7) / 8
 		if pub.Curve != curve || len(sig) != 2*size {
-			return errors.New("firma EC de otra curva")
+			return errors.New("EC signature from another curve")
 		}
 		r, s := new(big.Int).SetBytes(sig[:size]), new(big.Int).SetBytes(sig[size:])
 		if !ecdsa.Verify(pub, hashOf(h), r, s) {
-			return errors.New("firma EC no válida")
+			return errors.New("invalid EC signature")
 		}
 		return nil
 	case ed25519.PublicKey:
 		if alg != "EdDSA" && alg != "Ed25519" {
-			return fmt.Errorf("alg %q con clave Ed25519", alg)
+			return fmt.Errorf("alg %q with an Ed25519 key", alg)
 		}
 		if !ed25519.Verify(pub, signed, sig) {
-			return errors.New("firma Ed25519 no válida")
+			return errors.New("invalid Ed25519 signature")
 		}
 		return nil
 	}
-	return errors.New("tipo de clave desconocido")
+	return errors.New("unknown key type")
 }

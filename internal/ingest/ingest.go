@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type Enricher interface {
@@ -112,7 +112,7 @@ type Result struct {
 	Dropped string
 }
 
-var errDuplicate = errors.New("evento repetido")
+var errDuplicate = errors.New("duplicate event")
 
 // Ingest es IngestWith con los límites por defecto.
 func (in *Ingester) Ingest(ctx context.Context, projectID int64, ev *event.Event) (Result, error) {
@@ -172,7 +172,7 @@ func (in *Ingester) prepare(ctx context.Context, projectID int64, ev *event.Even
 		ev.Timestamp = now
 	}
 	if err := in.enricher.Enrich(ctx, projectID, ev); err != nil {
-		in.log.WarnContext(ctx, "enriquecer evento", "proyecto", projectID, "event_id", ev.ID, "err", err)
+		in.log.WarnContext(ctx, "enrich event", "project", projectID, "event_id", ev.ID, "err", err)
 	}
 	data, err := store.EncodeEvent(ev)
 	if err != nil {
@@ -193,7 +193,7 @@ func (in *Ingester) ingestOne(ctx context.Context, it *pending) (Result, error) 
 		}
 		res.ProjectID = it.projectID
 		if err := in.notifier.IssueChanged(ctx, tx, it.ev, res); err != nil {
-			return fmt.Errorf("avisar: %w", err)
+			return fmt.Errorf("alert: %w", err)
 		}
 		return nil
 	})
@@ -240,10 +240,10 @@ func (in *Ingester) save(ctx context.Context, tx db.Tx, projectID int64, ev *eve
 				return res, err
 			}
 			if found == nil {
-				return res, errors.New("el issue desapareció tras un conflicto")
+				return res, errors.New("the issue disappeared after a conflict")
 			}
 		default:
-			return res, fmt.Errorf("crear issue: %w", err)
+			return res, fmt.Errorf("create issue: %w", err)
 		}
 	}
 
@@ -280,7 +280,7 @@ func (in *Ingester) save(ctx context.Context, tx db.Tx, projectID int64, ev *eve
 			var dup bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM events WHERE project_id = $1 AND event_id = $2)`,
 				projectID, ev.ID).Scan(&dup); err != nil {
-				return res, fmt.Errorf("buscar evento: %w", err)
+				return res, fmt.Errorf("find event: %w", err)
 			}
 			if dup {
 				return res, errDuplicate
@@ -302,7 +302,7 @@ func (in *Ingester) save(ctx context.Context, tx db.Tx, projectID int64, ev *eve
 			WHERE id = $1`,
 			found.id, ev.Timestamp, status, regressed, now, hour, stored, res.Dropped == "")
 		if err != nil {
-			return res, fmt.Errorf("actualizar issue: %w", err)
+			return res, fmt.Errorf("update issue: %w", err)
 		}
 		if regressed {
 			if err := store.RecordRegression(ctx, tx, found.id, found.status, ev.Release); err != nil {
@@ -349,7 +349,7 @@ func lockIssue(ctx context.Context, tx db.Tx, projectID int64, fp string) (*lock
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("buscar issue: %w", err)
+		return nil, fmt.Errorf("find issue: %w", err)
 	}
 	return &li, nil
 }

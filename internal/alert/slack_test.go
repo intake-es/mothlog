@@ -11,7 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/lang"
 )
 
 var update = flag.Bool("update", false, "reescribe los ficheros dorados de testdata/")
@@ -100,7 +101,18 @@ func TestSlackGoldenNewWithFrame(t *testing.T) {
 		Tags: map[string]string{"organization_id": "8a1c4e2f-0b3d-4c5e-9f6a-7b8c9d0e1f2a", "organization_name": "Clínica Sonrisa"},
 		User: &event.User{ID: "u_1834", Email: "ana@example.com", IPAddress: "203.0.113.9"},
 	}
-	golden(t, "slack-nuevo.json", slackMessage(p, ev, "https://errors.test/issues/42"))
+	for _, l := range []lang.Lang{lang.EN, lang.ES} {
+		p.l = l
+		golden(t, goldenName("slack-nuevo", l), slackMessage(p, ev, "https://errors.test/issues/42"))
+	}
+}
+
+// goldenName es el fichero de referencia de un idioma: el de español lleva .es.
+func goldenName(base string, l lang.Lang) string {
+	if l == lang.ES {
+		return base + ".es.json"
+	}
+	return base + ".json"
 }
 
 func TestSlackGoldenRegressionWithLinear(t *testing.T) {
@@ -126,7 +138,10 @@ func TestSlackGoldenRegressionWithLinear(t *testing.T) {
 		Tags:    map[string]string{"organization_id": "8a1c4e2f-0b3d-4c5e-9f6a-7b8c9d0e1f2a"},
 		Request: &event.Request{Method: "get", URL: "https://api.example.com/v1/informes/medias?token=secreto&x=1#a"},
 	}
-	golden(t, "slack-regresion.json", slackMessage(p, ev, "https://errors.test/issues/7"))
+	for _, l := range []lang.Lang{lang.EN, lang.ES} {
+		p.l = l
+		golden(t, goldenName("slack-regresion", l), slackMessage(p, ev, "https://errors.test/issues/7"))
+	}
 }
 
 func TestSlackWithoutOptionalData(t *testing.T) {
@@ -154,10 +169,10 @@ func TestSlackWithoutOptionalData(t *testing.T) {
 			if len(msg.Blocks[2].Elements) != 1 {
 				t.Errorf("botones = %+v", msg.Blocks[2].Elements)
 			}
-			if c := msg.Blocks[0].Elements[0].(slackText).Text; c != "*Nuevo error* · backend" {
+			if c := msg.Blocks[0].Elements[0].(slackText).Text; c != "*New error* · backend" {
 				t.Errorf("contexto = %q", c)
 			}
-			if msg.Blocks[1].Text.Text != "*fallo sin más*" || msg.Text != "Nuevo error en backend: fallo sin más" {
+			if msg.Blocks[1].Text.Text != "*fallo sin más*" || msg.Text != "New error in backend: fallo sin más" {
 				t.Errorf("titular = %q, text = %q", msg.Blocks[1].Text.Text, msg.Text)
 			}
 			if strings.Contains(flatten(msg), "a@b.c") {
@@ -178,10 +193,10 @@ func TestSlackWithoutOptionalData(t *testing.T) {
 	pr := *p
 	pr.kind, pr.count = "regressed", 4
 	msg = slackMessage(&pr, nil, "")
-	if c := msg.Blocks[0].Elements[0].(slackText).Text; c != "*Ha vuelto* · backend" {
+	if c := msg.Blocks[0].Elements[0].(slackText).Text; c != "*Regression* · backend" {
 		t.Errorf("contexto = %q", c)
 	}
-	if f := msg.Blocks[2].Fields; len(f) != 1 || f[0].Text != "*Eventos*\n4 en total" {
+	if f := msg.Blocks[2].Fields; len(f) != 1 || f[0].Text != "*Events*\n4 in total" {
 		t.Errorf("campos = %+v", f)
 	}
 }
@@ -208,8 +223,8 @@ func TestSlackEscapesAndTruncates(t *testing.T) {
 			t.Errorf("sin escapar o sin recortar: %q en\n%s", bad, all)
 		}
 	}
-	for _, want := range []string{"a&amp;b", "&lt;prod&gt;", "&lt;!here&gt; &amp; &lt;@U123|alguien&gt;", "`a&lt;b&gt;.ts:1` en `f'&amp;'`",
-		"if (a &lt; b &amp;&amp; c &gt; d)", "*Release*\n&lt;!channel&gt;", "*Petición*\nPOST /x%3Cy%3E"} {
+	for _, want := range []string{"a&amp;b", "&lt;prod&gt;", "&lt;!here&gt; &amp; &lt;@U123|alguien&gt;", "`a&lt;b&gt;.ts:1` in `f'&amp;'`",
+		"if (a &lt; b &amp;&amp; c &gt; d)", "*Release*\n&lt;!channel&gt;", "*Request*\nPOST /x%3Cy%3E"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("falta %q en\n%s", want, all)
 		}

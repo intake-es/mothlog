@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // uptimeInfo es el monitor y el incidente de un aviso de disponibilidad.
@@ -32,7 +33,7 @@ type uptimeInfo struct {
 func (a *Alerter) UptimeChanged(ctx context.Context, tx db.Tx, ch store.UptimeChange) error {
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		a.log.ErrorContext(ctx, "encolar aviso de disponibilidad", "monitor", ch.Monitor.ID, "err", err)
+		a.log.ErrorContext(ctx, "enqueue uptime alert", "monitor", ch.Monitor.ID, "err", err)
 		return nil
 	}
 	err = a.enqueueUptime(ctx, sp, ch)
@@ -41,7 +42,7 @@ func (a *Alerter) UptimeChanged(ctx context.Context, tx db.Tx, ch store.UptimeCh
 	}
 	if err != nil {
 		_ = sp.Rollback(ctx)
-		a.log.ErrorContext(ctx, "encolar aviso de disponibilidad", "monitor", ch.Monitor.ID, "err", err)
+		a.log.ErrorContext(ctx, "enqueue uptime alert", "monitor", ch.Monitor.ID, "err", err)
 	}
 	return nil
 }
@@ -104,7 +105,7 @@ func (a *Alerter) loadUptime(ctx context.Context, tx db.Tx, p *pending, monitorI
 		return errGone
 	}
 	if err != nil {
-		return fmt.Errorf("leer monitor de disponibilidad %d: %w", monitorID, err)
+		return fmt.Errorf("read uptime monitor %d: %w", monitorID, err)
 	}
 	if incidentID != nil {
 		i := &u.incident
@@ -112,7 +113,7 @@ func (a *Alerter) loadUptime(ctx context.Context, tx db.Tx, p *pending, monitorI
 			FROM uptime_incidents WHERE id = $1`, *incidentID).
 			Scan(&i.ID, &i.MonitorID, &i.StartedAt, &i.EndedAt, &i.DurationMs, &i.FirstError)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
-			return fmt.Errorf("leer incidente %d: %w", *incidentID, err)
+			return fmt.Errorf("read incident %d: %w", *incidentID, err)
 		}
 		// El aviso de la caída cuenta el incidente como estaba al caer, aunque salga tarde.
 		if p.kind == store.KindUptimeDown {
@@ -127,11 +128,11 @@ func (a *Alerter) loadUptime(ctx context.Context, tx db.Tx, p *pending, monitorI
 	return nil
 }
 
-func uptimeKindText(kind string) string {
+func uptimeKindText(kind string, l lang.Lang) string {
 	if kind == store.KindUptimeUp {
-		return "Monitor recuperado"
+		return l.T("Monitor up", "Monitor recuperado")
 	}
-	return "Monitor caído"
+	return l.T("Monitor down", "Monitor caído")
 }
 
 func uptimeSummary(p *pending) summary {
@@ -145,22 +146,23 @@ func uptimeSummary(p *pending) summary {
 		}
 	}
 	inc := u.incident
+	tr := p.l.T
 	if p.kind == store.KindUptimeUp {
 		if inc.DurationMs != nil {
-			add("Caído durante", durationText(*inc.DurationMs))
+			add(tr("Down for", "Caído durante"), durationText(*inc.DurationMs))
 		}
 		if !inc.StartedAt.IsZero() {
-			add("Desde", inc.StartedAt.In(madrid).Format("2006-01-02 15:04:05 MST"))
+			add(tr("Since", "Desde"), inc.StartedAt.In(madrid).Format("2006-01-02 15:04:05 MST"))
 		}
 		if inc.EndedAt != nil {
-			add("Hasta", inc.EndedAt.In(madrid).Format("2006-01-02 15:04:05 MST"))
+			add(tr("Until", "Hasta"), inc.EndedAt.In(madrid).Format("2006-01-02 15:04:05 MST"))
 		}
 	} else {
 		if !inc.StartedAt.IsZero() {
-			add("Desde", inc.StartedAt.In(madrid).Format("2006-01-02 15:04:05 MST"))
+			add(tr("Since", "Desde"), inc.StartedAt.In(madrid).Format("2006-01-02 15:04:05 MST"))
 		}
 		add("Error", inc.FirstError)
-		add("Fallos seguidos", strconv.Itoa(u.threshold))
+		add(tr("Consecutive failures", "Fallos seguidos"), strconv.Itoa(u.threshold))
 	}
 	return s
 }
@@ -170,12 +172,13 @@ func uptimeMarkdown(p *pending) string {
 	s := uptimeSummary(p)
 	var b strings.Builder
 	fmt.Fprintf(&b, "# %s: %s\n\n", s.What, s.Headline)
-	fmt.Fprintf(&b, "- Proyecto: %s\n- Monitor: `%s`\n- URL: `%s %s`\n", p.project, p.uptime.slug, p.uptime.method, p.uptime.url)
+	fmt.Fprintf(&b, p.l.T("- Project: %s\n- Monitor: `%s`\n- URL: `%s %s`\n", "- Proyecto: %s\n- Monitor: `%s`\n- URL: `%s %s`\n"),
+		p.project, p.uptime.slug, p.uptime.method, p.uptime.url)
 	for _, f := range s.Fields {
 		fmt.Fprintf(&b, "- %s: %s\n", f[0], f[1])
 	}
 	if p.link != "" {
-		fmt.Fprintf(&b, "\n[Ver en intake-errors](%s)\n", p.link)
+		fmt.Fprintf(&b, "\n%s\n", viewIn(p.l, p.link))
 	}
 	return b.String()
 }

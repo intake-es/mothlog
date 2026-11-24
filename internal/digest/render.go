@@ -141,7 +141,7 @@ func (d *Digest) HTML() string {
 <html lang="%s"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>%s</title></head>
 <body style="margin:0;padding:0;background:#ffffff;color:%s;font-family:%s;font-size:14px;line-height:1.5">
 <div style="max-width:600px;margin:0 auto;padding:28px 20px">
-<p style="margin:0;color:%s;font-size:12px;font-weight:600;letter-spacing:.02em">intake-errors</p>
+<p style="margin:0;color:%s;font-size:12px;font-weight:600;letter-spacing:.02em">Mothlog</p>
 <h1 style="margin:6px 0 2px;font-size:20px;line-height:1.3;font-weight:600;color:%s">%s</h1>
 <p style="margin:0;color:%s;font-size:13px">%s</p>
 `, e(d.Language), e(d.Title), cText, font, cSubtle, cText, e(d.Title), cMuted, e(d.Period))

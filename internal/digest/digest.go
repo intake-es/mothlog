@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // MaxItems es cuántos issues o monitores salen como mucho en cada sección.
@@ -134,7 +134,7 @@ func Build(ctx context.Context, st *store.Store, o Options) (*Digest, error) {
 		Period: l.t("period", l.date(o.Start.In(loc)), l.date(o.End.In(loc)), loc.String()),
 	}
 	if d.Language == "" {
-		d.Language, d.lang = Spanish, Spanish
+		d.Language, d.lang = English, English
 	}
 	title := "title.daily"
 	if o.Config.Frequency == store.DigestWeekly {

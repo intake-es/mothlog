@@ -15,18 +15,18 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: intake_errors
-          POSTGRES_PASSWORD: intake_errors
-          POSTGRES_DB: intake_errors_test
+          POSTGRES_USER: mothlog
+          POSTGRES_PASSWORD: mothlog
+          POSTGRES_DB: mothlog_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U intake_errors"
+          --health-cmd "pg_isready -U mothlog"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
     env:
-      INTAKE_ERRORS_TEST_DATABASE_URL: postgres://intake_errors:intake_errors@localhost:5432/intake_errors_test?sslmode=disable
+      MOTHLOG_TEST_DATABASE_URL: postgres://mothlog:mothlog@localhost:5432/mothlog_test?sslmode=disable
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7

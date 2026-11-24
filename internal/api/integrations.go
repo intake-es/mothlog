@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/intake-es/intake-errors/internal/webhooks"
+	"github.com/intake-es/mothlog/internal/webhooks"
 )
 
 // Integrations dice cómo están Linear y GitHub: las URL de sus webhooks y si
@@ -15,7 +15,7 @@ type Integrations interface {
 
 func (h *handlers) integrations(w http.ResponseWriter, r *http.Request) {
 	if h.integ == nil {
-		writeError(w, http.StatusNotFound, "no encontrado")
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	s, err := h.integ.Status(r.Context(), h.baseURL(r).String())

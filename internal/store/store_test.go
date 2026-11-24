@@ -34,9 +34,9 @@ func randomHex(t *testing.T, n int) string {
 // Postgres, el test se salta y why dice por qué.
 func testSchemaURL(t *testing.T, why string) string {
 	t.Helper()
-	base := os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL")
+	base := os.Getenv("MOTHLOG_TEST_DATABASE_URL")
 	if base == "" {
-		t.Skip("solo con Postgres (INTAKE_ERRORS_TEST_DATABASE_URL): " + why)
+		t.Skip("solo con Postgres (MOTHLOG_TEST_DATABASE_URL): " + why)
 	}
 	ctx := context.Background()
 	schema := "test_" + randomHex(t, 6)
@@ -64,11 +64,11 @@ func testSchemaURL(t *testing.T, why string) string {
 }
 
 // testURL es un esquema propio de la base de pruebas de Postgres o, sin
-// INTAKE_ERRORS_TEST_DATABASE_URL, un fichero de SQLite nuevo.
+// MOTHLOG_TEST_DATABASE_URL, un fichero de SQLite nuevo.
 func testURL(t *testing.T) string {
 	t.Helper()
-	if os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL") == "" {
-		return "sqlite://" + filepath.Join(t.TempDir(), "intake.db")
+	if os.Getenv("MOTHLOG_TEST_DATABASE_URL") == "" {
+		return "sqlite://" + filepath.Join(t.TempDir(), "mothlog.db")
 	}
 	return testSchemaURL(t, "")
 }
@@ -76,8 +76,8 @@ func testURL(t *testing.T) string {
 // onlyPostgres salta el test con SQLite; why dice por qué solo vale con Postgres.
 func onlyPostgres(t *testing.T, why string) {
 	t.Helper()
-	if os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL") == "" {
-		t.Skip("solo con Postgres (INTAKE_ERRORS_TEST_DATABASE_URL): " + why)
+	if os.Getenv("MOTHLOG_TEST_DATABASE_URL") == "" {
+		t.Skip("solo con Postgres (MOTHLOG_TEST_DATABASE_URL): " + why)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestIssueAndEventConstraints(t *testing.T) {
 
 // Con SQLite no hay eventos de antes que convertir.
 func TestConvertLegacyEventsNoopOnSQLite(t *testing.T) {
-	if os.Getenv("INTAKE_ERRORS_TEST_DATABASE_URL") != "" {
+	if os.Getenv("MOTHLOG_TEST_DATABASE_URL") != "" {
 		t.Skip("solo con SQLite")
 	}
 	s := testStore(t)

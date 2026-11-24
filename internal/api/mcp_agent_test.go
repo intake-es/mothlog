@@ -10,8 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func TestMCPInstructionsAndAnnotations(t *testing.T) {
@@ -81,14 +81,14 @@ func TestMCPNewTools(t *testing.T) {
 	md, isErr := call(t, cs, "get_issue_context", map[string]any{"issue_id": id})
 	if isErr || !strings.HasPrefix(md, "# TypeError: Cannot read properties of undefined (reading 'reduce')\n") ||
 		!strings.Contains(md, ">  7 |   return pedido.lineas!.reduce(") ||
-		!strings.Contains(md, "- En la interfaz: https://errors.example.com/issues/"+strconv.FormatInt(id, 10)) {
+		!strings.Contains(md, "- In the UI: https://errors.example.com/issues/"+strconv.FormatInt(id, 10)) {
 		t.Errorf("get_issue_context =\n%s", md)
 	}
 	md, _ = call(t, cs, "get_issue_context", map[string]any{"issue_id": id, "environment": "staging"})
-	if !strings.Contains(md, "- Eventos en staging: 1;") || !strings.Contains(md, "- Entorno: staging") {
+	if !strings.Contains(md, "- Events in staging: 1;") || !strings.Contains(md, "- Environment: staging") {
 		t.Errorf("get_issue_context en staging =\n%s", md)
 	}
-	if out, isErr := call(t, cs, "get_issue_context", map[string]any{"issue_id": 999999}); !isErr || !strings.Contains(out, "no existe") {
+	if out, isErr := call(t, cs, "get_issue_context", map[string]any{"issue_id": 999999}); !isErr || !strings.Contains(out, "no such issue") {
 		t.Errorf("get_issue_context de un issue que no existe = %v %s", isErr, out)
 	}
 
@@ -103,11 +103,11 @@ func TestMCPNewTools(t *testing.T) {
 		len(ev.Event.Breadcrumbs) == 0 {
 		t.Errorf("get_event = %s", out)
 	}
-	if out, isErr := call(t, cs, "get_event", map[string]any{"event_id": "nada"}); !isErr || !strings.Contains(out, "no existe ese evento") {
+	if out, isErr := call(t, cs, "get_event", map[string]any{"event_id": "nada"}); !isErr || !strings.Contains(out, "no such event") {
 		t.Errorf("get_event que no existe = %v %s", isErr, out)
 	}
 	md, _ = call(t, cs, "get_issue_context", map[string]any{"issue_id": id, "event": strconv.FormatInt(events.Events[1].ID, 10)})
-	if !strings.Contains(md, "## Evento (el pedido)") {
+	if !strings.Contains(md, "## Event (the requested one)") {
 		t.Errorf("get_issue_context con event =\n%s", md)
 	}
 
@@ -116,7 +116,7 @@ func TestMCPNewTools(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &c); err != nil || isErr || c.Author != (store.Actor{Name: "agente", Kind: "token"}) {
 		t.Errorf("add_comment = %s", out)
 	}
-	if out, isErr := call(t, cs, "add_comment", map[string]any{"issue_id": id, "body": " "}); !isErr || !strings.Contains(out, "vacío") {
+	if out, isErr := call(t, cs, "add_comment", map[string]any{"issue_id": id, "body": " "}); !isErr || !strings.Contains(out, "empty") {
 		t.Errorf("add_comment vacío = %v %s", isErr, out)
 	}
 	out, isErr = call(t, cs, "set_issue_status", map[string]any{"issue_id": id, "status": "silenced", "comment": "Solo en pruebas"})
@@ -154,10 +154,10 @@ func TestMCPNewTools(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &d); err != nil || d.Events != 1 {
 		t.Errorf("get_release en staging = %s", out)
 	}
-	if out, isErr := call(t, cs, "get_release", map[string]any{"project": "web", "version": "nada"}); !isErr || !strings.Contains(out, "no existe esa release") {
+	if out, isErr := call(t, cs, "get_release", map[string]any{"project": "web", "version": "nada"}); !isErr || !strings.Contains(out, "no such release") {
 		t.Errorf("get_release que no existe = %v %s", isErr, out)
 	}
-	if out, isErr := call(t, cs, "get_release", map[string]any{"project": "nadie", "version": "x"}); !isErr || !strings.Contains(out, "no existe ese proyecto") {
+	if out, isErr := call(t, cs, "get_release", map[string]any{"project": "nadie", "version": "x"}); !isErr || !strings.Contains(out, "no such project") {
 		t.Errorf("get_release de un proyecto que no existe = %v %s", isErr, out)
 	}
 }
@@ -184,8 +184,8 @@ func TestMCPAgentFlow(t *testing.T) {
 	found := page.Issues[0]
 
 	md, _ := call(t, cs, "get_issue_context", map[string]any{"issue_id": found.ID})
-	wantAll(t, "contexto", md, "## Resumen", "## Releases", "## Entornos", "## Etiquetas más frecuentes", "### Excepciones",
-		"### Breadcrumbs", "## Historial\n\n(sin comentarios ni cambios de estado)", "## Qué puedes hacer", "`set_issue_status`")
+	wantAll(t, "contexto", md, "## Summary", "## Releases", "## Environments", "## Most frequent tags", "### Exceptions",
+		"### Breadcrumbs", "## History\n\n(no comments or status changes)", "## What you can do", "`set_issue_status`")
 
 	if _, isErr := call(t, cs, "add_comment", map[string]any{"issue_id": found.ID,
 		"body": "La media divide entre `envios`, que es 0 en los pedidos sin enviar."}); isErr {
@@ -208,11 +208,11 @@ func TestMCPAgentFlow(t *testing.T) {
 
 	md, _ = call(t, cs, "get_issue_context", map[string]any{"issue_id": found.ID})
 	wantAll(t, "contexto al final", md,
-		"- Estado: resolved\n",
-		"- Resuelto con: fixture-release-2\n",
-		"agente (token) comentó:\n  > La media divide entre `envios`",
-		"agente (token) desde el MCP: open → resolved_next (release fixture-release-1)\n  > Arreglado: `media()` devuelve 0 sin envíos.\n",
-		"intake-errors al desplegar: resolved_next → resolved (release fixture-release-2)\n",
+		"- Status: resolved\n",
+		"- Resolved in: fixture-release-2\n",
+		"agente (token) commented:\n  > La media divide entre `envios`",
+		"agente (token) from the MCP: open → resolved_next (release fixture-release-1)\n  > Arreglado: `media()` devuelve 0 sin envíos.\n",
+		"Mothlog on deploy: resolved_next → resolved (release fixture-release-2)\n",
 	)
 	out, _ = call(t, cs, "list_comments", map[string]any{"issue_id": found.ID})
 	var h struct {

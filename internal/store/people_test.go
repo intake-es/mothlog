@@ -16,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/migrations"
-	sqlitemigrations "github.com/intake-es/intake-errors/migrations/sqlite"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/migrations"
+	sqlitemigrations "github.com/intake-es/mothlog/migrations/sqlite"
 )
 
 func TestLoginUniqueIgnoringCase(t *testing.T) {
@@ -231,7 +231,7 @@ func TestMigrationSessionsPostgres(t *testing.T) {
 // Las bases de SQLite empiezan en la 00022: la 00023 tiene que subirlas.
 func TestMigrationSessionsSQLite(t *testing.T) {
 	ctx := context.Background()
-	lite, err := db.OpenSQLite(ctx, "sqlite://"+filepath.Join(t.TempDir(), "intake.db"), db.SQLiteOptions{})
+	lite, err := db.OpenSQLite(ctx, "sqlite://"+filepath.Join(t.TempDir(), "mothlog.db"), db.SQLiteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

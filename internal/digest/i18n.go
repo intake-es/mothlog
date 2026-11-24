@@ -20,7 +20,7 @@ var texts = map[string]map[string]string{
 		"title.weekly":      "Resumen semanal de %s",
 		"period":            "Del %s al %s (%s)",
 		"empty":             "Sin novedades en el periodo: ni errores nuevos, ni regresiones, ni crons ni webs con problemas.",
-		"open":              "Abrir intake-errors",
+		"open":              "Abrir Mothlog",
 		"totals":            "En números",
 		"totals.events":     "Eventos",
 		"totals.issues":     "Errores con eventos",
@@ -63,7 +63,7 @@ var texts = map[string]map[string]string{
 		"subject.regressed": "%s ha vuelto|%s han vuelto",
 		"subject.crons":     "%s cron con problemas|%s crons con problemas",
 		"subject.quiet":     "sin novedades",
-		"footer":            "Lo manda intake-errors con la configuración del proyecto %s.",
+		"footer":            "Lo manda Mothlog con la configuración del proyecto %s.",
 		"footer.settings":   "Cambiar el resumen",
 		"weekday.short":     "dom,lun,mar,mié,jue,vie,sáb",
 		"month.short":       "ene,feb,mar,abr,may,jun,jul,ago,sep,oct,nov,dic",
@@ -77,7 +77,7 @@ var texts = map[string]map[string]string{
 		"title.weekly":      "Weekly digest for %s",
 		"period":            "From %s to %s (%s)",
 		"empty":             "Nothing new in this period: no new errors, no regressions and no cron or uptime problems.",
-		"open":              "Open intake-errors",
+		"open":              "Open Mothlog",
 		"totals":            "By the numbers",
 		"totals.events":     "Events",
 		"totals.issues":     "Errors with events",
@@ -120,7 +120,7 @@ var texts = map[string]map[string]string{
 		"subject.regressed": "%s regression|%s regressions",
 		"subject.crons":     "%s cron problem|%s cron problems",
 		"subject.quiet":     "nothing new",
-		"footer":            "Sent by intake-errors with the settings of project %s.",
+		"footer":            "Sent by Mothlog with the settings of project %s.",
 		"footer.settings":   "Change the digest",
 		"weekday.short":     "Sun,Mon,Tue,Wed,Thu,Fri,Sat",
 		"month.short":       "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
@@ -138,13 +138,13 @@ func (l tr) dict() map[string]string {
 	if d, ok := texts[string(l)]; ok {
 		return d
 	}
-	return texts[Spanish]
+	return texts[English]
 }
 
 func (l tr) t(key string, args ...any) string {
 	s, ok := l.dict()[key]
 	if !ok {
-		panic("digest: falta el texto " + key)
+		panic("digest: missing text " + key)
 	}
 	if len(args) == 0 {
 		return s

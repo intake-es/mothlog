@@ -17,7 +17,7 @@ func servePprof(addr string, log *slog.Logger) {
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Warn("perfiles de pprof abiertos", "addr", addr)
+	log.Warn("pprof profiles open", "addr", addr)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Error("pprof", "err", err)
 	}

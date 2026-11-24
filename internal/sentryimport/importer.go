@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // DefaultEvents es cuántos eventos se traen de cada issue si no se dice.
@@ -62,7 +62,7 @@ func (im *Importer) Run(ctx context.Context) (*Report, error) {
 	im.report = &Report{Server: im.origin.Server, Org: im.opts.Org, DryRun: im.opts.DryRun}
 	prev := im.client.Waited
 	im.client.Waited = func(d time.Duration, why string) {
-		im.progress("  %s: espero %s", why, d.Round(time.Millisecond))
+		im.progress("  %s: waiting %s", why, d.Round(time.Millisecond))
 		if prev != nil {
 			prev(d, why)
 		}
@@ -73,7 +73,7 @@ func (im *Importer) Run(ctx context.Context) (*Report, error) {
 	err := im.client.List(ctx, path("organizations", im.opts.Org, "projects"), nil, func(raw json.RawMessage) (bool, error) {
 		var p apiProject
 		if err := json.Unmarshal(raw, &p); err != nil || p.ID == "" || p.Slug == "" {
-			im.report.errorf("proyecto que no se entiende en la lista")
+			im.report.errorf("unreadable project in the list")
 			return true, nil
 		}
 		if len(im.opts.Projects) == 0 || slices.Contains(im.opts.Projects, string(p.Slug)) {
@@ -82,20 +82,20 @@ func (im *Importer) Run(ctx context.Context) (*Report, error) {
 		return true, nil
 	})
 	if err != nil {
-		return im.report, fmt.Errorf("listar los proyectos de %s: %w", im.opts.Org, err)
+		return im.report, fmt.Errorf("list projects of %s: %w", im.opts.Org, err)
 	}
 	for _, slug := range im.opts.Projects {
 		if !slices.ContainsFunc(projects, func(p apiProject) bool { return string(p.Slug) == slug }) {
-			im.report.errorf("no hay ningún proyecto %q en la organización %s", slug, im.opts.Org)
+			im.report.errorf("there is no project %q in organization %s", slug, im.opts.Org)
 		}
 	}
-	im.progress("%d proyectos en %s", len(projects), im.opts.Org)
+	im.progress("%d projects in %s", len(projects), im.opts.Org)
 	for _, p := range projects {
 		if err := im.project(ctx, p); err != nil {
 			if ctx.Err() != nil {
 				return im.report, ctx.Err()
 			}
-			im.report.errorf("proyecto %s: %v", p.Slug, err)
+			im.report.errorf("project %s: %v", p.Slug, err)
 		}
 	}
 	return im.report, nil
@@ -113,13 +113,13 @@ func (im *Importer) project(ctx context.Context, p apiProject) error {
 		return err
 	}
 	im.report.Projects.add(act)
-	im.progress("proyecto %s: %s", p.Slug, actionWord(act, im.opts.DryRun))
+	im.progress("project %s: %s", p.Slug, actionWord(act, im.opts.DryRun))
 
 	if err := im.releases(ctx, p, id); err != nil {
 		if ctx.Err() != nil {
 			return err
 		}
-		im.report.errorf("releases de %s: %v", p.Slug, err)
+		im.report.errorf("releases of %s: %v", p.Slug, err)
 	}
 	return im.issues(ctx, p, id)
 }
@@ -131,7 +131,7 @@ func (im *Importer) releases(ctx context.Context, p apiProject, projectID int64)
 		var r apiRelease
 		if json.Unmarshal(raw, &r) != nil || r.Version == "" {
 			im.report.Releases.Skipped++
-			im.report.errorf("release que no se entiende en %s", p.Slug)
+			im.report.errorf("unreadable release in %s", p.Slug)
 			return true, nil
 		}
 		if !im.opts.Since.IsZero() && !r.DateCreated.IsZero() && r.DateCreated.Before(im.opts.Since) {
@@ -149,7 +149,7 @@ func (im *Importer) releases(ctx context.Context, p apiProject, projectID int64)
 		relID, act, err := im.db.ImportRelease(ctx, im.origin, projectID, rel, im.opts.DryRun)
 		if err != nil {
 			im.report.Releases.Skipped++
-			im.report.errorf("release %s de %s: %v", r.Version, p.Slug, err)
+			im.report.errorf("release %s of %s: %v", r.Version, p.Slug, err)
 			return true, nil
 		}
 		im.report.Releases.add(act)
@@ -158,7 +158,7 @@ func (im *Importer) releases(ctx context.Context, p apiProject, projectID int64)
 			if ctx.Err() != nil {
 				return false, err
 			}
-			im.report.errorf("despliegues de %s en %s: %v", r.Version, p.Slug, err)
+			im.report.errorf("deploys of %s in %s: %v", r.Version, p.Slug, err)
 		}
 		return true, nil
 	})
@@ -185,7 +185,7 @@ func (im *Importer) deploys(ctx context.Context, p apiProject, version string, r
 			act, err := im.db.ImportDeploy(ctx, im.origin, releaseID, string(p.ID)+":"+string(d.ID), string(d.Environment), at, im.opts.DryRun)
 			if err != nil {
 				im.report.Deploys.Skipped++
-				im.report.errorf("despliegue %s de %s: %v", d.ID, version, err)
+				im.report.errorf("deploy %s of %s: %v", d.ID, version, err)
 				return true, nil
 			}
 			im.report.Deploys.add(act)
@@ -203,7 +203,7 @@ func (im *Importer) issues(ctx context.Context, p apiProject, projectID int64) e
 		var is apiIssue
 		if json.Unmarshal(raw, &is) != nil || is.ID == "" {
 			im.report.Issues.Skipped++
-			im.report.errorf("issue que no se entiende en %s", p.Slug)
+			im.report.errorf("unreadable issue in %s", p.Slug)
 			return true, nil
 		}
 		if !im.opts.Since.IsZero() && !is.LastSeen.IsZero() && is.LastSeen.Before(im.opts.Since) {
@@ -240,7 +240,7 @@ func (im *Importer) issue(ctx context.Context, p apiProject, projectID int64, is
 	}
 	if len(evs) == 0 {
 		im.report.Issues.Skipped++
-		im.report.skip("issue %s: no queda ningún evento suyo en Sentry, y sin eventos la retención lo borraría", issueName(is))
+		im.report.skip("issue %s: none of its events are left in Sentry, and retention would delete it without events", issueName(is))
 		return nil
 	}
 	newest := evs[0]
@@ -279,7 +279,7 @@ func (im *Importer) issue(ctx context.Context, p apiProject, projectID int64, is
 	}
 	im.report.Issues.add(res.Action)
 	if !res.Grouped {
-		im.report.NotGrouped = append(im.report.NotGrouped, fmt.Sprintf("%s en %s: %s", issueName(is), p.Slug, res.NotGrouped))
+		im.report.NotGrouped = append(im.report.NotGrouped, fmt.Sprintf("%s in %s: %s", issueName(is), p.Slug, res.NotGrouped))
 	}
 	created := 0
 	for i := len(evs) - 1; i >= 0; i-- {
@@ -298,7 +298,7 @@ func (im *Importer) issue(ctx context.Context, p apiProject, projectID int64, is
 		}
 		if err != nil {
 			im.report.Events.Skipped++
-			im.report.errorf("evento %s de %s: %v", ev.ID, issueName(is), err)
+			im.report.errorf("event %s of %s: %v", ev.ID, issueName(is), err)
 			continue
 		}
 		if ok {
@@ -327,11 +327,11 @@ func (im *Importer) events(ctx context.Context, is apiIssue) ([]*event.Event, er
 				ev, err = event.Parse(payload)
 			}
 			if err == nil && ev.Timestamp.IsZero() {
-				err = errors.New("sin fecha")
+				err = errors.New("no timestamp")
 			}
 			if err != nil {
 				im.report.Events.Skipped++
-				im.report.errorf("un evento de %s no se puede leer: %v", issueName(is), err)
+				im.report.errorf("an event of %s can't be read: %v", issueName(is), err)
 				return true, nil
 			}
 			out = append(out, ev)
@@ -364,13 +364,13 @@ func mapStatus(is apiIssue, lastRelease string) (status, fixedIn, resolvedIn str
 func actionWord(a store.ImportAction, dry bool) string {
 	switch {
 	case a == store.ImportCreated && dry:
-		return "se crearía"
+		return "would be created"
 	case a == store.ImportCreated:
-		return "creado"
+		return "created"
 	case a == store.ImportUpdated && dry:
-		return "se actualizaría"
+		return "would be updated"
 	case a == store.ImportUpdated:
-		return "actualizado"
+		return "updated"
 	}
-	return "sin cambios"
+	return "unchanged"
 }

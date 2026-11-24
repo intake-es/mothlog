@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Sitios a los que se enlaza un issue y de los que llegan cambios.
@@ -89,11 +89,11 @@ func scanLink(r db.Row) (IssueLink, error) {
 
 func collectLinks(rows db.Rows, err error) ([]IssueLink, error) {
 	if err != nil {
-		return nil, fmt.Errorf("leer enlaces: %w", err)
+		return nil, fmt.Errorf("read links: %w", err)
 	}
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (IssueLink, error) { return scanLink(r) })
 	if err != nil {
-		return nil, fmt.Errorf("leer enlaces: %w", err)
+		return nil, fmt.Errorf("read links: %w", err)
 	}
 	if out == nil {
 		out = []IssueLink{}
@@ -139,7 +139,7 @@ func SaveLink(ctx context.Context, q Querier, l IssueLink, only bool) (IssueLink
 	if only {
 		if _, err := q.Exec(ctx, `DELETE FROM issue_links WHERE issue_id = $1 AND provider = $2 AND kind = $3 AND external_id <> $4`,
 			l.IssueID, l.Provider, l.Kind, l.ExternalID); err != nil {
-			return l, fmt.Errorf("guardar enlace: %w", err)
+			return l, fmt.Errorf("save link: %w", err)
 		}
 	}
 	out, err := scanLink(q.QueryRow(ctx, `
@@ -162,7 +162,7 @@ func SaveLink(ctx context.Context, q Querier, l IssueLink, only bool) (IssueLink
 		return l, ErrNotFound
 	}
 	if err != nil {
-		return l, fmt.Errorf("guardar enlace: %w", err)
+		return l, fmt.Errorf("save link: %w", err)
 	}
 	return out, nil
 }
@@ -172,7 +172,7 @@ func (s *Store) SetLinkState(ctx context.Context, id int64, state, name string) 
 	_, err := s.pool.Exec(ctx, `UPDATE issue_links SET state = NULLIF($2, ''), state_name = COALESCE(NULLIF($3, ''), state_name),
 		updated_at = now() WHERE id = $1`, id, state, name)
 	if err != nil {
-		return fmt.Errorf("estado del enlace: %w", err)
+		return fmt.Errorf("link state: %w", err)
 	}
 	return nil
 }
@@ -185,7 +185,7 @@ func enqueueSync(ctx context.Context, q Querier, issueID int64, status, source s
 		SELECT id, $2 FROM issue_links WHERE issue_id = $1 AND kind = 'issue' AND provider <> $3`,
 		issueID, status, source)
 	if err != nil {
-		return fmt.Errorf("encolar el cambio a los enlaces: %w", err)
+		return fmt.Errorf("enqueue link change: %w", err)
 	}
 	return nil
 }
@@ -228,7 +228,7 @@ func consumeEcho(ctx context.Context, tx db.Tx, linkID int64, status string) (bo
 				AND `+tx.Dialect().InList("status", "$2")+`
 			ORDER BY id LIMIT 1)`, linkID, same, EchoWindow.Seconds())
 	if err != nil {
-		return false, fmt.Errorf("buscar el eco: %w", err)
+		return false, fmt.Errorf("find echo: %w", err)
 	}
 	return tag.RowsAffected() == 1, nil
 }
@@ -239,7 +239,7 @@ func consumeEcho(ctx context.Context, tx db.Tx, linkID int64, status string) (bo
 // resolved_next sin release en el último evento se queda en resolved.
 func (s *Store) ApplyExternalStatus(ctx context.Context, id int64, status string, by ExternalChange) (bool, error) {
 	if by.Source != ProviderLinear && by.Source != ProviderGitHub {
-		return false, fmt.Errorf("%w: origen del cambio %q", ErrInvalid, by.Source)
+		return false, fmt.Errorf("%w: change source %q", ErrInvalid, by.Source)
 	}
 	changed := false
 	err := db.BeginFunc(ctx, s.pool, func(tx db.Tx) error {
@@ -249,7 +249,7 @@ func (s *Store) ApplyExternalStatus(ctx context.Context, id int64, status string
 			return ErrNotFound
 		}
 		if err != nil {
-			return fmt.Errorf("leer issue: %w", err)
+			return fmt.Errorf("read issue: %w", err)
 		}
 		if echo, err := consumeEcho(ctx, tx, by.LinkID, status); err != nil || echo {
 			return err
@@ -301,7 +301,7 @@ func (s *Store) RecordWebhookDelivery(ctx context.Context, provider, deliveryID 
 		return err
 	})
 	if err != nil {
-		return false, fmt.Errorf("apuntar entrega: %w", err)
+		return false, fmt.Errorf("record delivery: %w", err)
 	}
 	return fresh, nil
 }
@@ -317,7 +317,7 @@ func (s *Store) ForgetWebhookDelivery(ctx context.Context, provider, deliveryID 
 func (s *Store) LastWebhookDelivery(ctx context.Context, provider string) (*time.Time, error) {
 	var at *time.Time
 	if err := s.pool.QueryRow(ctx, `SELECT max(received_at) FROM webhook_deliveries WHERE provider = $1`, provider).Scan(&at); err != nil {
-		return nil, fmt.Errorf("última entrega: %w", err)
+		return nil, fmt.Errorf("latest delivery: %w", err)
 	}
 	return at, nil
 }
@@ -333,7 +333,7 @@ func (s *Store) ClaimLinearCreateID(ctx context.Context, issueID int64, candidat
 		return "", ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("id para Linear: %w", err)
+		return "", fmt.Errorf("id for Linear: %w", err)
 	}
 	return id, nil
 }
@@ -344,7 +344,7 @@ func (s *Store) ForgetLinearCreateID(ctx context.Context, issueID int64, id stri
 	_, err := s.pool.Exec(ctx, `UPDATE issues SET linear_create_id = NULL
 		WHERE id = $1 AND CAST(linear_create_id AS text) = $2`, issueID, id)
 	if err != nil {
-		return fmt.Errorf("id para Linear: %w", err)
+		return fmt.Errorf("id for Linear: %w", err)
 	}
 	return nil
 }

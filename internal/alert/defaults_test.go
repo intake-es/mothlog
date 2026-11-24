@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 func (e *env) setDefaults(t *testing.T, slack, linear bool) {
@@ -61,7 +61,7 @@ func TestDefaultsOnAsToday(t *testing.T) {
 	}
 	e.send(t)
 	msgs := e.slack.payloads(t)
-	if e.linear.created() != 1 || len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error", "ERR-101 en Linear"}) {
+	if e.linear.created() != 1 || len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"View error", "ERR-101 in Linear"}) {
 		t.Fatalf("linear = %d, slack = %+v", e.linear.created(), msgs)
 	}
 }
@@ -87,7 +87,7 @@ func TestDefaultLinearOff(t *testing.T) {
 		t.Fatalf("enviados = %d", n)
 	}
 	msgs := e.slack.payloads(t)
-	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error"}) {
+	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"View error"}) {
 		t.Fatalf("slack = %+v", msgs)
 	}
 	if e.linear.created() != 0 {
@@ -218,7 +218,7 @@ func TestCreateLinearByHand(t *testing.T) {
 		t.Fatalf("la regresión ha creado otra issue")
 	}
 	msgs := e.slack.payloads(t)
-	if last := msgs[len(msgs)-1]; !slices.Contains(buttons(last), li.Identifier+" en Linear") {
+	if last := msgs[len(msgs)-1]; !slices.Contains(buttons(last), li.Identifier+" in Linear") {
 		t.Errorf("el aviso de Slack no lleva la issue creada a mano: %v", buttons(last))
 	}
 }
@@ -322,7 +322,7 @@ func TestCreateLinearWhileAlertCreatesIt(t *testing.T) {
 		_, err := e.alerter.SendPending(ctx)
 		done <- err
 	}()
-	// El aviso se queda esperando en Linear con su issueCreate; el botón ve el error sin issue.
+	// El aviso se queda esperando in Linear con su issueCreate; el botón ve el error sin issue.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var sending bool
@@ -343,7 +343,7 @@ func TestCreateLinearWhileAlertCreatesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n := e.linear.created(); n != 1 {
-		t.Fatalf("issues en Linear = %d; el aviso y el botón tienen que acabar en la misma", n)
+		t.Fatalf("issues in Linear = %d; el aviso y el botón tienen que acabar en la misma", n)
 	}
 	links, err := e.db.IssueLinks(ctx, res.IssueID)
 	if err != nil || len(links) != 1 || links[0].ExternalID != link.ExternalID || links[0].Author == nil || *links[0].Author != by {

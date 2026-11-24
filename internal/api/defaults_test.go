@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
-	"github.com/intake-es/intake-errors/internal/webhooks/fakes"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/webhooks/fakes"
 )
 
 const fakeLinearKey = "lin_api_prueba"

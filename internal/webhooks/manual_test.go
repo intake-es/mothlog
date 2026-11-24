@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/webhooks/fakes"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/webhooks/fakes"
 )
 
 // Una issue de Linear creada a mano desde el detalle del error se sincroniza

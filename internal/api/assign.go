@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func (h *handlers) registerAssign(route func(string, http.HandlerFunc)) {
@@ -35,7 +35,7 @@ func (h *handlers) assign(w http.ResponseWriter, r *http.Request) {
 		Kind     string  `json:"kind"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "el cuerpo debe ser {\"assignee\": \"...\"}")
+		writeError(w, http.StatusBadRequest, "the body must be {\"assignee\": \"...\"}")
 		return
 	}
 	name := ""

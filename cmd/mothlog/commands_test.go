@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 func TestTokensCommand(t *testing.T) {
@@ -26,7 +26,7 @@ func TestTokensCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	secret, _, _ := strings.Cut(out, "\n")
-	if !strings.HasPrefix(secret, "ie_") || len(secret) < 40 {
+	if !strings.HasPrefix(secret, "ml_") || len(secret) < 40 {
 		t.Fatalf("token = %q", secret)
 	}
 	if _, err := db.Authenticate(ctx, secret); err != nil {
@@ -82,7 +82,7 @@ func TestLabelsCommand(t *testing.T) {
 	if ids := stored(); len(ids) != 0 {
 		t.Fatalf("etiquetas por defecto = %v", ids)
 	}
-	if out, err := run("backend"); err != nil || !strings.Contains(out, "no llevan etiquetas propias") {
+	if out, err := run("backend"); err != nil || !strings.Contains(out, "have no labels of their own") {
 		t.Fatalf("enseñar sin etiquetas: %q, %v", out, err)
 	}
 
@@ -109,12 +109,12 @@ func TestLabelsCommand(t *testing.T) {
 	}
 
 	for _, args := range [][]string{{"nadie"}, {"nadie", "label-a"}, {"nadie", "--clear"}} {
-		if _, err := run(args...); err == nil || !strings.Contains(err.Error(), `no hay ningún proyecto llamado "nadie"`) {
+		if _, err := run(args...); err == nil || !strings.Contains(err.Error(), `there is no project named "nadie"`) {
 			t.Errorf("%v: err = %v", args, err)
 		}
 	}
 
-	if out, err := run("backend", "--clear"); err != nil || !strings.Contains(out, "ya no llevan") {
+	if out, err := run("backend", "--clear"); err != nil || !strings.Contains(out, "no longer have") {
 		t.Fatalf("quitar: %q, %v", out, err)
 	}
 	if ids := stored(); ids == nil || len(ids) != 0 {
@@ -138,7 +138,7 @@ func TestFiltersCommand(t *testing.T) {
 	}
 
 	out, err := run("web")
-	if err != nil || !strings.Contains(out, "events_per_issue_per_hour  100 (por defecto)") ||
+	if err != nil || !strings.Contains(out, "events_per_issue_per_hour  100 (default)") ||
 		!strings.Contains(out, "rate_limit_per_minute      RATE_LIMIT_PER_MINUTE") || !strings.Contains(out, "sample_rate                1") {
 		t.Fatalf("por defecto: %q, %v", out, err)
 	}
@@ -230,11 +230,11 @@ func TestReleasesCommand(t *testing.T) {
 	}
 
 	out, err := run("new", "web", "web@1.0.0")
-	if err != nil || !strings.Contains(out, "creada") {
+	if err != nil || !strings.Contains(out, "created") {
 		t.Fatalf("new = %q, %v", out, err)
 	}
 	out, err = run("new", "web", "web@1.0.0", "--env", "production")
-	if err != nil || !strings.Contains(out, "ya existía") || !strings.Contains(out, "desplegada en production") {
+	if err != nil || !strings.Contains(out, "already existed") || !strings.Contains(out, "deployed to production") {
 		t.Fatalf("new --env = %q, %v", out, err)
 	}
 	if _, err := run("new", "web", "web@1.1.0", "--env=staging"); err != nil {
@@ -289,7 +289,7 @@ func TestPeopleCommand(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 3 || !strings.Contains(lines[1], "101") || !strings.Contains(lines[1], "2026-11-23 10:30 UTC") ||
-		!strings.Contains(lines[2], "pendiente") || !strings.HasSuffix(strings.TrimSpace(lines[2]), "-") {
+		!strings.Contains(lines[2], "pending") || !strings.HasSuffix(strings.TrimSpace(lines[2]), "-") {
 		t.Errorf("list =\n%s", out)
 	}
 	if _, err := run("borrar", "ana"); err == nil {

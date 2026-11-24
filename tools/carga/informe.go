@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Lo que se quiere aguantar: el servicio con 0,25 vCPU y menos de esto.
@@ -134,9 +134,9 @@ func comprobar(ctx context.Context, pool db.DB, reg *registro, met metricas) (co
 		{"eventos aceptados contados por release y entorno (issue_stats)", n, val["stats"]},
 		{"eventos aceptados guardados + descartados por tope o muestreo", n, g + val["descartados"]},
 		{"filas de events = eventos aceptados guardados (nada de más)", g, val["events"]},
-		{"eventos guardados según /metrics", g, met.sumar("intake_events_saved_total")},
+		{"eventos guardados según /metrics", g, met.sumar("mothlog_events_saved_total")},
 		{"descartados por tope o muestreo según /metrics", val["descartados"],
-			met.sumar("intake_events_dropped_total", `reason="issue_limit"`) + met.sumar("intake_events_dropped_total", `reason="sampled"`)},
+			met.sumar("mothlog_events_dropped_total", `reason="issue_limit"`) + met.sumar("mothlog_events_dropped_total", `reason="sampled"`)},
 		{"eventos repetidos (todos los ids son nuevos)", 0, val["repetidos"]},
 		{"issues = errores distintos aceptados", float64(len(reg.issues)), val["issues"]},
 		{"issues cuya etiqueta level no suma su contador", 0, val["etiquetasMal"]},

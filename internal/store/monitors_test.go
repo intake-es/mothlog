@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 type changes struct {

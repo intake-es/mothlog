@@ -12,8 +12,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 // Un evento se guarda como el event.Event normalizado en JSON comprimido con
@@ -92,7 +92,7 @@ func EncodeEvent(ev *event.Event) (EncodedEvent, error) {
 	stored.DebugMeta = canonicalRaw(ev.DebugMeta)
 	b, err := json.Marshal(&stored)
 	if err != nil {
-		return EncodedEvent{}, fmt.Errorf("serializar evento: %w", err)
+		return EncodedEvent{}, fmt.Errorf("serialize event: %w", err)
 	}
 	e := EncodedEvent{
 		Data:           zstdEncoder().EncodeAll(b, make([]byte, 0, len(b)/4)),
@@ -120,7 +120,7 @@ func DecodeEvent(data []byte) (event.Event, error) {
 	var ev event.Event
 	b, err := zstdDecoder().DecodeAll(data, nil)
 	if err != nil {
-		return ev, fmt.Errorf("descomprimir evento: %w", err)
+		return ev, fmt.Errorf("decompress event: %w", err)
 	}
 	if err := json.Unmarshal(b, &ev); err != nil {
 		return ev, err
@@ -135,7 +135,7 @@ func decodeStored(compressed, legacy []byte) (event.Event, error) {
 	}
 	var ev event.Event
 	if legacy == nil {
-		return ev, errors.New("evento sin datos")
+		return ev, errors.New("event without data")
 	}
 	err := json.Unmarshal(legacy, &ev)
 	return ev, err
@@ -200,7 +200,7 @@ func InsertEvent(ctx context.Context, q execQuerier, e NewEvent) (int64, error) 
 		return 0, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("guardar evento: %w", err)
+		return 0, fmt.Errorf("save event: %w", err)
 	}
 	return id, nil
 }

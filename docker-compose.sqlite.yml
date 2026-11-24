@@ -1,28 +1,28 @@
-# `docker compose -f docker-compose.sqlite.yml up` levanta intake-errors con
+# `docker compose -f docker-compose.sqlite.yml up` levanta mothlog con
 # SQLite, sin Postgres, para probarlo en http://localhost:8000. La base es un
-# fichero en el volumen `intake`. Se entra como dev (UI_DEV_LOGIN=1) con el
+# fichero en el volumen `mothlog`. Se entra como dev (UI_DEV_LOGIN=1) con el
 # enlace con clave que sale en el log al arrancar:
-#   docker compose -f docker-compose.sqlite.yml logs intake-errors | grep dev/login
+#   docker compose -f docker-compose.sqlite.yml logs mothlog | grep dev/login
 # NO es para producción.
 #
 # El volumen va en /home/nonroot, que en la imagen es del usuario con el que
 # corre el servicio, para que pueda escribir el fichero.
 
 services:
-  intake-errors:
-    image: ${INTAKE_ERRORS_IMAGE:-ghcr.io/intake-es/intake-errors:latest}
+  mothlog:
+    image: ${MOTHLOG_IMAGE:-ghcr.io/intake-es/mothlog:latest}
     build: .
     # UI_DEV_LOGIN solo vale escuchando en loopback y pide la clave del log;
     # con él, solo valen los Host de loopback y el de PUBLIC_URL, así que
     # otro contenedor que llegue a proxy:8080 no entra. Comparte la red del proxy.
     network_mode: service:proxy
     environment:
-      DATABASE_URL: sqlite:///home/nonroot/intake.db
+      DATABASE_URL: sqlite:///home/nonroot/mothlog.db
       LISTEN_ADDR: 127.0.0.1:8000
-      PUBLIC_URL: http://localhost:${INTAKE_ERRORS_PORT:-8000}
+      PUBLIC_URL: http://localhost:${MOTHLOG_PORT:-8000}
       UI_DEV_LOGIN: "1"
     volumes:
-      - intake:/home/nonroot
+      - mothlog:/home/nonroot
     depends_on:
       proxy:
         condition: service_started
@@ -33,7 +33,7 @@ services:
     image: caddy:2-alpine
     command: caddy reverse-proxy --from :8080 --to 127.0.0.1:8000
     ports:
-      - "127.0.0.1:${INTAKE_ERRORS_PORT:-8000}:8080"
+      - "127.0.0.1:${MOTHLOG_PORT:-8000}:8080"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 2s
@@ -42,4 +42,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  intake:
+  mothlog:

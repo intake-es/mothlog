@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Tipos de acción de una regla de aviso.
@@ -269,7 +269,7 @@ func cleanList(name string, in []string, check func(string) error) ([]string, er
 			continue
 		}
 		if len(s) > maxRuleValue {
-			return nil, fmt.Errorf("%w: %s admite valores de hasta %d caracteres", ErrInvalid, name, maxRuleValue)
+			return nil, fmt.Errorf("%w: %s allows values up to %d characters", ErrInvalid, name, maxRuleValue)
 		}
 		if check != nil {
 			if err := check(s); err != nil {
@@ -281,7 +281,7 @@ func cleanList(name string, in []string, check func(string) error) ([]string, er
 		}
 	}
 	if len(out) > maxRuleListItems {
-		return nil, fmt.Errorf("%w: %s admite hasta %d valores", ErrInvalid, name, maxRuleListItems)
+		return nil, fmt.Errorf("%w: %s allows up to %d values", ErrInvalid, name, maxRuleListItems)
 	}
 	return out, nil
 }
@@ -290,7 +290,7 @@ func checkURL(field string) func(string) error {
 	return func(s string) error {
 		u, err := url.Parse(s)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
-			return fmt.Errorf("%w: %s debe ser una URL http o https", ErrInvalid, field)
+			return fmt.Errorf("%w: %s must be an http or https URL", ErrInvalid, field)
 		}
 		return checkHost(u.Hostname())
 	}
@@ -303,20 +303,20 @@ func (r *Rule) Normalize() ([]string, error) {
 	r.Name = strings.TrimSpace(r.Name)
 	switch {
 	case r.Name == "":
-		return nil, fmt.Errorf("%w: la regla necesita un nombre", ErrInvalid)
+		return nil, fmt.Errorf("%w: the rule needs a name", ErrInvalid)
 	case len([]rune(r.Name)) > maxRuleName:
-		return nil, fmt.Errorf("%w: el nombre admite hasta %d caracteres", ErrInvalid, maxRuleName)
+		return nil, fmt.Errorf("%w: the name allows up to %d characters", ErrInvalid, maxRuleName)
 	case r.ThrottleMinutes < 0 || r.ThrottleMinutes > MaxThrottleMinutes:
-		return nil, fmt.Errorf("%w: throttle_minutes va de 0 a %d", ErrInvalid, MaxThrottleMinutes)
+		return nil, fmt.Errorf("%w: throttle_minutes goes from 0 to %d", ErrInvalid, MaxThrottleMinutes)
 	}
 
 	c := &r.Conditions
 	if !c.ForIssues() && c.Cron == nil && c.Uptime == nil {
-		return nil, fmt.Errorf("%w: la regla necesita al menos una condición: new, regressed, frequency, users, cron o uptime", ErrInvalid)
+		return nil, fmt.Errorf("%w: the rule needs at least one condition: new, regressed, frequency, users, cron or uptime", ErrInvalid)
 	}
 	if up := c.Uptime; up != nil {
 		if len(up.Kinds()) == 0 {
-			return nil, fmt.Errorf("%w: uptime necesita down o up", ErrInvalid)
+			return nil, fmt.Errorf("%w: uptime needs down or up", ErrInvalid)
 		}
 		var err error
 		if up.Monitors, err = cleanList("uptime.monitors", up.Monitors, nil); err != nil {
@@ -325,7 +325,7 @@ func (r *Rule) Normalize() ([]string, error) {
 	}
 	if cr := c.Cron; cr != nil {
 		if len(cr.Kinds()) == 0 {
-			return nil, fmt.Errorf("%w: cron necesita failed, missed, timeout o recovered", ErrInvalid)
+			return nil, fmt.Errorf("%w: cron needs failed, missed, timeout or recovered", ErrInvalid)
 		}
 		var err error
 		if cr.Monitors, err = cleanList("cron.monitors", cr.Monitors, nil); err != nil {
@@ -334,14 +334,14 @@ func (r *Rule) Normalize() ([]string, error) {
 	}
 	if f := c.Frequency; f != nil {
 		if f.Events < 1 || f.Events > maxThreshold {
-			return nil, fmt.Errorf("%w: frequency.events va de 1 a %d", ErrInvalid, maxThreshold)
+			return nil, fmt.Errorf("%w: frequency.events goes from 1 to %d", ErrInvalid, maxThreshold)
 		}
 		if f.WindowMinutes < 1 || f.WindowMinutes > MaxWindowMinutes {
-			return nil, fmt.Errorf("%w: frequency.window_minutes va de 1 a %d", ErrInvalid, MaxWindowMinutes)
+			return nil, fmt.Errorf("%w: frequency.window_minutes goes from 1 to %d", ErrInvalid, MaxWindowMinutes)
 		}
 	}
 	if u := c.Users; u != nil && (u.Users < 1 || u.Users > maxThreshold) {
-		return nil, fmt.Errorf("%w: users.users va de 1 a %d", ErrInvalid, maxThreshold)
+		return nil, fmt.Errorf("%w: users.users goes from 1 to %d", ErrInvalid, maxThreshold)
 	}
 	var err error
 	if c.Environments, err = cleanList("environments", c.Environments, nil); err != nil {
@@ -349,7 +349,7 @@ func (r *Rule) Normalize() ([]string, error) {
 	}
 	if c.Levels, err = cleanList("levels", c.Levels, func(s string) error {
 		if !slices.Contains(Levels, s) {
-			return fmt.Errorf("%w: el nivel %q no existe; son %s", ErrInvalid, s, strings.Join(Levels, ", "))
+			return fmt.Errorf("%w: level %q does not exist; they are %s", ErrInvalid, s, strings.Join(Levels, ", "))
 		}
 		return nil
 	}); err != nil {
@@ -359,25 +359,25 @@ func (r *Rule) Normalize() ([]string, error) {
 	for _, t := range c.Tags {
 		t.Key, t.Value = strings.TrimSpace(t.Key), strings.TrimSpace(t.Value)
 		if t.Key == "" {
-			return nil, fmt.Errorf("%w: una etiqueta del filtro no tiene nombre", ErrInvalid)
+			return nil, fmt.Errorf("%w: a filter tag has no name", ErrInvalid)
 		}
 		if len(t.Key) > maxRuleValue || len(t.Value) > maxRuleValue {
-			return nil, fmt.Errorf("%w: las etiquetas admiten hasta %d caracteres", ErrInvalid, maxRuleValue)
+			return nil, fmt.Errorf("%w: tags allow up to %d characters", ErrInvalid, maxRuleValue)
 		}
 		if !slices.Contains(tags, t) {
 			tags = append(tags, t)
 		}
 	}
 	if len(tags) > maxRuleListItems {
-		return nil, fmt.Errorf("%w: tags admite hasta %d valores", ErrInvalid, maxRuleListItems)
+		return nil, fmt.Errorf("%w: tags allows up to %d values", ErrInvalid, maxRuleListItems)
 	}
 	c.Tags = tags
 
 	if len(r.Actions) == 0 {
-		return nil, fmt.Errorf("%w: la regla necesita al menos una acción", ErrInvalid)
+		return nil, fmt.Errorf("%w: the rule needs at least one action", ErrInvalid)
 	}
 	if len(r.Actions) > maxRuleActions {
-		return nil, fmt.Errorf("%w: la regla admite hasta %d acciones", ErrInvalid, maxRuleActions)
+		return nil, fmt.Errorf("%w: the rule allows up to %d actions", ErrInvalid, maxRuleActions)
 	}
 	var generated []string
 	seen := map[string]bool{}
@@ -388,12 +388,12 @@ func (r *Rule) Normalize() ([]string, error) {
 			a.ID = hexID(4)
 		}
 		if seen[a.ID] || len(a.ID) > 64 {
-			return nil, fmt.Errorf("%w: id de acción repetido o demasiado largo: %q", ErrInvalid, a.ID)
+			return nil, fmt.Errorf("%w: duplicate or too long action id: %q", ErrInvalid, a.ID)
 		}
 		seen[a.ID] = true
 		gen, err := a.normalize()
 		if err != nil {
-			return nil, fmt.Errorf("%w (acción %d, %s)", err, i+1, a.Type)
+			return nil, fmt.Errorf("%w (action %d, %s)", err, i+1, a.Type)
 		}
 		if gen {
 			generated = append(generated, a.ID)
@@ -406,19 +406,19 @@ func (a *RuleAction) normalize() (bool, error) {
 	for _, s := range []*string{&a.URL, &a.TeamID, &a.BotToken, &a.ChatID, &a.Token, &a.Secret, &a.Repo} {
 		*s = strings.TrimSpace(*s)
 		if len(*s) > maxRuleValue {
-			return false, fmt.Errorf("%w: los campos de una acción admiten hasta %d caracteres", ErrInvalid, maxRuleValue)
+			return false, fmt.Errorf("%w: action fields allow up to %d characters", ErrInvalid, maxRuleValue)
 		}
 	}
 	for _, s := range a.secrets() {
 		if strings.Contains(*s, secretMask) {
-			return false, fmt.Errorf("%w: el secreto llega tapado; escríbelo entero", ErrInvalid)
+			return false, fmt.Errorf("%w: the secret arrived masked; write it in full", ErrInvalid)
 		}
 	}
 	keep := RuleAction{ID: a.ID, Type: a.Type}
 	var err error
 	need := func(v, field string) {
 		if err == nil && v == "" {
-			err = fmt.Errorf("%w: falta %s", ErrInvalid, field)
+			err = fmt.Errorf("%w: missing %s", ErrInvalid, field)
 		}
 	}
 	generated := false
@@ -444,17 +444,17 @@ func (a *RuleAction) normalize() (bool, error) {
 	case ActionEmail:
 		keep.To, err = cleanList("to", a.To, func(s string) error {
 			if addr, err := mail.ParseAddress(s); err != nil || addr.Address != s {
-				return fmt.Errorf("%w: %q no es una dirección de correo", ErrInvalid, s)
+				return fmt.Errorf("%w: %q is not an email address", ErrInvalid, s)
 			}
 			return nil
 		})
 		if err == nil && len(keep.To) == 0 {
-			err = fmt.Errorf("%w: falta to, a quién mandar el correo", ErrInvalid)
+			err = fmt.Errorf("%w: missing to, who to send the email to", ErrInvalid)
 		}
 	case ActionGitHub:
 		need(a.Repo, "repo")
 		if err == nil && !githubRepo.MatchString(a.Repo) {
-			err = fmt.Errorf("%w: repo debe ser dueño/repositorio", ErrInvalid)
+			err = fmt.Errorf("%w: repo must be owner/repository", ErrInvalid)
 		}
 		keep.Repo, keep.Token = a.Repo, a.Token
 		if err == nil {
@@ -464,11 +464,11 @@ func (a *RuleAction) normalize() (bool, error) {
 		need(a.BotToken, "bot_token")
 		need(a.ChatID, "chat_id")
 		if err == nil && strings.ContainsAny(a.BotToken, "/?# ") {
-			err = fmt.Errorf("%w: bot_token no es un token de bot", ErrInvalid)
+			err = fmt.Errorf("%w: bot_token is not a bot token", ErrInvalid)
 		}
 		keep.BotToken, keep.ChatID = a.BotToken, a.ChatID
 	default:
-		return false, fmt.Errorf("%w: el tipo de acción %q no existe; son %s", ErrInvalid, a.Type, strings.Join(ActionTypes, ", "))
+		return false, fmt.Errorf("%w: action type %q does not exist; they are %s", ErrInvalid, a.Type, strings.Join(ActionTypes, ", "))
 	}
 	*a = keep
 	return generated, err
@@ -501,11 +501,11 @@ type querier interface {
 func (s *Store) rules(ctx context.Context, q querier, projectID int64) ([]Rule, error) {
 	rows, err := q.Query(ctx, `SELECT `+ruleColumns+` FROM alert_rules WHERE project_id = $1 ORDER BY id`, projectID)
 	if err != nil {
-		return nil, fmt.Errorf("leer reglas: %w", err)
+		return nil, fmt.Errorf("read rules: %w", err)
 	}
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (Rule, error) { return scanRule(r) })
 	if err != nil {
-		return nil, fmt.Errorf("leer reglas: %w", err)
+		return nil, fmt.Errorf("read rules: %w", err)
 	}
 	return out, nil
 }
@@ -514,7 +514,7 @@ func (s *Store) rules(ctx context.Context, q querier, projectID int64) ([]Rule, 
 func RulesOfProject(ctx context.Context, tx db.Tx, projectID int64) ([]Rule, error) {
 	rows, err := tx.Query(ctx, `SELECT `+ruleColumns+` FROM alert_rules WHERE project_id = $1 ORDER BY id`, projectID)
 	if err != nil {
-		return nil, fmt.Errorf("leer reglas: %w", err)
+		return nil, fmt.Errorf("read rules: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (Rule, error) { return scanRule(r) })
 }
@@ -524,7 +524,7 @@ func RulesOfIssue(ctx context.Context, tx db.Tx, issueID int64) ([]Rule, error) 
 	rows, err := tx.Query(ctx, `SELECT `+ruleColumns+` FROM alert_rules
 		WHERE project_id = (SELECT project_id FROM issues WHERE id = $1) ORDER BY id`, issueID)
 	if err != nil {
-		return nil, fmt.Errorf("leer reglas: %w", err)
+		return nil, fmt.Errorf("read rules: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (Rule, error) { return scanRule(r) })
 }
@@ -535,7 +535,7 @@ func (s *Store) Rule(ctx context.Context, projectID, id int64) (Rule, error) {
 		return Rule{}, ErrNotFound
 	}
 	if err != nil {
-		return Rule{}, fmt.Errorf("leer regla: %w", err)
+		return Rule{}, fmt.Errorf("read rule: %w", err)
 	}
 	return r, nil
 }
@@ -547,7 +547,7 @@ func (s *Store) RuleByID(ctx context.Context, id int64) (Rule, error) {
 		return Rule{}, ErrNotFound
 	}
 	if err != nil {
-		return Rule{}, fmt.Errorf("leer regla: %w", err)
+		return Rule{}, fmt.Errorf("read rule: %w", err)
 	}
 	return r, nil
 }
@@ -567,7 +567,7 @@ func (s *Store) CreateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 		return Rule{}, nil, ErrNotFound
 	}
 	if err != nil {
-		return Rule{}, nil, fmt.Errorf("guardar regla: %w", err)
+		return Rule{}, nil, fmt.Errorf("save rule: %w", err)
 	}
 	return out, generated, nil
 }
@@ -585,7 +585,7 @@ func (s *Store) UpdateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return Rule{}, nil, fmt.Errorf("guardar regla: %w", err)
+		return Rule{}, nil, fmt.Errorf("save rule: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	out, err := scanRule(tx.QueryRow(ctx, `
@@ -596,7 +596,7 @@ func (s *Store) UpdateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 		return Rule{}, nil, ErrNotFound
 	}
 	if err != nil {
-		return Rule{}, nil, fmt.Errorf("guardar regla: %w", err)
+		return Rule{}, nil, fmt.Errorf("save rule: %w", err)
 	}
 	// Con otras condiciones, las cuentas y los cruces avisados ya no valen; el
 	// último aviso se conserva para el límite de la regla.
@@ -609,12 +609,12 @@ func (s *Store) UpdateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 			`UPDATE alert_rule_issues SET frequency_alerted = false, users_alerted = false WHERE rule_id = $1`,
 		} {
 			if _, err := tx.Exec(ctx, q, r.ID); err != nil {
-				return Rule{}, nil, fmt.Errorf("reiniciar las cuentas de la regla: %w", err)
+				return Rule{}, nil, fmt.Errorf("reset rule counts: %w", err)
 			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Rule{}, nil, fmt.Errorf("guardar regla: %w", err)
+		return Rule{}, nil, fmt.Errorf("save rule: %w", err)
 	}
 	return out, generated, nil
 }
@@ -623,7 +623,7 @@ func (s *Store) UpdateRule(ctx context.Context, projectID int64, r Rule) (Rule, 
 func (s *Store) DeleteRule(ctx context.Context, projectID, id int64) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM alert_rules WHERE project_id = $1 AND id = $2`, projectID, id)
 	if err != nil {
-		return fmt.Errorf("borrar regla: %w", err)
+		return fmt.Errorf("delete rule: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound

@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // keepMinutes es cuánto se guardan las cuentas por minuto: la ventana más larga.
@@ -272,14 +273,14 @@ func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
 		return &slack{url: act.URL, client: a.dest}, nil
 	case store.ActionLinear:
 		if a.linearKey == "" {
-			return nil, errors.New("linear: falta LINEAR_API_KEY")
+			return nil, errors.New("linear: LINEAR_API_KEY is missing")
 		}
 		team := act.TeamID
 		if team == "" {
 			team = a.linearTeam
 		}
 		if team == "" {
-			return nil, errors.New("linear: la acción no dice el equipo y falta LINEAR_TEAM_ID")
+			return nil, errors.New("linear: the action has no team and LINEAR_TEAM_ID is missing")
 		}
 		labels := act.LabelIDs
 		if len(labels) == 0 {
@@ -288,7 +289,7 @@ func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
 		return a.linearFor(team, labels), nil
 	case store.ActionEmail:
 		if a.smtp == nil {
-			return nil, errors.New("correo: falta SMTP_URL")
+			return nil, errors.New("email: SMTP_URL is missing")
 		}
 		return &email{st: a.st, cfg: a.smtp, to: act.To}, nil
 	case store.ActionDiscord:
@@ -305,7 +306,7 @@ func (a *Alerter) actionSender(act store.RuleAction) (sender, error) {
 			token = a.githubToken
 		}
 		if token == "" {
-			return nil, errors.New("github: la acción no trae token y falta GITHUB_TOKEN")
+			return nil, errors.New("github: the action has no token and GITHUB_TOKEN is missing")
 		}
 		return &github{st: a.st, api: &githubAPI{endpoint: a.githubEndpoint, token: token, client: a.client},
 			repo: act.Repo, labels: act.Labels, actionID: act.ID}, nil
@@ -336,18 +337,18 @@ func (a *Alerter) CheckRule(r store.Rule) error {
 		switch act.Type {
 		case store.ActionLinear:
 			if a.linearKey == "" {
-				return fmt.Errorf("%w: para avisar en Linear hace falta LINEAR_API_KEY en el servidor", store.ErrInvalid)
+				return fmt.Errorf("%w: alerting in Linear needs LINEAR_API_KEY on the server", store.ErrInvalid)
 			}
 			if act.TeamID == "" && a.linearTeam == "" {
-				return fmt.Errorf("%w: la acción de Linear necesita team_id: no hay LINEAR_TEAM_ID", store.ErrInvalid)
+				return fmt.Errorf("%w: the Linear action needs team_id: there is no LINEAR_TEAM_ID", store.ErrInvalid)
 			}
 		case store.ActionEmail:
 			if a.smtp == nil {
-				return fmt.Errorf("%w: para avisar por correo hace falta SMTP_URL en el servidor", store.ErrInvalid)
+				return fmt.Errorf("%w: alerting by email needs SMTP_URL on the server", store.ErrInvalid)
 			}
 		case store.ActionGitHub:
 			if act.Token == "" && a.githubToken == "" {
-				return fmt.Errorf("%w: la acción de GitHub necesita token: no hay GITHUB_TOKEN en el servidor", store.ErrInvalid)
+				return fmt.Errorf("%w: the GitHub action needs a token: there is no GITHUB_TOKEN on the server", store.ErrInvalid)
 			}
 		}
 	}
@@ -355,7 +356,7 @@ func (a *Alerter) CheckRule(r store.Rule) error {
 }
 
 // ErrTestFailed envuelve el fallo de un aviso de prueba.
-var ErrTestFailed = errors.New("el aviso de prueba ha fallado")
+var ErrTestFailed = errors.New("the test alert failed")
 
 // TestAction manda ya, sin pasar por la tabla de salida, un aviso de prueba
 // por la acción actionID de la regla.
@@ -375,28 +376,28 @@ func (a *Alerter) TestAction(ctx context.Context, r store.Rule, actionID string)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrTestFailed, err)
 	}
-	p := testPending(project, r, a.now().UTC())
+	p := testPending(project, r, a.now().UTC(), a.lang)
 	if a.base != "" {
 		p.link = fmt.Sprintf("%s/projects/%d/settings", a.base, project.ID)
 	}
 	if err := snd.send(ctx, p); err != nil {
-		a.log.WarnContext(ctx, "aviso de prueba fallido", "regla", r.ID, "accion", actionID, "err", err)
+		a.log.WarnContext(ctx, "test alert failed", "rule", r.ID, "action", actionID, "err", err)
 		return fmt.Errorf("%w: %s", ErrTestFailed, publicError(err))
 	}
 	return nil
 }
 
-func testPending(project store.Project, r store.Rule, now time.Time) *pending {
-	const title = "Aviso de prueba de intake-errors"
+func testPending(project store.Project, r store.Rule, now time.Time, l lang.Lang) *pending {
+	title := l.T("Mothlog test alert", "Aviso de prueba de Mothlog")
 	ev := &event.Event{
 		ID: strings.ReplaceAll(newUUID(), "-", ""), Timestamp: now, Level: "info",
-		Message: "Si ves este aviso, la acción de la regla «" + r.Name + "» funciona.",
-		SDK:     event.SDK{Name: "intake-errors", Version: "prueba"},
+		Message: l.F("If you see this alert, the action of rule “%s” works.", "Si ves este aviso, la acción de la regla «%s» funciona.", r.Name),
+		SDK:     event.SDK{Name: "mothlog", Version: "test"},
 	}
 	issue := store.Issue{ProjectID: project.ID, Project: project.Name, Title: title, Level: "info", Status: "open",
 		Count: 1, FirstSeen: now, LastSeen: now}
 	return &pending{
-		kind: kindTest, test: true, eventAt: now, createID: newUUID(), ruleID: r.ID, ruleName: r.Name,
+		l: l, kind: kindTest, test: true, eventAt: now, createID: newUUID(), ruleID: r.ID, ruleName: r.Name,
 		project: project.Name, labels: project.LinearLabelIDs, title: title, count: 1, ev: ev,
 		issue: &store.IssueDetail{Issue: issue, LatestEvent: &store.StoredEvent{EventID: ev.ID, ProjectID: project.ID,
 			OccurredAt: now, ReceivedAt: now, Event: *ev}},

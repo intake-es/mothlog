@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -27,7 +27,7 @@ const (
 	sessionTTL    = 7 * 24 * time.Hour
 	stateTTL      = 10 * time.Minute
 	devLogin      = "dev"
-	devName       = "Modo desarrollo"
+	devName       = "Dev mode"
 )
 
 type Config struct {
@@ -101,12 +101,12 @@ func (a *Auth) SavePeople(people People) { a.people = people }
 // persona, no se entra: sin fila no se podría revocar su sesión.
 func (a *Auth) savePerson(ctx context.Context, p store.Person) (string, bool) {
 	if a.people == nil {
-		a.log.Error("login: no hay dónde guardar a la persona", "provider", p.Provider, "login", p.Login)
+		a.log.Error("login: nowhere to save the person", "provider", p.Provider, "login", p.Login)
 		return "", false
 	}
 	login, err := a.people.SaveIdentity(ctx, p)
 	if err != nil {
-		a.log.Error("login: guardar la persona", "provider", p.Provider, "login", p.Login, "err", err)
+		a.log.Error("login: save person", "provider", p.Provider, "login", p.Login, "err", err)
 		return "", false
 	}
 	return login, true
@@ -140,7 +140,7 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 	case 3:
 		a.github = true
 	default:
-		return nil, errors.New("el login con GitHub necesita GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET y GITHUB_ORG juntas")
+		return nil, errors.New("GitHub login needs GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and GITHUB_ORG together")
 	}
 
 	if cfg.OIDC.configured() {
@@ -152,7 +152,7 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 	}
 
 	if cfg.DevLogin && !Loopback(cfg.ListenAddr) {
-		return nil, fmt.Errorf("UI_DEV_LOGIN=1 solo vale con LISTEN_ADDR en 127.0.0.1, [::1] o localhost, no en %q", cfg.ListenAddr)
+		return nil, fmt.Errorf("UI_DEV_LOGIN=1 only works with LISTEN_ADDR on 127.0.0.1, [::1] or localhost, not on %q", cfg.ListenAddr)
 	}
 	if !a.enabled() {
 		return a, nil
@@ -164,10 +164,10 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 	}
 	u, err := url.Parse(public)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return nil, errors.New("el login de la interfaz necesita PUBLIC_URL, una URL http o https absoluta")
+		return nil, errors.New("the UI login needs PUBLIC_URL, an absolute http or https URL")
 	}
 	if (a.github || a.oidc != nil) && u.Scheme != "https" && !loopbackHost(u.Hostname()) {
-		return nil, errors.New("con login de GitHub u OIDC, PUBLIC_URL tiene que ser https (http solo en localhost)")
+		return nil, errors.New("with GitHub or OIDC login, PUBLIC_URL must be https (http only on localhost)")
 	}
 	a.origins = []string{strings.ToLower(u.Scheme + "://" + u.Host)}
 	_, port, _ := net.SplitHostPort(cfg.ListenAddr)
@@ -191,11 +191,11 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 	case len(cfg.SessionSecret) >= 32:
 		a.secret = []byte(cfg.SessionSecret)
 	case a.github:
-		return nil, errors.New("el login con GitHub necesita SESSION_SECRET, de 32 caracteres o más")
+		return nil, errors.New("GitHub login needs SESSION_SECRET, of 32 characters or more")
 	case a.oidc != nil:
-		return nil, errors.New("el login con OIDC necesita SESSION_SECRET, de 32 caracteres o más")
+		return nil, errors.New("OIDC login needs SESSION_SECRET, of 32 characters or more")
 	case cfg.SessionSecret != "":
-		return nil, errors.New("SESSION_SECRET debe tener 32 caracteres o más")
+		return nil, errors.New("SESSION_SECRET must be 32 characters or more")
 	default:
 		a.secret = make([]byte, 32)
 		if _, err := rand.Read(a.secret); err != nil {
@@ -203,11 +203,11 @@ func New(cfg Config, log *slog.Logger) (*Auth, error) {
 		}
 	}
 	if cfg.DevLogin {
-		log.Warn("UI_DEV_LOGIN=1: se entra como dev con este enlace, que no se vuelve a mostrar",
+		log.Warn("UI_DEV_LOGIN=1: sign in as dev with this link, which won't be shown again",
 			"url", a.cfg.PublicURL+"/auth/dev/login?key="+a.devKey)
 	}
 	if a.oidc != nil && a.oidc.cfg.AllowAny {
-		log.Warn("OIDC_ALLOW_ANY=1: entra cualquiera con cuenta en el emisor", "issuer", a.oidc.cfg.Issuer)
+		log.Warn("OIDC_ALLOW_ANY=1: anyone with an account at the issuer can sign in", "issuer", a.oidc.cfg.Issuer)
 	}
 	return a, nil
 }
@@ -281,7 +281,7 @@ func (a *Auth) Authenticator() api.Authenticator {
 			return api.Principal{}, false, nil
 		}
 		if !safeMethod(r.Method) && !a.sameOrigin(r) {
-			return api.Principal{}, false, fmt.Errorf("%w: Origin no es el de PUBLIC_URL", api.ErrForbidden)
+			return api.Principal{}, false, fmt.Errorf("%w: Origin is not PUBLIC_URL's", api.ErrForbidden)
 		}
 		return api.Principal{Kind: "session", Name: s.Login}, true, nil
 	}

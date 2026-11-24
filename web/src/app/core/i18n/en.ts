@@ -1,12 +1,12 @@
 import type { Key } from './es';
 
 export const en: Record<Key, string> = {
-  'title.login': 'Sign in · intake-errors',
-  'title.list': 'Errors · intake-errors',
-  'title.issue': 'Error · intake-errors',
+  'title.login': 'Sign in · Mothlog',
+  'title.list': 'Errors · Mothlog',
+  'title.issue': 'Error · Mothlog',
   'title.issueNamed': '{title} · Errors',
-  'title.releases': 'Releases · intake-errors',
-  'title.release': 'Release · intake-errors',
+  'title.releases': 'Releases · Mothlog',
+  'title.release': 'Release · Mothlog',
   'title.releaseNamed': '{version} · Releases',
 
   'api.offline': 'Can’t reach the server.',
@@ -283,7 +283,7 @@ export const en: Record<Key, string> = {
   'releases.error': 'Couldn’t load the releases',
   'releases.empty.title': 'No releases yet',
   'releases.empty.text':
-    'They’re created by the first error that comes with a new version, or by hand with the API, intake-errors releases new or sentry-cli releases new.',
+    'They’re created by the first error that comes with a new version, or by hand with the API, mothlog releases new or sentry-cli releases new.',
   'releases.noMatch.title': 'No releases match these filters',
   'releases.noMatch.text': 'Try another project or another environment.',
   'releases.col.release': 'Release',
@@ -315,7 +315,7 @@ export const en: Record<Key, string> = {
   'release.firstSeen': 'First seen {ago}',
   'release.deploys': 'Deploys',
   'release.noDeploys':
-    'Not deployed yet. Record a deploy with intake-errors releases new --env, the API or sentry-cli deploys new.',
+    'Not deployed yet. Record a deploy with mothlog releases new --env, the API or sentry-cli deploys new.',
   'release.new': 'New errors',
   'release.new.hint': 'First seen in this release.',
   'release.regressed': 'Regressions',
@@ -362,7 +362,7 @@ export const en: Record<Key, string> = {
   'chart.sessions.start': '72 h ago',
   'chart.sessions.now': 'Now',
 
-  'title.settings': 'Settings · intake-errors',
+  'title.settings': 'Settings · Mothlog',
   'shell.settings': 'Project settings',
   'fact.settings': '{project} settings',
 
@@ -377,7 +377,7 @@ export const en: Record<Key, string> = {
   'settings.error': 'Couldn’t load the settings',
   'settings.noProjects.title': 'No projects yet',
   'settings.noProjects.text':
-    'Create one with “intake-errors projects create <name>” and come back here.',
+    'Create one with “mothlog projects create <name>” and come back here.',
   'settings.unsaved': 'Unsaved changes',
 
   'rules.title': 'Alert rules',
@@ -476,7 +476,7 @@ export const en: Record<Key, string> = {
   'field.botToken': 'Bot token',
   'field.chat': 'Chat id',
   'field.webhookHint':
-    'A POST with the error as JSON and Markdown, signed with HMAC-SHA256 in X-Intake-Errors-Signature. How to verify it is in the README.',
+    'A POST with the error as JSON and Markdown, signed with HMAC-SHA256 in X-Mothlog-Signature. How to verify it is in the README.',
   'field.emailHint': 'Sent through the mail server in SMTP_URL.',
   'field.linearHint': 'Uses the server’s LINEAR_API_KEY.',
   'field.githubRepo': 'Repository, as owner/repo',
@@ -553,7 +553,7 @@ export const en: Record<Key, string> = {
   'digest.sentOk': 'Sent',
   'digest.secret': 'Webhook signing secret. Copy it now: it will not be shown in full again.',
   'digest.webhookHint':
-    'A POST with the digest by section in JSON and in Markdown, signed with HMAC-SHA256 in X-Intake-Errors-Signature, like the rules one.',
+    'A POST with the digest by section in JSON and in Markdown, signed with HMAC-SHA256 in X-Mothlog-Signature, like the rules one.',
   'digest.preview': 'Preview',
   'digest.previewLede':
     'The email with the last 24 hours (or 7 days) up to now, in the chosen language.',
@@ -610,8 +610,8 @@ export const en: Record<Key, string> = {
   'dropped.reason.session_invalid': 'Invalid session',
   'dropped.reason.session_limit': 'Sessions: per-minute limit',
   'dropped.reason.session_releases': 'Sessions: release cap',
-  'title.monitors': 'Monitors · intake-errors',
-  'title.monitor': 'Monitor · intake-errors',
+  'title.monitors': 'Monitors · Mothlog',
+  'title.monitor': 'Monitor · Mothlog',
   'title.monitorNamed': '{name} · Monitors',
   'nav.monitors': 'Monitors',
 
@@ -707,8 +707,8 @@ export const en: Record<Key, string> = {
   'editor.cronMonitorsPlaceholder': 'nightly-backup, send-invoices',
   'editor.cronMonitorsHint': 'Slugs, separated by commas. Empty, every monitor in the project.',
 
-  'title.uptimeNew': 'New monitor · intake-errors',
-  'title.uptimeEdit': 'Edit monitor · intake-errors',
+  'title.uptimeNew': 'New monitor · Mothlog',
+  'title.uptimeEdit': 'Edit monitor · Mothlog',
   'title.uptimeEditNamed': 'Edit {name} · Monitors',
   'monitors.new': 'New monitor',
   'monitors.section.uptime': 'Uptime',
@@ -825,12 +825,12 @@ export const en: Record<Key, string> = {
   'linear.created': 'Issue {identifier} created in Linear',
   'history.linkCreated': 'created the Linear issue',
   // Apps connected to the MCP with OAuth and their consent screen.
-  'title.authorize': 'Grant access · intake-errors',
-  'title.apps': 'Connected apps · intake-errors',
+  'title.authorize': 'Grant access · Mothlog',
+  'title.apps': 'Connected apps · Mothlog',
   'shell.apps': 'Connected apps',
   'history.via': 'via {client}',
   'consent.title': 'Connect {client}',
-  'consent.lede': '{client} wants to use the intake-errors MCP with your account.',
+  'consent.lede': '{client} wants to use the Mothlog MCP with your account.',
   'consent.as': 'With your account',
   'consent.redirect': 'Returns to',
   'consent.clientId': 'Its metadata is at',

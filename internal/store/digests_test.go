@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -135,5 +136,36 @@ func TestDigestNormalize(t *testing.T) {
 	off := DefaultDigest(1)
 	if _, err := off.Normalize(); err != nil {
 		t.Errorf("apagado y sin destinos vale: %v", err)
+	}
+}
+
+// El resumen de un proyecto que no lo ha configurado sale en DEFAULT_LANGUAGE;
+// el que ya tiene idioma guardado lo conserva.
+func TestDigestDefaultLanguage(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	a, err := s.CreateProject(ctx, "a", randomHex(t, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.CreateProject(ctx, "b", randomHex(t, 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if c, err := s.Digest(ctx, a.ID, now); err != nil || c.Language != "en" {
+		t.Fatalf("sin DEFAULT_LANGUAGE = %q, %v", c.Language, err)
+	}
+	saved := DefaultDigest(b.ID)
+	saved.Language = "en"
+	if _, _, err := s.SetDigest(ctx, b.ID, saved, now); err != nil {
+		t.Fatal(err)
+	}
+	s.SetDefaultLanguage("es")
+	if c, err := s.Digest(ctx, a.ID, now); err != nil || c.Language != "es" {
+		t.Errorf("con DEFAULT_LANGUAGE=es, el de un proyecto sin configurar = %q, %v", c.Language, err)
+	}
+	if c, err := s.Digest(ctx, b.ID, now); err != nil || c.Language != "en" {
+		t.Errorf("con DEFAULT_LANGUAGE=es, el que ya era en = %q, %v", c.Language, err)
 	}
 }

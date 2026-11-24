@@ -11,16 +11,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/search"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/search"
 )
 
 // ErrInvalid envuelve los errores de parámetros que vienen del cliente.
-var ErrInvalid = errors.New("parámetro no válido")
+var ErrInvalid = errors.New("invalid parameter")
 
 // ErrNoRelease: resolved_next sin release en el último evento.
-var ErrNoRelease = errors.New("el último evento del issue no tiene release")
+var ErrNoRelease = errors.New("the issue's latest event has no release")
 
 var Statuses = []string{"open", "resolved", "resolved_next", "silenced"}
 
@@ -161,7 +161,7 @@ func normalizeLimit(n int) (int, error) {
 	case n == 0:
 		return DefaultLimit, nil
 	case n < 0 || n > MaxLimit:
-		return 0, fmt.Errorf("%w: limit va de 1 a %d", ErrInvalid, MaxLimit)
+		return 0, fmt.Errorf("%w: limit goes from 1 to %d", ErrInvalid, MaxLimit)
 	}
 	return n, nil
 }
@@ -177,7 +177,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 	}
 	col, ok := sortColumns[f.Sort]
 	if !ok {
-		return IssuePage{}, fmt.Errorf("%w: sort es last_seen, first_seen o count", ErrInvalid)
+		return IssuePage{}, fmt.Errorf("%w: sort is last_seen, first_seen or count", ErrInvalid)
 	}
 	query, err := search.Parse(f.Query)
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		}
 	}
 	if f.Status != "all" && !slices.Contains(Statuses, f.Status) {
-		return IssuePage{}, fmt.Errorf("%w: status es open, resolved, resolved_next, silenced o all", ErrInvalid)
+		return IssuePage{}, fmt.Errorf("%w: status is open, resolved, resolved_next, silenced or all", ErrInvalid)
 	}
 	limit, err := normalizeLimit(f.Limit)
 	if err != nil {
@@ -247,11 +247,11 @@ func (s *Store) ListIssues(ctx context.Context, f IssueFilter) (IssuePage, error
 		cols, from, strings.Join(where, " AND "), col, limit+1)
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
-		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
+		return IssuePage{}, fmt.Errorf("list issues: %w", err)
 	}
 	issues, err := db.CollectRows(rows, func(r db.CollectableRow) (Issue, error) { return scanIssueWithAssignee(r) })
 	if err != nil {
-		return IssuePage{}, fmt.Errorf("listar issues: %w", err)
+		return IssuePage{}, fmt.Errorf("list issues: %w", err)
 	}
 	page := IssuePage{Issues: issues}
 	if len(issues) > limit {
@@ -294,7 +294,7 @@ func (s *Store) termSQL(ctx context.Context, t search.Term, viewer *Actor, arg f
 		// Con assignee vacío la condición es false, no NULL, para que !assigned: la deje pasar.
 		if strings.EqualFold(t.Value, search.Me) {
 			if viewer == nil {
-				return "", fmt.Errorf("%w: assigned:me necesita saber quién busca", ErrInvalid)
+				return "", fmt.Errorf("%w: assigned:me needs to know who is searching", ErrInvalid)
 			}
 			if viewer.Kind == ActorToken {
 				// El token activo con ese nombre es quien busca; los de uno revocado con el mismo nombre no son suyos.
@@ -337,7 +337,7 @@ func (s *Store) IssueIn(ctx context.Context, id int64, env string) (Issue, error
 		return Issue{}, ErrNotFound
 	}
 	if err != nil {
-		return Issue{}, fmt.Errorf("leer issue: %w", err)
+		return Issue{}, fmt.Errorf("read issue: %w", err)
 	}
 	return i, nil
 }
@@ -363,7 +363,7 @@ func scanStoredEvent(r db.Row) (StoredEvent, error) {
 	}
 	var err error
 	if e.Event, err = decodeStored(compressed, legacy); err != nil {
-		return e, fmt.Errorf("evento %d: %w", e.ID, err)
+		return e, fmt.Errorf("event %d: %w", e.ID, err)
 	}
 	return e, nil
 }
@@ -401,7 +401,7 @@ func (s *Store) Event(ctx context.Context, ref string) (StoredEvent, error) {
 		return StoredEvent{}, ErrNotFound
 	}
 	if err != nil {
-		return StoredEvent{}, fmt.Errorf("leer evento: %w", err)
+		return StoredEvent{}, fmt.Errorf("read event: %w", err)
 	}
 	return e, nil
 }
@@ -431,7 +431,7 @@ func (s *Store) latestEventIn(ctx context.Context, issueID int64, env string) (*
 		return nil, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("leer último evento: %w", err)
+		return nil, fmt.Errorf("read latest event: %w", err)
 	}
 	return &e, nil
 }
@@ -506,7 +506,7 @@ func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now tim
 		GROUP BY v.key, v.value
 		ORDER BY `+dl.Collate("v.key")+`, n DESC, `+dl.Collate("v.value")), id, env)
 	if err != nil {
-		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
+		return IssueDetail{}, fmt.Errorf("frequent values: %w", err)
 	}
 	d.TopValues = map[string][]ValueCount{"environment": {}, "release": {}, "user": {}, "organization_id": {}}
 	var key string
@@ -518,7 +518,7 @@ func (s *Store) IssueDetailIn(ctx context.Context, id int64, env string, now tim
 		return nil
 	})
 	if err != nil {
-		return IssueDetail{}, fmt.Errorf("valores frecuentes: %w", err)
+		return IssueDetail{}, fmt.Errorf("frequent values: %w", err)
 	}
 	return d, nil
 }
@@ -559,7 +559,7 @@ func (s *Store) DailyCountsIn(ctx context.Context, ids []int64, env string, now 
 			AND ($4 = '' OR e.environment = $4)
 		GROUP BY i.id, d.day ORDER BY i.id, d.day`), ids, now, DailyDays, env)
 	if err != nil {
-		return nil, fmt.Errorf("eventos por día: %w", err)
+		return nil, fmt.Errorf("events per day: %w", err)
 	}
 	var id int64
 	var c DayCount
@@ -568,7 +568,7 @@ func (s *Store) DailyCountsIn(ctx context.Context, ids []int64, env string, now 
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("eventos por día: %w", err)
+		return nil, fmt.Errorf("events per day: %w", err)
 	}
 	return out, nil
 }
@@ -625,7 +625,7 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 		WHERE e.issue_id = $1 AND (e.occurred_at, e.id) < ($2, $3) AND ($5 = '' OR e.environment = $5)
 		ORDER BY e.occurred_at DESC, e.id DESC LIMIT $4`, issueID, after, afterID, limit+1, env)
 	if err != nil {
-		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
+		return EventPage{}, fmt.Errorf("list events: %w", err)
 	}
 	events, err := db.CollectRows(rows, func(r db.CollectableRow) (EventSummary, error) {
 		var e EventSummary
@@ -633,7 +633,7 @@ func (s *Store) IssueEventsIn(ctx context.Context, issueID int64, env, cur strin
 		return e, err
 	})
 	if err != nil {
-		return EventPage{}, fmt.Errorf("listar eventos: %w", err)
+		return EventPage{}, fmt.Errorf("list events: %w", err)
 	}
 	page := EventPage{Events: events}
 	if len(events) > limit {

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -11,8 +12,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 type bearer struct{ token string }
@@ -76,7 +77,7 @@ func TestMCP(t *testing.T) {
 	var names []string
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
-		if !strings.Contains(tool.Description, "Úsala") {
+		if !strings.Contains(tool.Description, "Use it") {
 			t.Errorf("%s no dice cuándo usarla: %q", tool.Name, tool.Description)
 		}
 	}
@@ -107,7 +108,7 @@ func TestMCP(t *testing.T) {
 		!strings.Contains(md, `> 73 |     return {"pedido": pedido_id, "media": lineas["unidades"] / lineas["envios"]}`) {
 		t.Errorf("get_stacktrace =\n%s", md)
 	}
-	if out, isErr := call(t, cs, "get_stacktrace", map[string]any{"issue_id": 999999}); !isErr || !strings.Contains(out, "no existe") {
+	if out, isErr := call(t, cs, "get_stacktrace", map[string]any{"issue_id": 999999}); !isErr || !strings.Contains(out, "no such issue") {
 		t.Errorf("issue que no existe = %v %s", isErr, out)
 	}
 
@@ -167,5 +168,33 @@ func TestMCPUnauthorized(t *testing.T) {
 	}, nil)
 	if err == nil {
 		t.Fatal("conecta con un token malo")
+	}
+}
+
+// Un token creado antes del nombre Mothlog, con ie_, sigue entrando en la API
+// y en el MCP; los nuevos llevan ml_. La fila es la que dejaba la orden de
+// antes: el nombre y el sha256 del token.
+func TestLegacyTokenStillWorks(t *testing.T) {
+	e := setup(t)
+	if !strings.HasPrefix(e.token, "ml_") {
+		t.Fatalf("token nuevo = %q", e.token)
+	}
+	p := e.db.AddProject(t, "backend")
+	e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "ZeroDivisionError: division by zero", Count: 1})
+	legacy := "ie_" + storetest.RandomHex(t, 32)
+	sum := sha256.Sum256([]byte(legacy))
+	if _, err := e.db.Pool().Exec(context.Background(), `INSERT INTO api_tokens (name, token_sha256) VALUES ('de-antes', $1)`, sum[:]); err != nil {
+		t.Fatal(err)
+	}
+	old := &env{db: e.db, srv: e.srv, token: legacy}
+	if code, b := old.do(t, http.MethodGet, "/api/0/issues/", ""); code != http.StatusOK || !strings.Contains(string(b), "ZeroDivisionError") {
+		t.Errorf("API con el token ie_ = %d %s", code, b)
+	}
+	if out, isErr := call(t, connect(t, e.srv.URL, legacy), "list_issues", nil); isErr || !strings.Contains(out, "ZeroDivisionError") {
+		t.Errorf("MCP con el token ie_ = %v %s", isErr, out)
+	}
+	bad := &env{db: e.db, srv: e.srv, token: "ie_" + storetest.RandomHex(t, 32)}
+	if code, _ := bad.do(t, http.MethodGet, "/api/0/issues/", ""); code != http.StatusUnauthorized {
+		t.Errorf("un ie_ que no existe = %d", code)
 	}
 }

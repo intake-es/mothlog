@@ -10,9 +10,9 @@ import (
 const MaxNameLen = 200
 
 var (
-	ErrNameEmpty   = errors.New("vacío")
-	ErrNameTooLong = errors.New("demasiado largo")
-	ErrNameControl = errors.New("con saltos de línea o tabuladores")
+	ErrNameEmpty   = errors.New("empty")
+	ErrNameTooLong = errors.New("too long")
+	ErrNameControl = errors.New("with line breaks or tabs")
 )
 
 // CleanName aplica a una release o un entorno las reglas de la API: sin

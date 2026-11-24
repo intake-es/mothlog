@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/search"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/search"
 )
 
 // Person es alguien que ha entrado en la interfaz. Login es como se la nombra
@@ -98,7 +98,7 @@ func (s *Store) SavePerson(ctx context.Context, p Person) error {
 func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 	p.Login = strings.TrimSpace(p.Login)
 	if p.Login == "" {
-		return "", fmt.Errorf("%w: la persona necesita un login", ErrInvalid)
+		return "", fmt.Errorf("%w: the person needs a login", ErrInvalid)
 	}
 	if p.Provider == "" {
 		p.Provider = LoginGitHub
@@ -122,7 +122,7 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 			return login, nil
 		}
 		if !errors.Is(err, db.ErrNoRows) {
-			return "", fmt.Errorf("guardar persona: %w", err)
+			return "", fmt.Errorf("save person: %w", err)
 		}
 		if p.LegacySubject != "" {
 			// Si hay varias, la que coincide en mayúsculas y luego la más antigua.
@@ -138,7 +138,7 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 				return login, nil
 			}
 			if !errors.Is(err, db.ErrNoRows) {
-				return "", fmt.Errorf("guardar persona: %w", err)
+				return "", fmt.Errorf("save person: %w", err)
 			}
 		}
 		candidate := p.Login
@@ -153,10 +153,10 @@ func (s *Store) SaveIdentity(ctx context.Context, p Person) (string, error) {
 			return login, nil
 		}
 		if !errors.Is(err, db.ErrNoRows) {
-			return "", fmt.Errorf("guardar persona: %w", err)
+			return "", fmt.Errorf("save person: %w", err)
 		}
 	}
-	return "", fmt.Errorf("guardar persona: %q y sus %d variantes ya son de otras personas", p.Login, maxLoginSuffix)
+	return "", fmt.Errorf("save person: %q and its %d variants already belong to other people", p.Login, maxLoginSuffix)
 }
 
 // ensurePerson guarda a alguien con sesión que no consta en people, sin
@@ -169,14 +169,14 @@ func (s *Store) ensurePerson(ctx context.Context, q Querier, login string) error
 	}
 	_, err := q.Exec(ctx, `INSERT INTO people (login, name, provider, subject) VALUES ($1, $1, $2, $3) ON CONFLICT DO NOTHING`, login, provider, subject)
 	if err != nil {
-		return fmt.Errorf("guardar persona: %w", err)
+		return fmt.Errorf("save person: %w", err)
 	}
 	var got string
 	if err := q.QueryRow(ctx, `SELECT login FROM people WHERE lower(login) = lower($1)`, login).Scan(&got); err != nil {
-		return fmt.Errorf("guardar persona: %w", err)
+		return fmt.Errorf("save person: %w", err)
 	}
 	if got != login {
-		return fmt.Errorf("%w: el login %q es de otra persona (%q)", ErrInvalid, login, got)
+		return fmt.Errorf("%w: the login %q belongs to another person (%q)", ErrInvalid, login, got)
 	}
 	return nil
 }
@@ -189,7 +189,7 @@ func LegacyGitHubSubject(login string) string { return "login:" + login }
 func (s *Store) People(ctx context.Context) ([]Person, error) {
 	rows, err := s.pool.Query(ctx, `SELECT login, name, avatar_url, provider, subject, last_login_at, sessions_valid_since FROM people ORDER BY `+s.pool.Dialect().Collate("lower(name)")+`, `+s.pool.Dialect().Collate("login"))
 	if err != nil {
-		return nil, fmt.Errorf("listar personas: %w", err)
+		return nil, fmt.Errorf("list people: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (Person, error) {
 		var p Person
@@ -206,14 +206,14 @@ func (s *Store) Assignees(ctx context.Context) ([]Assignee, error) {
 		SELECT name, 'token', '', NULL FROM api_tokens WHERE revoked_at IS NULL
 		ORDER BY 2 DESC, `+s.pool.Dialect().Collate("1"))
 	if err != nil {
-		return nil, fmt.Errorf("listar asignables: %w", err)
+		return nil, fmt.Errorf("list assignees: %w", err)
 	}
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (Assignee, error) {
 		a := Assignee{Active: true}
 		return a, r.Scan(&a.Name, &a.Kind, &a.DisplayName, &a.AvatarURL)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listar asignables: %w", err)
+		return nil, fmt.Errorf("list assignees: %w", err)
 	}
 	if out == nil {
 		out = []Assignee{}
@@ -226,36 +226,36 @@ func (s *Store) Assignees(ctx context.Context) ([]Assignee, error) {
 func resolveAssignee(ctx context.Context, q Querier, name, kind string) (Actor, *int64, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return Actor{}, nil, fmt.Errorf("%w: falta a quién asignar", ErrInvalid)
+		return Actor{}, nil, fmt.Errorf("%w: missing who to assign", ErrInvalid)
 	}
 	if kind != "" && kind != ActorUser && kind != ActorToken {
-		return Actor{}, nil, fmt.Errorf("%w: kind es user o token", ErrInvalid)
+		return Actor{}, nil, fmt.Errorf("%w: kind is user or token", ErrInvalid)
 	}
 	var login *string
 	if kind != ActorToken {
 		err := q.QueryRow(ctx, `SELECT login FROM people WHERE lower(login) = lower($1)`, name).Scan(&login)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
-			return Actor{}, nil, fmt.Errorf("buscar persona: %w", err)
+			return Actor{}, nil, fmt.Errorf("find person: %w", err)
 		}
 	}
 	var tokenID *int64
 	if kind != ActorUser {
 		err := q.QueryRow(ctx, `SELECT id FROM api_tokens WHERE name = $1 AND revoked_at IS NULL`, name).Scan(&tokenID)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
-			return Actor{}, nil, fmt.Errorf("buscar token: %w", err)
+			return Actor{}, nil, fmt.Errorf("find token: %w", err)
 		}
 	}
 	switch {
 	case login != nil && tokenID != nil:
-		return Actor{}, nil, fmt.Errorf("%w: %q es una persona y un token; di cuál con kind", ErrInvalid, name)
+		return Actor{}, nil, fmt.Errorf("%w: %q is both a person and a token; say which with kind", ErrInvalid, name)
 	case login != nil:
 		return Actor{Name: *login, Kind: ActorUser}, nil, nil
 	case tokenID != nil:
 		return Actor{Name: name, Kind: ActorToken}, tokenID, nil
 	case kind == ActorToken:
-		return Actor{}, nil, fmt.Errorf("%w: no hay ningún token activo llamado %q", ErrInvalid, name)
+		return Actor{}, nil, fmt.Errorf("%w: there is no active token named %q", ErrInvalid, name)
 	}
-	return Actor{}, nil, fmt.Errorf("%w: nadie llamado %q ha entrado en la interfaz ni hay un token activo con ese nombre", ErrInvalid, name)
+	return Actor{}, nil, fmt.Errorf("%w: nobody named %q has signed in to the UI and there is no active token with that name", ErrInvalid, name)
 }
 
 // AssignIssue asigna el issue a to (nil, lo desasigna) y lo apunta en el
@@ -263,7 +263,7 @@ func resolveAssignee(ctx context.Context, q Querier, name, kind string) (Actor, 
 // la guarda aunque no conste que haya entrado. Si no cambia, no apunta nada.
 func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignChange) (Issue, error) {
 	if !validAssignSource(by.Source) {
-		return Issue{}, fmt.Errorf("%w: origen del cambio %q", ErrInvalid, by.Source)
+		return Issue{}, fmt.Errorf("%w: change source %q", ErrInvalid, by.Source)
 	}
 	if by.Actor != nil {
 		if err := validActor(by.Actor); err != nil {
@@ -279,7 +279,7 @@ func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignC
 			return ErrNotFound
 		}
 		if err != nil {
-			return fmt.Errorf("leer issue: %w", err)
+			return fmt.Errorf("read issue: %w", err)
 		}
 		var target *Actor
 		var tokenID *int64
@@ -310,7 +310,7 @@ func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignC
 			UPDATE issues SET assignee = $2, assignee_kind = $3, assignee_token_id = $4,
 				assigned_at = CASE WHEN CAST($2 AS text) IS NULL THEN NULL ELSE now() END
 			WHERE id = $1`, id, toName, toKind, tokenID); err != nil {
-			return fmt.Errorf("asignar issue: %w", err)
+			return fmt.Errorf("assign issue: %w", err)
 		}
 		var author, authorKind *string
 		if by.Actor != nil {
@@ -320,7 +320,7 @@ func (s *Store) AssignIssue(ctx context.Context, id int64, to *Actor, by AssignC
 			INSERT INTO issue_assignment_changes (issue_id, author, author_kind, author_via, source, from_name, from_kind, to_name, to_kind)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 			id, author, authorKind, via(by.Actor), by.Source, fromName, fromKind, toName, toKind); err != nil {
-			return fmt.Errorf("apuntar asignación: %w", err)
+			return fmt.Errorf("record assignment: %w", err)
 		}
 		return nil
 	})
@@ -340,7 +340,7 @@ func (s *Store) assignmentHistory(ctx context.Context, issueID int64) ([]History
 		SELECT id, created_at, author, author_kind, author_via, source, from_name, from_kind, to_name, to_kind
 		FROM issue_assignment_changes WHERE issue_id = $1 ORDER BY created_at, id`, issueID)
 	if err != nil {
-		return nil, fmt.Errorf("leer asignaciones: %w", err)
+		return nil, fmt.Errorf("read assignments: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (HistoryEntry, error) {
 		e := HistoryEntry{Type: "assignment"}
@@ -362,7 +362,7 @@ func AssigneeRef(name, kind string, me *Actor) (*Actor, error) {
 		return nil, nil
 	case strings.EqualFold(name, search.Me):
 		if me == nil {
-			return nil, fmt.Errorf("%w: no se sabe quién eres para asignarte", ErrInvalid)
+			return nil, fmt.Errorf("%w: unknown caller, can't assign to you", ErrInvalid)
 		}
 		return &Actor{Name: me.Name, Kind: me.Kind}, nil
 	}

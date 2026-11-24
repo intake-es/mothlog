@@ -1,27 +1,27 @@
-# `docker compose up` levanta intake-errors y su Postgres para probarlo en
+# `docker compose up` levanta mothlog y su Postgres para probarlo en
 # http://localhost:8000. Se entra como dev (UI_DEV_LOGIN=1) con el enlace con
 # clave que sale en el log al arrancar:
-#   docker compose logs intake-errors | grep dev/login
+#   docker compose logs mothlog | grep dev/login
 # Las claves son de ejemplo: NO es para producción.
 #
 # El Postgres de desarrollo y de los tests es `db` (perfil dev), en 127.0.0.1:5433:
 # `docker compose up -d --wait db` o `make run`.
 
 services:
-  intake-errors:
-    image: ${INTAKE_ERRORS_IMAGE:-ghcr.io/intake-es/intake-errors:latest}
+  mothlog:
+    image: ${MOTHLOG_IMAGE:-ghcr.io/intake-es/mothlog:latest}
     # Si no puede descargar la imagen, la construye desde el código (hace falta el repositorio).
     build: .
     # UI_DEV_LOGIN solo vale escuchando en loopback y pide la clave del log;
     # con él, solo valen los Host de loopback y el de PUBLIC_URL, así que
     # otro contenedor que llegue a proxy:8080 no entra. Comparte la red del proxy,
     # que lo publica solo en el 127.0.0.1 del anfitrión. Al revés, si se
-    # reiniciara intake-errors, el proxy se quedaría en una red que ya no existe.
+    # reiniciara mothlog, el proxy se quedaría en una red que ya no existe.
     network_mode: service:proxy
     environment:
-      DATABASE_URL: postgres://intake_errors:intake_errors@postgres:5432/intake_errors?sslmode=disable
+      DATABASE_URL: postgres://mothlog:mothlog@postgres:5432/mothlog?sslmode=disable
       LISTEN_ADDR: 127.0.0.1:8000
-      PUBLIC_URL: http://localhost:${INTAKE_ERRORS_PORT:-8000}
+      PUBLIC_URL: http://localhost:${MOTHLOG_PORT:-8000}
       UI_DEV_LOGIN: "1"
     depends_on:
       postgres:
@@ -35,7 +35,7 @@ services:
     image: caddy:2-alpine
     command: caddy reverse-proxy --from :8080 --to 127.0.0.1:8000
     ports:
-      - "127.0.0.1:${INTAKE_ERRORS_PORT:-8000}:8080"
+      - "127.0.0.1:${MOTHLOG_PORT:-8000}:8080"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
       interval: 2s
@@ -46,13 +46,13 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: intake_errors
-      POSTGRES_PASSWORD: intake_errors
-      POSTGRES_DB: intake_errors
+      POSTGRES_USER: mothlog
+      POSTGRES_PASSWORD: mothlog
+      POSTGRES_DB: mothlog
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U intake_errors"]
+      test: ["CMD-SHELL", "pg_isready -U mothlog"]
       interval: 2s
       timeout: 5s
       retries: 15
@@ -61,15 +61,15 @@ services:
     image: postgres:16
     profiles: [dev]
     environment:
-      POSTGRES_USER: intake_errors
-      POSTGRES_PASSWORD: intake_errors
-      POSTGRES_DB: intake_errors
+      POSTGRES_USER: mothlog
+      POSTGRES_PASSWORD: mothlog
+      POSTGRES_DB: mothlog
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
       - db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U intake_errors"]
+      test: ["CMD-SHELL", "pg_isready -U mothlog"]
       interval: 2s
       timeout: 5s
       retries: 15

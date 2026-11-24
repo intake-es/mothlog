@@ -8,10 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/metrics"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/ui"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/metrics"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/ui"
 )
 
 type fakeDB struct{ err error }
@@ -184,5 +185,31 @@ func TestMetricsRoute(t *testing.T) {
 		if code := get(mux, auth); code != want {
 			t.Errorf("Authorization %q: %d; quiero %d", auth, code, want)
 		}
+	}
+}
+
+func TestLoadConfigDefaultLanguage(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://x")
+	for env, want := range map[string]lang.Lang{"": lang.EN, "en": lang.EN, "es": lang.ES} {
+		t.Setenv("DEFAULT_LANGUAGE", env)
+		if c, err := loadConfig(); err != nil || c.Lang != want || c.Alerts.Lang != want {
+			t.Errorf("DEFAULT_LANGUAGE=%q: %q, %q, %v", env, c.Lang, c.Alerts.Lang, err)
+		}
+	}
+	t.Setenv("DEFAULT_LANGUAGE", "fr")
+	if _, err := loadConfig(); err == nil || !strings.Contains(err.Error(), "DEFAULT_LANGUAGE") {
+		t.Errorf("DEFAULT_LANGUAGE=fr: %v", err)
+	}
+}
+
+func TestHelpWithoutDatabaseURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	for _, arg := range []string{"help", "--help", "-h"} {
+		if err := run([]string{arg}); err != nil {
+			t.Errorf("%s sin DATABASE_URL: %v", arg, err)
+		}
+	}
+	if !strings.HasPrefix(usage, "usage:\n  mothlog ") {
+		t.Errorf("ayuda = %q", usage[:40])
 	}
 }

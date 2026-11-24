@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // ErrLinearOff es pedir una issue de Linear a un servidor sin LINEAR_API_KEY.
-var ErrLinearOff = errors.New("el servidor no tiene Linear configurado")
+var ErrLinearOff = errors.New("the server has no Linear configured")
 
 // LinearError es un fallo de Linear al crear la issue a mano. Lleva el
 // detalle para el registro; a quien la pide se le dice solo que ha fallado.
@@ -34,7 +34,7 @@ func (a *Alerter) CreateLinear(ctx context.Context, issueID int64, by store.Acto
 	if err != nil {
 		return link, false, err
 	}
-	p := &pending{issueID: issueID, kind: "new", createID: createID, eventAt: a.now().UTC()}
+	p := &pending{l: a.lang, issueID: issueID, kind: "new", createID: createID, eventAt: a.now().UTC()}
 	if err := a.loadIssue(ctx, a.st.Pool(), p); err != nil {
 		return link, false, err
 	}
@@ -47,7 +47,7 @@ func (a *Alerter) CreateLinear(ctx context.Context, issueID int64, by store.Acto
 	if err != nil {
 		return link, false, err
 	}
-	a.log.InfoContext(ctx, "issue de Linear creada a mano", "issue", issueID, "linear", is.Identifier, "por", by.Name)
+	a.log.InfoContext(ctx, "Linear issue created by hand", "issue", issueID, "linear", is.Identifier, "by", by.Name)
 	return link, true, nil
 }
 

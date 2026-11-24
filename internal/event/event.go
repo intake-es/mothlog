@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-var ErrInvalid = errors.New("evento no válido")
+var ErrInvalid = errors.New("invalid event")
 
 type Event struct {
 	ID          string            `json:"event_id"`
@@ -308,7 +308,7 @@ func parseExceptions(b json.RawMessage) ([]Exception, error) {
 			list = []rawException{one}
 		}
 	default:
-		return nil, fmt.Errorf("%w: exception no es un objeto ni una lista", ErrInvalid)
+		return nil, fmt.Errorf("%w: exception is neither an object nor a list", ErrInvalid)
 	}
 
 	out := make([]Exception, 0, len(list))

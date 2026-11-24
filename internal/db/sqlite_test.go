@@ -13,10 +13,10 @@ import (
 
 func TestSQLitePath(t *testing.T) {
 	for in, want := range map[string]string{
-		"sqlite:///var/lib/intake/intake.db": "/var/lib/intake/intake.db",
-		"sqlite://./intake.db":               "./intake.db",
-		"sqlite://datos/intake.db?x=1":       "datos/intake.db",
-		"sqlite:intake.db":                   "intake.db",
+		"sqlite:///var/lib/mothlog/mothlog.db": "/var/lib/mothlog/mothlog.db",
+		"sqlite://./mothlog.db":                "./mothlog.db",
+		"sqlite://datos/mothlog.db?x=1":        "datos/mothlog.db",
+		"sqlite:mothlog.db":                    "mothlog.db",
 	} {
 		if got, err := SQLitePath(in); err != nil || got != want {
 			t.Errorf("%s: %q, %v; quiero %q", in, got, err, want)
@@ -70,7 +70,7 @@ func openTest(t *testing.T, exclusive bool) (*SQLite, string) {
 func TestSQLiteRefusesSecondInstance(t *testing.T) {
 	s, url := openTest(t, true)
 	_, err := OpenSQLite(context.Background(), url, SQLiteOptions{Exclusive: true})
-	if !errors.Is(err, ErrLocked) || !strings.Contains(err.Error(), "una instancia") {
+	if !errors.Is(err, ErrLocked) || !strings.Contains(err.Error(), "only one instance") {
 		t.Fatalf("segunda instancia: %v", err)
 	}
 	// Las órdenes de la línea de comandos no cogen el cerrojo.

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Session es lo que lleva la cookie. Caduca sola a los 7 días, y antes si
@@ -94,7 +94,7 @@ func (a *Auth) checkSession(r *http.Request) (Session, bool, error) {
 		return Session{}, false, nil
 	}
 	if err != nil {
-		a.log.Error("sesión: leer si está revocada", "login", s.Login, "err", err)
+		a.log.Error("session: check whether revoked", "login", s.Login, "err", err)
 		return Session{}, false, err
 	}
 	if s.IssuedAt <= since.UnixMicro() {

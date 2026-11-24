@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 const bodyMarker = "SERVICIO-INTERNO marca=9c2f"
@@ -115,7 +115,7 @@ func TestAlertDestinationsBlocked(t *testing.T) {
 	}
 	for name, r := range rules {
 		code, b := e.testAction(t, r)
-		if code != http.StatusBadGateway || !strings.Contains(b, "dirección bloqueada") || strings.Contains(b, bodyMarker) {
+		if code != http.StatusBadGateway || !strings.Contains(b, "blocked address") || strings.Contains(b, bodyMarker) {
 			t.Errorf("%s: %d %s", name, code, b)
 		}
 		if name != "discord a metadatos" && !strings.Contains(b, alert.AllowPrivateEnv+"=1") {
@@ -132,7 +132,7 @@ func TestAlertDestinationsBlocked(t *testing.T) {
 		t.Fatalf("PUT digest = %d: %s", code, b)
 	}
 	code, b := e.do(t, http.MethodPost, dbase+"/send", "")
-	if code != http.StatusOK || !strings.Contains(string(b), "dirección bloqueada") || strings.Contains(string(b), `"ok":true`) {
+	if code != http.StatusOK || !strings.Contains(string(b), "blocked address") || strings.Contains(string(b), `"ok":true`) {
 		t.Errorf("mandar el resumen: %d %s", code, b)
 	}
 
@@ -182,7 +182,7 @@ func TestAlertDestinationsAllowPrivate(t *testing.T) {
 	}
 	// Metadatos, nunca.
 	code, b = e.testAction(t, metadataRule(t, e, p.ID))
-	if code != http.StatusBadGateway || !strings.Contains(b, "dirección bloqueada") || strings.Contains(b, alert.AllowPrivateEnv) {
+	if code != http.StatusBadGateway || !strings.Contains(b, "blocked address") || strings.Contains(b, alert.AllowPrivateEnv) {
 		t.Errorf("discord a metadatos: %d %s", code, b)
 	}
 	if hits, _ := svc.snapshot(); len(hits) != 1 || hits[0] != "POST /admin" {

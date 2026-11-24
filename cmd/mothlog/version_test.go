@@ -13,7 +13,7 @@ func TestPrintVersion(t *testing.T) {
 	if err := printVersion(&out); err != nil {
 		t.Fatal(err)
 	}
-	want := "intake-errors 1.2.3\ncommit: abc1234\nfecha: 2026-11-23T10:00:00Z\n"
+	want := "mothlog 1.2.3\ncommit: abc1234\ndate: 2026-11-23T10:00:00Z\n"
 	if out.String() != want {
 		t.Fatalf("salida = %q, quiero %q", out.String(), want)
 	}
@@ -27,7 +27,7 @@ func TestVersionSinDatabaseURL(t *testing.T) {
 }
 
 func TestVersionEnLaAyuda(t *testing.T) {
-	if !strings.Contains(usage, "intake-errors version") {
+	if !strings.Contains(usage, "mothlog version") {
 		t.Fatal("la ayuda no menciona version")
 	}
 }

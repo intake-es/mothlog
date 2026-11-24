@@ -3,7 +3,7 @@ package digest
 import (
 	"strconv"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }

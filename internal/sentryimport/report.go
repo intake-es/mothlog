@@ -5,7 +5,7 @@ import (
 	"io"
 	"text/tabwriter"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Counts es cuántas cosas de un tipo se han creado, actualizado, dejado como
@@ -56,11 +56,11 @@ func (r *Report) skip(format string, args ...any) {
 
 // Write escribe el informe para leerlo en la terminal.
 func (r *Report) Write(w io.Writer) error {
-	head := fmt.Sprintf("importado de %s, organización %s", r.Server, r.Org)
-	cols := "CREADOS\tACTUALIZADOS\tSIN CAMBIOS\tSALTADOS"
+	head := fmt.Sprintf("imported from %s, organization %s", r.Server, r.Org)
+	cols := "CREATED\tUPDATED\tUNCHANGED\tSKIPPED"
 	if r.DryRun {
-		head = fmt.Sprintf("prueba (--dry-run) de importar de %s, organización %s: no se ha escrito nada", r.Server, r.Org)
-		cols = "SE CREARÍAN\tSE ACTUALIZARÍAN\tSIN CAMBIOS\tSE SALTARÍAN"
+		head = fmt.Sprintf("trial (--dry-run) import from %s, organization %s: nothing was written", r.Server, r.Org)
+		cols = "WOULD CREATE\tWOULD UPDATE\tUNCHANGED\tWOULD SKIP"
 	}
 	if _, err := fmt.Fprintf(w, "\n%s\n\n", head); err != nil {
 		return err
@@ -71,8 +71,8 @@ func (r *Report) Write(w io.Writer) error {
 		name string
 		c    Counts
 	}{
-		{"proyectos", r.Projects}, {"releases", r.Releases}, {"despliegues", r.Deploys},
-		{"issues", r.Issues}, {"eventos", r.Events},
+		{"projects", r.Projects}, {"releases", r.Releases}, {"deploys", r.Deploys},
+		{"issues", r.Issues}, {"events", r.Events},
 	} {
 		_, _ = fmt.Fprintf(tw, "%s\t%d\t%d\t%d\t%d\t\n", row.name, row.c.Created, row.c.Updated, row.c.Unchanged, row.c.Skipped)
 	}
@@ -83,9 +83,9 @@ func (r *Report) Write(w io.Writer) error {
 		title string
 		lines []string
 	}{
-		{"issues que no se agrupan con los eventos nuevos de la ingesta", r.NotGrouped},
-		{"saltados", r.Skipped},
-		{"errores", r.Errors},
+		{"issues that don't group with new events from ingestion", r.NotGrouped},
+		{"skipped", r.Skipped},
+		{"errors", r.Errors},
 	} {
 		if len(sec.lines) == 0 {
 			continue
@@ -96,7 +96,7 @@ func (r *Report) Write(w io.Writer) error {
 		}
 	}
 	if len(r.Errors) == 0 {
-		_, err := fmt.Fprintln(w, "\nsin errores")
+		_, err := fmt.Fprintln(w, "\nno errors")
 		return err
 	}
 	return nil

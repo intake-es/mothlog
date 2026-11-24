@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // SyncLinks lleva a Linear y GitHub, uno a uno, los cambios de estado
@@ -47,7 +47,7 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("coger cambio para enlace: %w", err)
+		return false, fmt.Errorf("take link change: %w", err)
 	}
 	link, err := a.st.Link(ctx, linkID)
 	if err != nil {
@@ -55,10 +55,10 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 	}
 	// Como en deliver: se aparta el cambio y se confirma antes de llamar fuera.
 	if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET next_attempt_at = $2 WHERE id = $1`, id, now.Add(SendLease)); err != nil {
-		return false, fmt.Errorf("apartar cambio para enlace: %w", err)
+		return false, fmt.Errorf("set aside link change: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("apartar cambio para enlace: %w", err)
+		return false, fmt.Errorf("set aside link change: %w", err)
 	}
 	pushCtx, cancel := context.WithTimeout(ctx, SendLease/2)
 	state, name, moved, sendErr := a.pushState(pushCtx, link, store.StatusCategory(status))
@@ -90,14 +90,14 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 			return false, err
 		}
 	case attempts >= MaxAttempts || errors.Is(sendErr, errGone) || errors.Is(sendErr, errLinearNotFound) || errors.Is(sendErr, errGitHubNotFound):
-		a.log.ErrorContext(ctx, "cambio de estado abandonado", "enlace", link.Identifier, "issue", link.IssueID, "err", sendErr)
+		a.log.ErrorContext(ctx, "status change abandoned", "link", link.Identifier, "issue", link.IssueID, "err", sendErr)
 		if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET attempts = $2, failed_at = $3, last_error = $4 WHERE id = $1`,
 			id, attempts, now, sendErr.Error()); err != nil {
 			return false, err
 		}
 	default:
 		next := now.Add(Backoff[min(attempts, len(Backoff))-1])
-		a.log.WarnContext(ctx, "cambio de estado fallido", "enlace", link.Identifier, "issue", link.IssueID, "siguiente", next, "err", sendErr)
+		a.log.WarnContext(ctx, "status change failed", "link", link.Identifier, "issue", link.IssueID, "next", next, "err", sendErr)
 		if _, err := tx.Exec(ctx, `UPDATE issue_link_sync SET attempts = $2, next_attempt_at = $3, last_error = $4 WHERE id = $1`,
 			id, attempts, next, sendErr.Error()); err != nil {
 			return false, err
@@ -107,7 +107,7 @@ func (a *Alerter) syncOne(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	if sendErr == nil {
-		a.log.InfoContext(ctx, "estado llevado al enlace", "enlace", link.Identifier, "issue", link.IssueID, "estado", state)
+		a.log.InfoContext(ctx, "status pushed to link", "link", link.Identifier, "issue", link.IssueID, "status", state)
 	}
 	return true, nil
 }
@@ -118,7 +118,7 @@ func (a *Alerter) pushState(ctx context.Context, link store.IssueLink, category 
 	switch link.Provider {
 	case store.ProviderLinear:
 		if a.linearKey == "" {
-			return "", "", false, fmt.Errorf("%w: falta LINEAR_API_KEY", errGone)
+			return "", "", false, fmt.Errorf("%w: LINEAR_API_KEY is missing", errGone)
 		}
 		l := &linear{st: a.st, endpoint: a.linearEndpoint, key: a.linearKey, client: a.client}
 		st, moved, err := l.moveTo(ctx, link.ExternalID, category)
@@ -161,7 +161,7 @@ func (a *Alerter) githubFor(ctx context.Context, link store.IssueLink) (*githubA
 		}
 	}
 	if token == "" {
-		return nil, fmt.Errorf("%w: falta GITHUB_TOKEN", errGone)
+		return nil, fmt.Errorf("%w: GITHUB_TOKEN is missing", errGone)
 	}
 	return &githubAPI{endpoint: a.githubEndpoint, token: token, client: a.client}, nil
 }

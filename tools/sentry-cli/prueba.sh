@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prueba de punta a punta con sentry-cli de verdad: arranca intake-errors
+# Prueba de punta a punta con sentry-cli de verdad: arranca mothlog
 # contra DATABASE_URL (una base vacía), sube el build de la página de
 # ../fixtures/navegador de tres formas y comprueba que el error del navegador
 # sale traducido a src/carrito.ts:7 en cada una.
@@ -33,20 +33,20 @@ mkdir -p "$trabajo"
 [ -d node_modules ] || npm ci --no-fund --no-audit
 [ -d "$navegador/node_modules" ] || (cd "$navegador" && npm ci --no-fund --no-audit)
 
-go build -o "$trabajo/intake-errors" "$raiz/cmd/intake-errors"
+go build -o "$trabajo/mothlog" "$raiz/cmd/mothlog"
 export PUBLIC_URL=$intake LISTEN_ADDR=127.0.0.1:$puerto
 SOURCEMAP_UPLOAD_TOKEN=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
 export SOURCEMAP_UPLOAD_TOKEN
 
 # api y web son el 1 y el 2, como en testdata/envelopes; la prueba usa front, el 3.
-"$trabajo/intake-errors" projects create api >/dev/null
-"$trabajo/intake-errors" projects create web >/dev/null
-clave=$("$trabajo/intake-errors" projects create front | sed -E 's#^https?://([^@]+)@.*/([0-9]+)$#\1 \2#')
+"$trabajo/mothlog" projects create api >/dev/null
+"$trabajo/mothlog" projects create web >/dev/null
+clave=$("$trabajo/mothlog" projects create front | sed -E 's#^https?://([^@]+)@.*/([0-9]+)$#\1 \2#')
 id=${clave#* }
 clave=${clave% *}
-api_token=$("$trabajo/intake-errors" tokens create prueba-sentry-cli | head -n 1)
+api_token=$("$trabajo/mothlog" tokens create prueba-sentry-cli | head -n 1)
 
-"$trabajo/intake-errors" >"$trabajo/servidor.log" 2>&1 &
+"$trabajo/mothlog" >"$trabajo/servidor.log" 2>&1 &
 servidor=$!
 trap 'kill $servidor 2>/dev/null || true' EXIT
 for _ in $(seq 50); do

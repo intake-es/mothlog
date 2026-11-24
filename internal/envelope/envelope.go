@@ -11,13 +11,13 @@ import (
 )
 
 // ErrMalformed envuelve todos los errores de un envelope que no se puede leer.
-var ErrMalformed = errors.New("envelope mal formado")
+var ErrMalformed = errors.New("malformed envelope")
 
 // MaxItems es el tope de items de un envelope; los SDK mandan unos pocos.
 const MaxItems = 100
 
 // ErrTooManyItems se devuelve cuando el envelope trae más de MaxItems items.
-var ErrTooManyItems = fmt.Errorf("el envelope trae más de %d items", MaxItems)
+var ErrTooManyItems = fmt.Errorf("the envelope has more than %d items", MaxItems)
 
 const (
 	TypeEvent        = "event"
@@ -87,7 +87,7 @@ func Parse(data []byte) (*Envelope, error) {
 	line, rest, _ := bytes.Cut(data, []byte("\n"))
 	line = bytes.TrimSpace(line)
 	if len(line) == 0 {
-		return nil, fmt.Errorf("%w: falta la cabecera", ErrMalformed)
+		return nil, fmt.Errorf("%w: missing header", ErrMalformed)
 	}
 	env := &Envelope{}
 	if err := json.Unmarshal(line, &env.Header); err != nil {
@@ -106,29 +106,29 @@ func Parse(data []byte) (*Envelope, error) {
 		line, rest, _ = bytes.Cut(rest, []byte("\n"))
 		var it Item
 		if err := json.Unmarshal(bytes.TrimSpace(line), &it.Header); err != nil {
-			return nil, fmt.Errorf("%w: cabecera del item %d: %v", ErrMalformed, n, err)
+			return nil, fmt.Errorf("%w: header of item %d: %v", ErrMalformed, n, err)
 		}
 		if it.Header.Type == "" {
-			return nil, fmt.Errorf("%w: el item %d no tiene type", ErrMalformed, n)
+			return nil, fmt.Errorf("%w: item %d has no type", ErrMalformed, n)
 		}
 
 		if l := it.Header.Length; l != nil {
 			if *l < 0 {
-				return nil, fmt.Errorf("%w: item %d con length negativo", ErrMalformed, n)
+				return nil, fmt.Errorf("%w: item %d with negative length", ErrMalformed, n)
 			}
 			if *l > len(rest) {
-				return nil, fmt.Errorf("%w: item %d truncado: length %d y quedan %d bytes", ErrMalformed, n, *l, len(rest))
+				return nil, fmt.Errorf("%w: item %d truncated: length %d and %d bytes left", ErrMalformed, n, *l, len(rest))
 			}
 			it.Payload, rest = rest[:*l], rest[*l:]
 			if len(rest) > 0 {
 				if rest[0] != '\n' {
-					return nil, fmt.Errorf("%w: item %d: falta el salto de línea tras %d bytes", ErrMalformed, n, *l)
+					return nil, fmt.Errorf("%w: item %d: missing newline after %d bytes", ErrMalformed, n, *l)
 				}
 				rest = rest[1:]
 			}
 		} else {
 			if len(rest) == 0 {
-				return nil, fmt.Errorf("%w: item %d truncado: acaba tras la cabecera", ErrMalformed, n)
+				return nil, fmt.Errorf("%w: item %d truncated: ends after the header", ErrMalformed, n)
 			}
 			it.Payload, rest, _ = bytes.Cut(rest, []byte("\n"))
 			it.Payload = bytes.TrimSuffix(it.Payload, []byte("\r"))

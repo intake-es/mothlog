@@ -1,6 +1,6 @@
 # SQLite: lo que es propio de Postgres y cómo se hace
 
-intake-errors corre con Postgres 16 o con SQLite (un solo binario, sin servidor de base de datos). El acceso a la base pasa por `internal/db`, que tiene una implementación para cada motor (`postgres.go` y `sqlite.go`), y el SQL que cambia de un motor a otro está localizado. Esta página dice qué es propio de Postgres, dónde está y cómo se hace con SQLite. Cómo instalarlo y sus límites, en el README («Con SQLite, sin servidor de base de datos»).
+Mothlog corre con Postgres 16 o con SQLite (un solo binario, sin servidor de base de datos). El acceso a la base pasa por `internal/db`, que tiene una implementación para cada motor (`postgres.go` y `sqlite.go`), y el SQL que cambia de un motor a otro está localizado. Esta página dice qué es propio de Postgres, dónde está y cómo se hace con SQLite. Cómo instalarlo y sus límites, en el README («Con SQLite, sin servidor de base de datos»).
 
 ## Con SQLite, una sola instancia
 
@@ -8,7 +8,7 @@ SQLite admite un solo escritor a la vez y el fichero vive en una máquina, así 
 
 Cómo está hecho (`internal/db/sqlite.go`, con `modernc.org/sqlite`, Go puro: el binario sigue con `CGO_ENABLED=0`):
 
-- `DATABASE_URL=sqlite:///ruta/intake.db` (o `sqlite://./intake.db`, relativa) elige SQLite; `postgres://…` sigue como antes.
+- `DATABASE_URL=sqlite:///ruta/mothlog.db` (o `sqlite://./mothlog.db`, relativa) elige SQLite; `postgres://…` sigue como antes.
 - Dos `*sql.DB` sobre el mismo fichero: uno de escritura con **una sola conexión**, cuyas transacciones empiezan con `BEGIN IMMEDIATE` (cogen el cerrojo de escritura al empezar: lo que en Postgres hace `FOR UPDATE` lo da ese cerrojo), y otro de lectura con varias conexiones en `query_only`. Las consultas sueltas que solo leen (`SELECT`, `VALUES` o `WITH` sin escrituras) van a las de lectura; el resto, a la de escritura. Las transacciones de solo lectura (`TxOptions{ReadOnly: true}`) van a una de lectura.
 - Al abrir: `journal_mode=WAL`, `busy_timeout=10000`, `foreign_keys=ON` y `synchronous=NORMAL`.
 - El arranque del servicio (`store.Open`) coge un cerrojo de fichero (`flock` sobre `<fichero>.lock`) y se niega si lo tiene otro proceso, con un mensaje que lo dice. Las órdenes de la línea de comandos (`store.OpenForCommand`: `projects`, `tokens`, `releases`, `import`) no lo cogen, para que puedan correr con el servicio arrancado, como con Postgres.
@@ -79,4 +79,4 @@ Postgres ordena el texto con la colación de la base (`en_US.UTF-8` en la imagen
 
 ## Los tests
 
-`storetest` usa Postgres si hay `INTAKE_ERRORS_TEST_DATABASE_URL` y, si no, SQLite en un fichero temporal. Con SQLite se saltan, diciendo por qué, los que solo tienen sentido con Postgres: las migraciones de Postgres sobre datos de antes, la conversión y lectura de los eventos guardados en jsonb, varias réplicas a la vez con `SKIP LOCKED`, la purga que se salta un issue bloqueado por otra transacción (con SQLite, `TestPurgeKeepsEventBeingIngested` comprueba que la purga espera y el evento no se pierde) y un evento con el carácter NUL, que Postgres rechaza y SQLite guarda.
+`storetest` usa Postgres si hay `MOTHLOG_TEST_DATABASE_URL` y, si no, SQLite en un fichero temporal. Con SQLite se saltan, diciendo por qué, los que solo tienen sentido con Postgres: las migraciones de Postgres sobre datos de antes, la conversión y lectura de los eventos guardados en jsonb, varias réplicas a la vez con `SKIP LOCKED`, la purga que se salta un issue bloqueado por otra transacción (con SQLite, `TestPurgeKeepsEventBeingIngested` comprueba que la purga espera y el evento no se pierde) y un evento con el carácter NUL, que Postgres rechaza y SQLite guarda.

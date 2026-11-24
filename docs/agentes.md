@@ -1,6 +1,6 @@
 # Conectar un agente
 
-intake-errors tiene un servidor MCP en `/mcp` con el que un agente puede llevar un error de principio a fin: encontrarlo, leer todo su contexto, arreglarlo, dejar constancia de lo que ha hecho y marcar el estado. Todo lo que hace queda en el historial del error con el nombre de su token, y se ve en la interfaz.
+Mothlog tiene un servidor MCP en `/mcp` con el que un agente puede llevar un error de principio a fin: encontrarlo, leer todo su contexto, arreglarlo, dejar constancia de lo que ha hecho y marcar el estado. Todo lo que hace queda en el historial del error con el nombre de su token, y se ve en la interfaz.
 
 `GET /llms.txt`, público y sin token, resume el servicio, la API y el MCP para un modelo.
 
@@ -9,9 +9,9 @@ intake-errors tiene un servidor MCP en `/mcp` con el que un agente puede llevar 
 Un token por agente, con un nombre que diga quién es: es el autor de sus comentarios y cambios de estado.
 
 ```sh
-intake-errors tokens create agente-backend   # imprime el token (ie_…) una sola vez
-intake-errors tokens list
-intake-errors tokens revoke agente-backend   # si se filtra o deja de hacer falta
+mothlog tokens create agente-backend   # imprime el token (ml_…; los ie_… de antes siguen valiendo) una sola vez
+mothlog tokens list
+mothlog tokens revoke agente-backend   # si se filtra o deja de hacer falta
 ```
 
 En la base solo queda el sha256 del token. Los tokens no tienen permisos distintos: con uno, el agente lee todos los errores de todos los proyectos, con lo que traen sus eventos (usuarios, peticiones, breadcrumbs), comenta y cambia estados por el MCP, y por la API puede además editar filtros y reglas de aviso y apuntar releases. Guárdalo en el gestor de secretos del cliente, no en un fichero del repositorio, y revócalo cuando el agente deje de usarlo.
@@ -25,11 +25,11 @@ Si el cliente hace OAuth (Claude Code, Claude, Cursor y los que siguen la autori
 ### Claude Code
 
 ```sh
-claude mcp add --transport http intake-errors https://errors.example.com/mcp \
-  --header "Authorization: Bearer $INTAKE_ERRORS_TOKEN"
+claude mcp add --transport http mothlog https://errors.example.com/mcp \
+  --header "Authorization: Bearer $MOTHLOG_TOKEN"
 ```
 
-Con `--scope project` queda en el `.mcp.json` del repositorio para todo el equipo; en ese caso, deja la cabecera con la variable (`"Authorization": "Bearer ${INTAKE_ERRORS_TOKEN}"`) y que cada uno ponga la suya en su entorno.
+Con `--scope project` queda en el `.mcp.json` del repositorio para todo el equipo; en ese caso, deja la cabecera con la variable (`"Authorization": "Bearer ${MOTHLOG_TOKEN}"`) y que cada uno ponga la suya en su entorno.
 
 ### Un cliente genérico
 
@@ -38,10 +38,10 @@ Los clientes que leen la configuración en JSON (la forma habitual de `mcpServer
 ```json
 {
   "mcpServers": {
-    "intake-errors": {
+    "mothlog": {
       "type": "http",
       "url": "https://errors.example.com/mcp",
-      "headers": { "Authorization": "Bearer ${INTAKE_ERRORS_TOKEN}" }
+      "headers": { "Authorization": "Bearer ${MOTHLOG_TOKEN}" }
     }
   }
 }
@@ -61,7 +61,7 @@ func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
 client := mcp.NewClient(&mcp.Implementation{Name: "mi-agente", Version: "1.0"}, nil)
 cs, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 	Endpoint:   "https://errors.example.com/mcp",
-	HTTPClient: &http.Client{Transport: bearer{os.Getenv("INTAKE_ERRORS_TOKEN")}},
+	HTTPClient: &http.Client{Transport: bearer{os.Getenv("MOTHLOG_TOKEN")}},
 }, nil)
 // cs.CallTool(ctx, &mcp.CallToolParams{Name: "list_issues", Arguments: map[string]any{"query": "is:open"}})
 ```
@@ -70,7 +70,7 @@ Para probar a mano sin cliente, el mismo protocolo con `curl`:
 
 ```sh
 curl -s https://errors.example.com/mcp \
-  -H "Authorization: Bearer $INTAKE_ERRORS_TOKEN" \
+  -H "Authorization: Bearer $MOTHLOG_TOKEN" \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```

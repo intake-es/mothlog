@@ -12,13 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/sentryimport"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/sentryimport"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
-const importUsage = "uso: intake-errors import sentry --url <https://sentry.io> --org <slug> [--project <slug>…]" +
-	" [--since <fecha>] [--events <N>] [--dry-run]\n  con el token de la organización en SENTRY_IMPORT_TOKEN"
+const importUsage = "usage: mothlog import sentry --url <https://sentry.io> --org <slug> [--project <slug>…]" +
+	" [--since <date>] [--events <N>] [--dry-run]\n  with the organization token in SENTRY_IMPORT_TOKEN"
 
 type importArgs struct {
 	url, org string
@@ -34,7 +34,7 @@ func parseImportArgs(args []string) (importArgs, error) {
 	}
 	for _, a := range args[1:] {
 		if name := strings.TrimLeft(strings.SplitN(a, "=", 2)[0], "-"); a != "" && a[0] == '-' && strings.EqualFold(name, "token") {
-			return importArgs{}, errors.New("el token no va en la línea de órdenes: ponlo en SENTRY_IMPORT_TOKEN")
+			return importArgs{}, errors.New("the token doesn't go on the command line: put it in SENTRY_IMPORT_TOKEN")
 		}
 	}
 	var a importArgs
@@ -59,17 +59,17 @@ func parseImportArgs(args []string) (importArgs, error) {
 	}
 	switch {
 	case fs.NArg() > 0:
-		return a, fmt.Errorf("sobra %q\n%s", fs.Arg(0), importUsage)
+		return a, fmt.Errorf("unexpected %q\n%s", fs.Arg(0), importUsage)
 	case a.url == "" || a.org == "":
-		return a, fmt.Errorf("faltan --url y --org\n%s", importUsage)
+		return a, fmt.Errorf("--url and --org are required\n%s", importUsage)
 	case a.events < 1:
-		return a, errors.New("--events tiene que ser al menos 1: un issue sin eventos lo borra la retención")
+		return a, errors.New("--events must be at least 1: retention deletes an issue without events")
 	}
 	if since != "" {
 		var err error
 		if a.since, err = time.Parse(time.RFC3339, since); err != nil {
 			if a.since, err = time.Parse(time.DateOnly, since); err != nil {
-				return a, fmt.Errorf("--since: %q no es una fecha como 2024-05-31 o 2024-05-31T10:00:00Z", since)
+				return a, fmt.Errorf("--since: %q is not a date like 2024-05-31 or 2024-05-31T10:00:00Z", since)
 			}
 		}
 	}

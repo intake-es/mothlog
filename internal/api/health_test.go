@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func TestReleaseHealthAPIAndMCP(t *testing.T) {

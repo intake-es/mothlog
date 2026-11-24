@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Purge borra los eventos recibidos antes de cutoff y los issues que se quedan
@@ -14,7 +14,7 @@ import (
 func Purge(ctx context.Context, pool db.DB, cutoff time.Time) (events, issues int64, err error) {
 	tag, err := pool.Exec(ctx, `DELETE FROM events WHERE received_at < $1`, cutoff)
 	if err != nil {
-		return 0, 0, fmt.Errorf("borrar eventos: %w", err)
+		return 0, 0, fmt.Errorf("delete events: %w", err)
 	}
 	events = tag.RowsAffected()
 	issues, err = purgeEmptyIssues(ctx, pool)
@@ -48,7 +48,7 @@ func purgeEmptyIssues(ctx context.Context, pool db.DB) (int64, error) {
 		return err
 	})
 	if err != nil {
-		return 0, fmt.Errorf("borrar issues: %w", err)
+		return 0, fmt.Errorf("delete issues: %w", err)
 	}
 	return n, nil
 }
@@ -77,7 +77,7 @@ func PurgeReleases(ctx context.Context, pool db.DB, cutoff time.Time) (int64, er
 			WHERE r.first_seen < $1 AND r.id > $2 AND `+releaseUnused+`
 			ORDER BY r.id LIMIT `+fmt.Sprint(purgeReleasesBatch), cutoff, after)
 		if err != nil {
-			return n, fmt.Errorf("buscar releases sin usar: %w", err)
+			return n, fmt.Errorf("find unused releases: %w", err)
 		}
 		type candidate struct {
 			id, project int64
@@ -89,7 +89,7 @@ func PurgeReleases(ctx context.Context, pool db.DB, cutoff time.Time) (int64, er
 			return c, err
 		})
 		if err != nil {
-			return n, fmt.Errorf("buscar releases sin usar: %w", err)
+			return n, fmt.Errorf("find unused releases: %w", err)
 		}
 		if len(cands) == 0 {
 			return n, nil
@@ -121,7 +121,7 @@ func PurgeReleases(ctx context.Context, pool db.DB, cutoff time.Time) (int64, er
 			tag, err := pool.Exec(ctx, `DELETE FROM releases AS r
 				WHERE `+pool.Dialect().InList("r.id", "$1")+` AND `+releaseUnused, ids)
 			if err != nil {
-				return n, fmt.Errorf("borrar releases: %w", err)
+				return n, fmt.Errorf("delete releases: %w", err)
 			}
 			n += tag.RowsAffected()
 		}
@@ -143,11 +143,11 @@ func releasesInUse(ctx context.Context, pool db.DB, projectID int64, versions []
 		UNION SELECT release FROM artifact_bundles WHERE project_id = $1 AND `+in("release")+`
 		UNION SELECT release FROM session_states WHERE project_id = $1 AND `+in("release"), projectID, versions)
 	if err != nil {
-		return nil, fmt.Errorf("releases en uso: %w", err)
+		return nil, fmt.Errorf("releases in use: %w", err)
 	}
 	used, err := db.CollectRows(rows, db.RowTo[string])
 	if err != nil {
-		return nil, fmt.Errorf("releases en uso: %w", err)
+		return nil, fmt.Errorf("releases in use: %w", err)
 	}
 	out := make(map[string]bool, len(used))
 	for _, v := range used {
@@ -164,19 +164,19 @@ func RunRetention(ctx context.Context, pool db.DB, days int, log *slog.Logger) {
 		cutoff := time.Now().AddDate(0, 0, -days)
 		ev, is, err := Purge(ctx, pool, cutoff)
 		if err != nil {
-			log.ErrorContext(ctx, "retención", "err", err)
+			log.ErrorContext(ctx, "retention", "err", err)
 		} else if ev > 0 || is > 0 {
-			log.InfoContext(ctx, "retención", "eventos", ev, "issues", is)
+			log.InfoContext(ctx, "retention", "events", ev, "issues", is)
 		}
 		if n, err := PurgeSessions(ctx, pool, cutoff, time.Now()); err != nil {
-			log.ErrorContext(ctx, "retención de sesiones", "err", err)
+			log.ErrorContext(ctx, "session retention", "err", err)
 		} else if n > 0 {
-			log.InfoContext(ctx, "retención de sesiones", "filas", n)
+			log.InfoContext(ctx, "session retention", "rows", n)
 		}
 		if n, err := PurgeReleases(ctx, pool, cutoff); err != nil {
-			log.ErrorContext(ctx, "retención de releases", "err", err)
+			log.ErrorContext(ctx, "release retention", "err", err)
 		} else if n > 0 {
-			log.InfoContext(ctx, "retención de releases", "releases", n)
+			log.InfoContext(ctx, "release retention", "releases", n)
 		}
 		select {
 		case <-ctx.Done():

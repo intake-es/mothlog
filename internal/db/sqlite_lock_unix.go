@@ -16,7 +16,7 @@ import (
 func lockFile(path string) (*os.File, error) {
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("cerrojo %s: %w", path, err)
+		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		_ = f.Close()
@@ -24,14 +24,14 @@ func lockFile(path string) (*os.File, error) {
 			who := ""
 			if b, rerr := os.ReadFile(path); rerr == nil {
 				if pid := strings.TrimSpace(string(b)); pid != "" {
-					who = " (el proceso " + pid + ")"
+					who = " (process " + pid + ")"
 				}
 			}
-			return nil, fmt.Errorf("%w %s%s: con SQLite solo puede correr una instancia sobre el mismo fichero; "+
-				"para la otra antes de arrancar esta, o usa Postgres para tener varias (cerrojo en %s)",
+			return nil, fmt.Errorf("%w %s%s: with SQLite only one instance can run on the same file; "+
+				"stop the other one before starting this one, or use Postgres to run several (lock at %s)",
 				ErrLocked, strings.TrimSuffix(path, ".lock"), who, path)
 		}
-		return nil, fmt.Errorf("cerrojo %s: %w", path, err)
+		return nil, fmt.Errorf("lock %s: %w", path, err)
 	}
 	if err := f.Truncate(0); err == nil {
 		_, _ = f.WriteAt([]byte(strconv.Itoa(os.Getpid())+"\n"), 0)

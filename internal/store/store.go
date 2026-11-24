@@ -13,16 +13,18 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/pressly/goose/v3/lock"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/migrations"
-	sqlitemigrations "github.com/intake-es/intake-errors/migrations/sqlite"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/migrations"
+	sqlitemigrations "github.com/intake-es/mothlog/migrations/sqlite"
 )
 
-var ErrNotFound = errors.New("no encontrado")
+var ErrNotFound = errors.New("not found")
 
 type Store struct {
 	pool    db.DB
 	hashKey atomic.Pointer[[]byte]
+	// lang es el idioma del resumen de los proyectos que no lo han configurado.
+	lang string
 }
 
 type Project struct {
@@ -35,7 +37,7 @@ type Project struct {
 }
 
 // Open conecta con la base de url y aplica las migraciones pendientes:
-// postgres://… es Postgres y sqlite:///ruta/intake.db, un fichero de SQLite.
+// postgres://… es Postgres y sqlite:///ruta/mothlog.db, un fichero de SQLite.
 // Con SQLite coge el cerrojo del fichero, para que no corran dos instancias
 // del servicio sobre él.
 func Open(ctx context.Context, url string, log *slog.Logger) (*Store, error) {
@@ -62,7 +64,7 @@ func open(ctx context.Context, url string, log *slog.Logger, exclusive bool) (*S
 	}
 	pool, err := db.OpenPostgres(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("conectar con postgres: %w", err)
+		return nil, fmt.Errorf("connect to postgres: %w", err)
 	}
 	if err := migrate(ctx, pool.SQLDB(), log); err != nil {
 		pool.Close()
@@ -83,7 +85,7 @@ func migrate(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
 		// Las migraciones de ramas paralelas pueden llegar en otro orden que su número.
 		goose.WithAllowOutofOrder(true))
 	if err != nil {
-		return fmt.Errorf("preparar migraciones: %w", err)
+		return fmt.Errorf("prepare migrations: %w", err)
 	}
 	return up(ctx, p, log)
 }
@@ -93,7 +95,7 @@ func migrateSQLite(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
 	p, err := goose.NewProvider(goose.DialectSQLite3, sqlDB, sqlitemigrations.FS,
 		goose.WithSlog(log), goose.WithAllowOutofOrder(true))
 	if err != nil {
-		return fmt.Errorf("preparar migraciones: %w", err)
+		return fmt.Errorf("prepare migrations: %w", err)
 	}
 	return up(ctx, p, log)
 }
@@ -101,10 +103,10 @@ func migrateSQLite(ctx context.Context, sqlDB *sql.DB, log *slog.Logger) error {
 func up(ctx context.Context, p *goose.Provider, log *slog.Logger) error {
 	res, err := p.Up(ctx)
 	if err != nil {
-		return fmt.Errorf("aplicar migraciones: %w", err)
+		return fmt.Errorf("apply migrations: %w", err)
 	}
 	for _, r := range res {
-		log.Info("migración aplicada", "fichero", r.Source.Path, "duración", r.Duration)
+		log.Info("migration applied", "file", r.Source.Path, "duration", r.Duration)
 	}
 	return nil
 }
@@ -122,7 +124,7 @@ func (s *Store) CreateProject(ctx context.Context, name, publicKey string) (Proj
 		`INSERT INTO projects (name, public_key) VALUES ($1, $2) RETURNING id, created_at`,
 		name, publicKey).Scan(&p.ID, &p.CreatedAt)
 	if err != nil {
-		return Project{}, fmt.Errorf("crear proyecto: %w", err)
+		return Project{}, fmt.Errorf("create project: %w", err)
 	}
 	return p, nil
 }
@@ -136,7 +138,7 @@ func (s *Store) ProjectByPublicKey(ctx context.Context, publicKey string) (Proje
 		return Project{}, ErrNotFound
 	}
 	if err != nil {
-		return Project{}, fmt.Errorf("buscar proyecto: %w", err)
+		return Project{}, fmt.Errorf("find project: %w", err)
 	}
 	return p, nil
 }

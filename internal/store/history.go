@@ -9,11 +9,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // ErrNotOwner: el comentario es de otro.
-var ErrNotOwner = errors.New("solo puedes borrar tus comentarios")
+var ErrNotOwner = errors.New("you can only delete your own comments")
 
 // MaxCommentLen es lo más largo que puede ser un comentario, en caracteres.
 const MaxCommentLen = 20000
@@ -111,16 +111,16 @@ func validComment(body string) (string, error) {
 	body = strings.TrimSpace(body)
 	switch {
 	case body == "":
-		return "", fmt.Errorf("%w: el comentario está vacío", ErrInvalid)
+		return "", fmt.Errorf("%w: the comment is empty", ErrInvalid)
 	case utf8.RuneCountInString(body) > MaxCommentLen:
-		return "", fmt.Errorf("%w: el comentario pasa de %d caracteres", ErrInvalid, MaxCommentLen)
+		return "", fmt.Errorf("%w: the comment is over %d characters", ErrInvalid, MaxCommentLen)
 	}
 	return body, nil
 }
 
 func validActor(a *Actor) error {
 	if a == nil || strings.TrimSpace(a.Name) == "" || (a.Kind != ActorUser && a.Kind != ActorToken) {
-		return fmt.Errorf("%w: falta el autor", ErrInvalid)
+		return fmt.Errorf("%w: missing author", ErrInvalid)
 	}
 	return nil
 }
@@ -134,7 +134,7 @@ func insertComment(ctx context.Context, q Querier, issueID int64, a Actor, body 
 		return Comment{}, ErrNotFound
 	}
 	if err != nil {
-		return Comment{}, fmt.Errorf("guardar comentario: %w", err)
+		return Comment{}, fmt.Errorf("save comment: %w", err)
 	}
 	return c, nil
 }
@@ -160,13 +160,13 @@ func (s *Store) DeleteComment(ctx context.Context, issueID, commentID int64, a A
 		return ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("leer comentario: %w", err)
+		return fmt.Errorf("read comment: %w", err)
 	}
 	if author != a.Name || kind != a.Kind {
 		return ErrNotOwner
 	}
 	if _, err := s.pool.Exec(ctx, `DELETE FROM issue_comments WHERE id = $1`, commentID); err != nil {
-		return fmt.Errorf("borrar comentario: %w", err)
+		return fmt.Errorf("delete comment: %w", err)
 	}
 	return nil
 }
@@ -190,7 +190,7 @@ func (s *Store) History(ctx context.Context, issueID int64, viewer *Actor) ([]Hi
 		WHERE m.issue_id = $1 AND NOT EXISTS (SELECT 1 FROM issue_status_changes c WHERE c.comment_id = m.id)
 		ORDER BY 3, 1 DESC, 2`, issueID)
 	if err != nil {
-		return nil, fmt.Errorf("leer historial: %w", err)
+		return nil, fmt.Errorf("read history: %w", err)
 	}
 	mine := func(a *Actor) bool { return viewer != nil && a != nil && a.Same(*viewer) }
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (HistoryEntry, error) {
@@ -215,7 +215,7 @@ func (s *Store) History(ctx context.Context, issueID int64, viewer *Actor) ([]Hi
 		return e, nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("leer historial: %w", err)
+		return nil, fmt.Errorf("read history: %w", err)
 	}
 	assigned, err := s.assignmentHistory(ctx, issueID)
 	if err != nil {
@@ -249,7 +249,7 @@ func recordStatusChange(ctx context.Context, q Querier, issueID int64, a *Actor,
 		INSERT INTO issue_status_changes (issue_id, author, author_kind, author_via, source, from_status, to_status, release, comment_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, issueID, name, kind, via(a), source, from, to, release, commentID)
 	if err != nil {
-		return fmt.Errorf("apuntar cambio de estado: %w", err)
+		return fmt.Errorf("record status change: %w", err)
 	}
 	return nil
 }
@@ -277,10 +277,10 @@ var changeSources = []string{SourceUI, SourceAPI, SourceMCP}
 // comentario queda como uno suelto.
 func (s *Store) ChangeIssueStatus(ctx context.Context, id int64, status string, by StatusChange) (Issue, error) {
 	if !slices.Contains(Statuses, status) {
-		return Issue{}, fmt.Errorf("%w: status es open, resolved, resolved_next o silenced", ErrInvalid)
+		return Issue{}, fmt.Errorf("%w: status is open, resolved, resolved_next or silenced", ErrInvalid)
 	}
 	if !slices.Contains(changeSources, by.Source) {
-		return Issue{}, fmt.Errorf("%w: origen del cambio %q", ErrInvalid, by.Source)
+		return Issue{}, fmt.Errorf("%w: change source %q", ErrInvalid, by.Source)
 	}
 	comment := ""
 	if strings.TrimSpace(by.Comment) != "" {
@@ -315,7 +315,7 @@ func changeStatusTx(ctx context.Context, tx db.Tx, id int64, status string, by S
 		return false, ErrNotFound
 	}
 	if err != nil {
-		return false, fmt.Errorf("leer issue: %w", err)
+		return false, fmt.Errorf("read issue: %w", err)
 	}
 	var release *string
 	if status == "resolved_next" {
@@ -323,7 +323,7 @@ func changeStatusTx(ctx context.Context, tx db.Tx, id int64, status string, by S
 		err := tx.QueryRow(ctx, `SELECT NULLIF(release, '') FROM events
 			WHERE issue_id = $1 ORDER BY received_at DESC, id DESC LIMIT 1`, id).Scan(&release)
 		if err != nil && !errors.Is(err, db.ErrNoRows) {
-			return false, fmt.Errorf("release del último evento: %w", err)
+			return false, fmt.Errorf("latest event release: %w", err)
 		}
 		if release == nil {
 			if !fallbackResolved {
@@ -339,7 +339,7 @@ func changeStatusTx(ctx context.Context, tx db.Tx, id int64, status string, by S
 				WHEN status IN ('resolved', 'resolved_next') THEN COALESCE(resolved_at, now())
 				ELSE now() END
 		WHERE id = $1`, id, status, release); err != nil {
-		return false, fmt.Errorf("cambiar estado: %w", err)
+		return false, fmt.Errorf("change status: %w", err)
 	}
 	changed := from != status || !equalPtr(prevRelease, release)
 	var commentID *int64

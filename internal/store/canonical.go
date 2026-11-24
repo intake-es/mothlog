@@ -17,7 +17,7 @@ const (
 	linearMembers = 8
 )
 
-var errCanonicalTooBig = errors.New("JSON demasiado grande al normalizarlo")
+var errCanonicalTooBig = errors.New("JSON too large once normalized")
 
 // canonicalJSON reescribe un JSON como lo devolvía Postgres al leerlo de una
 // columna jsonb: claves sin repetir (gana la última), ordenadas por longitud y
@@ -34,7 +34,7 @@ func canonicalJSON(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	if _, err := c.d.Token(); !errors.Is(err, io.EOF) {
-		return nil, errors.New("JSON con datos de más")
+		return nil, errors.New("JSON with trailing data")
 	}
 	if root.node < 0 {
 		return c.buf[root.start:root.end:root.end], nil

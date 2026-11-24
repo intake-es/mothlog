@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const GitHubEndpoint = "https://api.github.com"
@@ -25,7 +25,7 @@ const (
 	maxGitHubBody = 60 << 10
 )
 
-var errGitHubNotFound = errors.New("la issue de GitHub no existe")
+var errGitHubNotFound = errors.New("the GitHub issue does not exist")
 
 type githubAPI struct {
 	endpoint string
@@ -69,7 +69,7 @@ func (g *githubAPI) do(ctx context.Context, method, path string, in, out any) er
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("Authorization", "Bearer "+g.token)
-	req.Header.Set("User-Agent", "intake-errors")
+	req.Header.Set("User-Agent", UserAgent)
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -97,7 +97,7 @@ func (g *githubAPI) do(ctx context.Context, method, path string, in, out any) er
 		return nil
 	}
 	if err := json.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("github: respuesta inesperada: %w", err)
+		return fmt.Errorf("github: unexpected response: %w", err)
 	}
 	return nil
 }
@@ -233,9 +233,9 @@ func (g *github) update(ctx context.Context, p *pending, linkID int64, ref strin
 		})
 	}
 	what, _ := kindText(p)
-	body := fmt.Sprintf("%s: release %s, %s.", what, orNone(markdown.InertText(p.release), "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
+	body := fmt.Sprintf("%s: release %s, %s.", what, orNone(markdown.InertText(p.release), p.l.T("(none)", "(ninguno)")), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
 	if p.link != "" {
-		body += fmt.Sprintf("\n\n[Ver en intake-errors](%s)", p.link)
+		body += "\n\n" + viewIn(p.l, p.link)
 	}
 	return g.api.comment(ctx, ref, body)
 }
@@ -245,21 +245,21 @@ func (g *github) update(ctx context.Context, p *pending, linkID int64, ref strin
 func (g *github) body(ctx context.Context, p *pending) string {
 	var b strings.Builder
 	if p.link != "" {
-		fmt.Fprintf(&b, "[Ver en intake-errors](%s)\n\n", p.link)
+		b.WriteString(viewIn(p.l, p.link) + "\n\n")
 	}
 	if p.issueID == 0 && p.issue != nil {
-		b.WriteString(markdown.IssueInert(*p.issue))
+		b.WriteString(markdown.IssueInert(*p.issue, p.l))
 		return b.String()
 	}
 	c, err := g.st.IssueContextIn(ctx, p.issueID, "", "", nil, time.Now())
 	if err != nil {
 		d, derr := issueDetail(ctx, g.st, p)
 		if derr == nil {
-			b.WriteString(markdown.IssueInert(d))
+			b.WriteString(markdown.IssueInert(d, p.l))
 		}
 		return b.String()
 	}
-	b.WriteString(markdown.ContextInert(c, p.link, maxGitHubBody-b.Len()))
+	b.WriteString(markdown.ContextInert(c, p.link, maxGitHubBody-b.Len(), p.l))
 	return b.String()
 }
 
@@ -271,12 +271,12 @@ func (g *github) create(ctx context.Context, title, body string) (githubIssueRef
 	var out githubIssueRef
 	if err := g.api.do(ctx, http.MethodPost, "/repos/"+g.repo+"/issues", in, &out); err != nil {
 		if errors.Is(err, errGitHubNotFound) {
-			return out, fmt.Errorf("github: el repositorio %s no existe o el token no llega a él", g.repo)
+			return out, fmt.Errorf("github: repository %s does not exist or the token can't reach it", g.repo)
 		}
 		return out, err
 	}
 	if out.Number == 0 {
-		return out, errors.New("github: la respuesta no trae el número de la issue")
+		return out, errors.New("github: the response has no issue number")
 	}
 	return out, nil
 }

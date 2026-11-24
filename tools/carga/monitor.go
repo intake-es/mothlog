@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // proceso lee la memoria y la CPU del servicio desde el anfitrión: el /proc
@@ -142,7 +142,7 @@ func (m *monitor) empezar(ctx context.Context) {
 				return
 			case <-t.C:
 			}
-			if v, ok := leerMetricas(ctx, m.cl, m.base)["intake_db_pool_connections{state=\"in_use\"}"]; ok {
+			if v, ok := leerMetricas(ctx, m.cl, m.base)["mothlog_db_pool_connections{state=\"in_use\"}"]; ok {
 				m.poolEnUso = max(m.poolEnUso, v)
 			}
 		}
@@ -200,9 +200,9 @@ func (m *monitor) acabar(p *paso) {
 		p.RSSMedioMB = sum / float64(len(m.rss)) / 1e6
 	}
 	p.PoolEnUsoMax = m.poolEnUso
-	p.PoolMax = met1["intake_db_pool_max_connections"]
-	p.PoolEsperas = met1["intake_db_pool_waits_total"] - m.met0["intake_db_pool_waits_total"]
-	p.PoolEsperaSegundos = met1["intake_db_pool_wait_seconds_total"] - m.met0["intake_db_pool_wait_seconds_total"]
+	p.PoolMax = met1["mothlog_db_pool_max_connections"]
+	p.PoolEsperas = met1["mothlog_db_pool_waits_total"] - m.met0["mothlog_db_pool_waits_total"]
+	p.PoolEsperaSegundos = met1["mothlog_db_pool_wait_seconds_total"] - m.met0["mothlog_db_pool_wait_seconds_total"]
 	p.ConexionesBase = map[string]float64{}
 	if m.muestrasDB > 0 {
 		for k, n := range m.esperas {

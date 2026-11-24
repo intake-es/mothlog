@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // fakeOIDC es un proveedor OIDC local: descubrimiento, JWKS, token y

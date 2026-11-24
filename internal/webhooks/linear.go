@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // linearPayload es lo que se usa del cuerpo de un webhook de Linear.
@@ -36,7 +36,7 @@ type linearPayload struct {
 func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.opts.LinearSecret == "" {
-		reply(w, http.StatusServiceUnavailable, "falta LINEAR_WEBHOOK_SECRET en el servidor")
+		reply(w, http.StatusServiceUnavailable, "LINEAR_WEBHOOK_SECRET is missing on the server")
 		return
 	}
 	body, ok := readBody(w, r)
@@ -44,19 +44,19 @@ func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := verify(h.opts.LinearSecret, body, r.Header.Get("Linear-Signature")); err != nil {
-		h.opts.Log.WarnContext(ctx, "webhook de Linear rechazado", "motivo", err)
+		h.opts.Log.WarnContext(ctx, "Linear webhook rejected", "reason", err)
 		reply(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	var p linearPayload
 	if err := json.Unmarshal(body, &p); err != nil {
-		reply(w, http.StatusBadRequest, "cuerpo no válido")
+		reply(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 	sent := time.UnixMilli(p.WebhookTimestamp)
 	if age := h.opts.Now().Sub(sent); p.WebhookTimestamp == 0 || age > MaxAge || age < -MaxAge {
-		h.opts.Log.WarnContext(ctx, "webhook de Linear rechazado", "motivo", "entrega vieja", "enviado", sent)
-		reply(w, http.StatusUnauthorized, "entrega vieja o sin webhookTimestamp")
+		h.opts.Log.WarnContext(ctx, "Linear webhook rejected", "reason", "stale delivery", "sent", sent)
+		reply(w, http.StatusUnauthorized, "stale delivery or no webhookTimestamp")
 		return
 	}
 	delivery := r.Header.Get("Linear-Delivery")
@@ -65,20 +65,20 @@ func (h *Handler) linear(w http.ResponseWriter, r *http.Request) {
 	}
 	fresh, err := h.st.RecordWebhookDelivery(ctx, store.ProviderLinear, delivery, body, p.Type+"."+p.Action)
 	if err != nil {
-		h.opts.Log.ErrorContext(ctx, "webhook de Linear", "err", err)
-		reply(w, http.StatusInternalServerError, "error interno")
+		h.opts.Log.ErrorContext(ctx, "Linear webhook", "err", err)
+		reply(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if !fresh {
-		reply(w, http.StatusOK, "ya recibida")
+		reply(w, http.StatusOK, "already received")
 		return
 	}
 	if p.Type != "Issue" || p.Action != "update" || p.Data.ID == "" || p.Data.State == nil {
-		reply(w, http.StatusOK, "ignorada")
+		reply(w, http.StatusOK, "ignored")
 		return
 	}
 	if _, changed := p.UpdatedFrom["stateId"]; !changed {
-		reply(w, http.StatusOK, "sin cambio de estado")
+		reply(w, http.StatusOK, "no status change")
 		return
 	}
 	links, err := h.st.LinksTo(ctx, store.ProviderLinear, store.LinkIssue, p.Data.ID)

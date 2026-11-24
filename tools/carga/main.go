@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 type opciones struct {
@@ -61,7 +61,7 @@ const (
 func main() {
 	var o opciones
 	var conc string
-	flag.StringVar(&o.imagen, "imagen", "intake-errors-carga:local", "imagen del servicio")
+	flag.StringVar(&o.imagen, "imagen", "mothlog-carga:local", "imagen del servicio")
 	flag.BoolVar(&o.construir, "construir", true, "construir la imagen con el Dockerfile antes de medir")
 	flag.BoolVar(&o.conservar, "conservar-imagen", false, "no borrar al acabar la imagen construida, para repetir la medida con -construir=false")
 	flag.StringVar(&o.ref, "ref", "", "construir la imagen con el código de esta referencia de git en vez del directorio de trabajo")
@@ -150,14 +150,14 @@ func run(ctx context.Context, o opciones) error {
 			return err
 		}
 		env.dirs = append(env.dirs, dir)
-		dbURL = "sqlite:///data/intake.db"
+		dbURL = "sqlite:///data/mothlog.db"
 		dbArgs = []string{"-v", dir + ":/data", "--user", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())}
 		defer func() {
 			if pool != nil {
 				pool.Close()
 			}
 		}()
-		sqlitePath = filepath.Join(dir, "intake.db")
+		sqlitePath = filepath.Join(dir, "mothlog.db")
 	default:
 		dbc := id + "-db"
 		if err := env.arrancar(ctx, dbc, "--network", id, "--network-alias", "db", "-p", "127.0.0.1::5432",

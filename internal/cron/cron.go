@@ -67,14 +67,14 @@ func (s *Schedule) UnmarshalJSON(b []byte) error {
 		if err := json.Unmarshal(in.Value, &f); err != nil {
 			var str string
 			if json.Unmarshal(in.Value, &str) != nil {
-				return errors.New("schedule.value de un intervalo debe ser un número")
+				return errors.New("schedule.value of an interval must be a number")
 			}
 			if f, err = strconv.ParseFloat(strings.TrimSpace(str), 64); err != nil {
-				return errors.New("schedule.value de un intervalo debe ser un número")
+				return errors.New("schedule.value of an interval must be a number")
 			}
 		}
 		if f != float64(int(f)) {
-			return errors.New("schedule.value de un intervalo debe ser un entero")
+			return errors.New("schedule.value of an interval must be an integer")
 		}
 		s.Every = int(f)
 		return nil
@@ -95,16 +95,16 @@ func (s *Schedule) Normalize() error {
 		s.Crontab = ""
 		s.Unit = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(s.Unit)), "s")
 		if s.Every < 1 || s.Every > MaxInterval {
-			return fmt.Errorf("el intervalo va de 1 a %d", MaxInterval)
+			return fmt.Errorf("the interval goes from 1 to %d", MaxInterval)
 		}
 		for _, u := range Units {
 			if s.Unit == u {
 				return nil
 			}
 		}
-		return fmt.Errorf("la unidad %q no existe; son %s", s.Unit, strings.Join(Units, ", "))
+		return fmt.Errorf("unit %q does not exist; they are %s", s.Unit, strings.Join(Units, ", "))
 	}
-	return fmt.Errorf("el tipo de horario %q no existe; son crontab e interval", s.Type)
+	return fmt.Errorf("schedule type %q does not exist; they are crontab and interval", s.Type)
 }
 
 // String es el horario para leerlo: «0 3 * * *» o «every 2 hour».
@@ -155,7 +155,7 @@ func LoadLocation(name string) (*time.Location, error) {
 	}
 	loc, err := time.LoadLocation(name)
 	if err != nil {
-		return nil, fmt.Errorf("la zona horaria %q no existe", name)
+		return nil, fmt.Errorf("time zone %q does not exist", name)
 	}
 	return loc, nil
 }
@@ -183,24 +183,24 @@ func parseCrontab(expr string) (*crontab, error) {
 	}
 	f := strings.Fields(expr)
 	if len(f) != 5 {
-		return nil, fmt.Errorf("el crontab %q debe tener cinco campos: minuto, hora, día, mes y día de la semana", expr)
+		return nil, fmt.Errorf("crontab %q must have five fields: minute, hour, day, month and day of week", expr)
 	}
 	var c crontab
 	var err error
 	if c.minute, err = parseField(f[0], 0, 59, nil); err != nil {
-		return nil, fmt.Errorf("minuto: %w", err)
+		return nil, fmt.Errorf("minute: %w", err)
 	}
 	if c.hour, err = parseField(f[1], 0, 23, nil); err != nil {
-		return nil, fmt.Errorf("hora: %w", err)
+		return nil, fmt.Errorf("hour: %w", err)
 	}
 	if c.dom, err = parseField(f[2], 1, 31, nil); err != nil {
-		return nil, fmt.Errorf("día del mes: %w", err)
+		return nil, fmt.Errorf("day of month: %w", err)
 	}
 	if c.month, err = parseField(f[3], 1, 12, monthNames); err != nil {
-		return nil, fmt.Errorf("mes: %w", err)
+		return nil, fmt.Errorf("month: %w", err)
 	}
 	if c.dow, err = parseField(f[4], 0, 7, dowNames); err != nil {
-		return nil, fmt.Errorf("día de la semana: %w", err)
+		return nil, fmt.Errorf("day of week: %w", err)
 	}
 	// El 7 también es domingo.
 	if c.dow&(1<<7) != 0 {
@@ -219,7 +219,7 @@ func parseField(s string, lo, hi int, names map[string]int) (uint64, error) {
 		if hasStep {
 			n, err := strconv.Atoi(stepS)
 			if err != nil || n < 1 || n > hi-lo+1 {
-				return 0, fmt.Errorf("paso no válido en %q", part)
+				return 0, fmt.Errorf("invalid step in %q", part)
 			}
 			step = n
 		}
@@ -247,7 +247,7 @@ func parseField(s string, lo, hi int, names map[string]int) (uint64, error) {
 			}
 		}
 		if from < lo || to > hi || from > to {
-			return 0, fmt.Errorf("%q se sale de %d-%d", part, lo, hi)
+			return 0, fmt.Errorf("%q is outside %d-%d", part, lo, hi)
 		}
 		for v := from; v <= to; v += step {
 			bits |= 1 << v
@@ -262,7 +262,7 @@ func value(s string, names map[string]int) (int, error) {
 	}
 	v, err := strconv.Atoi(s)
 	if err != nil {
-		return 0, fmt.Errorf("%q no es un número", s)
+		return 0, fmt.Errorf("%q is not a number", s)
 	}
 	return v, nil
 }

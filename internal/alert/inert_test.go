@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Lo que manda la auditoría en el valor de la excepción: menciones, un
@@ -80,7 +80,7 @@ var (
 	liveLink    = regexp.MustCompile(`(^|[^\\])\]\(`)
 	liveHTML    = regexp.MustCompile(`(^|[^\\])<`)
 	liveEntity  = regexp.MustCompile(`(^|[^\\])&(#[0-9]+|#[xX][0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]*);`)
-	ownLink     = regexp.MustCompile(`\[Ver en intake-errors\]\([^)]*\)`)
+	ownLink     = regexp.MustCompile(`\[View in Mothlog\]\([^)]*\)`)
 )
 
 func checkInert(t *testing.T, where, md string) {
@@ -157,7 +157,7 @@ func TestGitHubAndLinearKeepEventTextInert(t *testing.T) {
 	for where, md := range map[string]string{"el cuerpo de GitHub": bodies[0], "el comentario de GitHub": comments[0],
 		"la descripción de Linear": li.Description, "el comentario de Linear": li.Comments[0]} {
 		checkInert(t, where, md)
-		if !strings.Contains(md, "[Ver en intake-errors](https://errores.test/issues/") {
+		if !strings.Contains(md, "[View in Mothlog](https://errores.test/issues/") {
 			t.Errorf("%s no trae el enlace al panel:\n%s", where, md)
 		}
 	}
@@ -170,7 +170,7 @@ func TestGitHubAndLinearKeepEventTextInert(t *testing.T) {
 	if !strings.Contains(bodies[0], `\&#64;acme/oncall \&#x40;dummy-user \&commat;ops`) {
 		t.Errorf("github no escapa las entidades:\n%s", bodies[0])
 	}
-	if !strings.Contains(bodies[0], "\n## Historial\n") || !strings.Contains(bodies[0], "email ana@example.com") ||
+	if !strings.Contains(bodies[0], "\n## History\n") || !strings.Contains(bodies[0], "email ana@example.com") ||
 		!strings.Contains(comments[0], "release api@2.3.1 cc @\u200bdummy-user \\[aquí\\]") {
 		t.Errorf("github:\n%s\n---\n%s", bodies[0], comments[0])
 	}
@@ -182,7 +182,7 @@ func TestCronMarkdownKeepsEventTextInert(t *testing.T) {
 			schedule: cron.Schedule{Type: cron.TypeCrontab, Crontab: "0 * * * * @y"}}}
 	md := cronMarkdown(p)
 	checkInert(t, "cronMarkdown", md)
-	if !strings.Contains(md, "- Monitor: ``copia`@x``\n") || !strings.Contains(md, "[Ver en intake-errors](https://errores.test/crons/copia)") {
+	if !strings.Contains(md, "- Monitor: ``copia`@x``\n") || !strings.Contains(md, "[View in Mothlog](https://errores.test/crons/copia)") {
 		t.Errorf("cronMarkdown:\n%s", md)
 	}
 }

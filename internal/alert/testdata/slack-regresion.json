@@ -1,12 +1,12 @@
 {
-  "text": "Ha vuelto un error en backend: ZeroDivisionError: division by zero",
+  "text": "Regression in backend: ZeroDivisionError: division by zero",
   "blocks": [
     {
       "type": "context",
       "elements": [
         {
           "type": "mrkdwn",
-          "text": "*Ha vuelto* · backend · production · se resolvió el 12 de noviembre"
+          "text": "*Regression* · backend · production · resolved on November 12"
         }
       ]
     },
@@ -21,7 +21,7 @@
       "type": "section",
       "text": {
         "type": "mrkdwn",
-        "text": "`app/informes/medias.py:25` en `division`\n```return {\"media\": 10 / total[\"mensajes\"]}```"
+        "text": "`app/informes/medias.py:25` in `division`\n```return {\"media\": 10 / total[\"mensajes\"]}```"
       }
     },
     {
@@ -33,15 +33,15 @@
         },
         {
           "type": "mrkdwn",
-          "text": "*Espacio*\n8a1c4e2f"
+          "text": "*Workspace*\n8a1c4e2f"
         },
         {
           "type": "mrkdwn",
-          "text": "*Eventos*\n128 en total"
+          "text": "*Events*\n128 in total"
         },
         {
           "type": "mrkdwn",
-          "text": "*Petición*\nGET /v1/informes/medias"
+          "text": "*Request*\nGET /v1/informes/medias"
         }
       ]
     },
@@ -52,7 +52,7 @@
           "type": "button",
           "text": {
             "type": "plain_text",
-            "text": "Ver el error",
+            "text": "View error",
             "emoji": false
           },
           "url": "https://errors.test/issues/7",
@@ -62,7 +62,7 @@
           "type": "button",
           "text": {
             "type": "plain_text",
-            "text": "ERR-123 en Linear",
+            "text": "ERR-123 in Linear",
             "emoji": false
           },
           "url": "https://linear.app/ejemplo/issue/ERR-123"

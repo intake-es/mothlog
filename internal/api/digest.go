@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/digest"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/digest"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Digests comprueba y manda el resumen de un proyecto.
@@ -48,11 +48,11 @@ func (h *handlers) setDigest(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in := store.DefaultDigest(id)
+	in := h.st.DefaultDigest(id)
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo no válido: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return
 	}
 	if h.digests != nil {
@@ -99,7 +99,7 @@ func (h *handlers) digestPreview(w http.ResponseWriter, r *http.Request) {
 	}
 	if (c.Language != digest.Spanish && c.Language != digest.English) ||
 		(c.Frequency != store.DigestDaily && c.Frequency != store.DigestWeekly) {
-		writeError(w, http.StatusBadRequest, "language es es o en, y frequency, daily o weekly")
+		writeError(w, http.StatusBadRequest, "language is es or en, and frequency, daily or weekly")
 		return
 	}
 	d, err := digest.Build(r.Context(), h.st, digest.Options{Config: c, Start: now.Add(-c.Length()), End: now,
@@ -118,7 +118,7 @@ func (h *handlers) sendDigest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.digests == nil {
-		writeError(w, http.StatusServiceUnavailable, "los avisos no están activos en este servidor")
+		writeError(w, http.StatusServiceUnavailable, "alerts are not active on this server")
 		return
 	}
 	res, err := h.digests.SendDigestNow(r.Context(), id)

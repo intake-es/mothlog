@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // webVariant es web-typeerror-1 con algo cambiado en el cuerpo, que va sin comprimir.

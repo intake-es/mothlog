@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Estados de un monitor y de sus check-ins.
@@ -162,21 +162,21 @@ func (in MonitorInput) apply(m *Monitor) error {
 	}
 	switch {
 	case m.Slug == "" || len(m.Slug) > maxSlug || !reSlug.MatchString(m.Slug):
-		return fmt.Errorf("%w: el slug va en minúsculas, números, - y _, hasta %d caracteres", ErrInvalid, maxSlug)
+		return fmt.Errorf("%w: the slug is lowercase letters, digits, - and _, up to %d characters", ErrInvalid, maxSlug)
 	case len([]rune(m.Name)) > maxMonitorName:
-		return fmt.Errorf("%w: el nombre admite hasta %d caracteres", ErrInvalid, maxMonitorName)
+		return fmt.Errorf("%w: the name allows up to %d characters", ErrInvalid, maxMonitorName)
 	case m.CheckinMargin < 1 || m.CheckinMargin > MaxMonitorMinutes:
-		return fmt.Errorf("%w: checkin_margin va de 1 a %d minutos", ErrInvalid, MaxMonitorMinutes)
+		return fmt.Errorf("%w: checkin_margin goes from 1 to %d minutes", ErrInvalid, MaxMonitorMinutes)
 	case m.MaxRuntime < 1 || m.MaxRuntime > MaxMonitorMinutes:
-		return fmt.Errorf("%w: max_runtime va de 1 a %d minutos", ErrInvalid, MaxMonitorMinutes)
+		return fmt.Errorf("%w: max_runtime goes from 1 to %d minutes", ErrInvalid, MaxMonitorMinutes)
 	case len(m.Environment) > maxRuleValue:
-		return fmt.Errorf("%w: el entorno admite hasta %d caracteres", ErrInvalid, maxRuleValue)
+		return fmt.Errorf("%w: the environment allows up to %d characters", ErrInvalid, maxRuleValue)
 	}
 	if m.Name == "" {
 		m.Name = m.Slug
 	}
 	if m.Schedule.Type == "" {
-		return fmt.Errorf("%w: falta schedule", ErrInvalid)
+		return fmt.Errorf("%w: missing schedule", ErrInvalid)
 	}
 	if err := m.Schedule.Normalize(); err != nil {
 		return fmt.Errorf("%w: schedule: %v", ErrInvalid, err)
@@ -250,7 +250,7 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 		switch f.Status {
 		case MonitorPending, CheckInOK, CheckInError, CheckInMissed, CheckInTimeout:
 		default:
-			return nil, fmt.Errorf("%w: status es ok, error, missed, timeout o pending", ErrInvalid)
+			return nil, fmt.Errorf("%w: status is ok, error, missed, timeout or pending", ErrInvalid)
 		}
 		args = append(args, f.Status)
 		where = append(where, "m.status = $"+strconv.Itoa(len(args)))
@@ -259,11 +259,11 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY m.status IN ('error', 'missed', 'timeout') DESC, `+s.pool.Dialect().Collate("p.name")+`, `+s.pool.Dialect().Collate("m.slug"), args...)
 	if err != nil {
-		return nil, fmt.Errorf("leer monitores: %w", err)
+		return nil, fmt.Errorf("read monitors: %w", err)
 	}
 	out, err := db.CollectRows(rows, func(r db.CollectableRow) (Monitor, error) { return scanMonitor(r) })
 	if err != nil {
-		return nil, fmt.Errorf("leer monitores: %w", err)
+		return nil, fmt.Errorf("read monitors: %w", err)
 	}
 	if len(out) == 0 {
 		return []Monitor{}, nil
@@ -289,14 +289,14 @@ func (s *Store) ListMonitors(ctx context.Context, f MonitorFilter) ([]Monitor, e
 			WHERE monitor_id = m.id ORDER BY started_at DESC, id DESC LIMIT $2)
 		ORDER BY c.monitor_id, c.started_at DESC, c.id DESC`), ids, RecentCheckIns)
 	if err != nil {
-		return nil, fmt.Errorf("leer check-ins: %w", err)
+		return nil, fmt.Errorf("read check-ins: %w", err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
 		var c CheckInMark
 		if err := rows.Scan(&id, &c.Status, &c.StartedAt, &c.DurationMs); err != nil {
-			return nil, fmt.Errorf("leer check-ins: %w", err)
+			return nil, fmt.Errorf("read check-ins: %w", err)
 		}
 		out[idx[id]].Recent = append(out[idx[id]].Recent, c)
 	}
@@ -311,7 +311,7 @@ func (s *Store) Monitor(ctx context.Context, projectID int64, slug string) (Moni
 		return Monitor{}, ErrNotFound
 	}
 	if err != nil {
-		return Monitor{}, fmt.Errorf("leer monitor: %w", err)
+		return Monitor{}, fmt.Errorf("read monitor: %w", err)
 	}
 	return m, nil
 }
@@ -341,7 +341,7 @@ func (s *Store) CheckIns(ctx context.Context, monitorID int64, cursor string, li
 	if cursor != "" {
 		n, err := strconv.ParseInt(cursor, 10, 64)
 		if err != nil || n <= 0 {
-			return CheckInPage{}, fmt.Errorf("%w: cursor no válido", ErrInvalid)
+			return CheckInPage{}, fmt.Errorf("%w: invalid cursor", ErrInvalid)
 		}
 		beforeID = n
 	}
@@ -356,11 +356,11 @@ func (s *Store) CheckIns(ctx context.Context, monitorID int64, cursor string, li
 	q += ` ORDER BY started_at DESC, id DESC LIMIT ` + strconv.Itoa(limit+1)
 	rows, err := s.pool.Query(ctx, q, args...)
 	if err != nil {
-		return CheckInPage{}, fmt.Errorf("leer check-ins: %w", err)
+		return CheckInPage{}, fmt.Errorf("read check-ins: %w", err)
 	}
 	list, err := db.CollectRows(rows, func(r db.CollectableRow) (CheckIn, error) { return scanCheckIn(r) })
 	if err != nil {
-		return CheckInPage{}, fmt.Errorf("leer check-ins: %w", err)
+		return CheckInPage{}, fmt.Errorf("read check-ins: %w", err)
 	}
 	page := CheckInPage{CheckIns: list}
 	if len(list) > limit {
@@ -396,10 +396,10 @@ func (s *Store) CreateMonitor(ctx context.Context, projectID int64, in MonitorIn
 		if _, err := s.ProjectByID(ctx, projectID); err != nil {
 			return Monitor{}, err
 		}
-		return Monitor{}, fmt.Errorf("%w: ya hay un monitor %q en el proyecto", ErrInvalid, m.Slug)
+		return Monitor{}, fmt.Errorf("%w: there is already a monitor %q in the project", ErrInvalid, m.Slug)
 	}
 	if err != nil {
-		return Monitor{}, fmt.Errorf("guardar monitor: %w", err)
+		return Monitor{}, fmt.Errorf("save monitor: %w", err)
 	}
 	return s.Monitor(ctx, projectID, m.Slug)
 }
@@ -429,7 +429,7 @@ func (s *Store) UpdateMonitor(ctx context.Context, projectID int64, slug string,
 			WHERE id = $1`, m.ID, m.Slug, m.Name, m.Schedule.Type, sched, every, unit, m.Timezone,
 			m.CheckinMargin, m.MaxRuntime, m.Environment, m.Muted, m.NextCheckinAt)
 		if db.IsUniqueViolation(err) {
-			return fmt.Errorf("%w: ya hay un monitor %q en el proyecto", ErrInvalid, m.Slug)
+			return fmt.Errorf("%w: there is already a monitor %q in the project", ErrInvalid, m.Slug)
 		}
 		out = m
 		return err
@@ -444,7 +444,7 @@ func (s *Store) UpdateMonitor(ctx context.Context, projectID int64, slug string,
 func (s *Store) DeleteMonitor(ctx context.Context, projectID int64, slug string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM monitors WHERE project_id = $1 AND slug = $2`, projectID, slug)
 	if err != nil {
-		return fmt.Errorf("borrar monitor: %w", err)
+		return fmt.Errorf("delete monitor: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -468,7 +468,7 @@ func (s *Store) PurgeCheckIns(ctx context.Context, cutoff time.Time) (int64, err
 		DELETE FROM monitor_checkins AS c WHERE c.received_at < $1
 			AND c.id <> (SELECT max(id) FROM monitor_checkins l WHERE l.monitor_id = c.monitor_id)`, cutoff)
 	if err != nil {
-		return 0, fmt.Errorf("borrar check-ins: %w", err)
+		return 0, fmt.Errorf("delete check-ins: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }

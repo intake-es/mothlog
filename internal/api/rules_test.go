@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 type hookServer struct {
@@ -134,7 +134,7 @@ func TestRulesAPI(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ body, want string }{
-		{`{"name": "x", "conditions": {}, "actions": [{"type": "ntfy", "url": "https://n.test/t"}]}`, "al menos una condición"},
+		{`{"name": "x", "conditions": {}, "actions": [{"type": "ntfy", "url": "https://n.test/t"}]}`, "at least one condition"},
 		{`{"name": "x", "conditions": {"new": true}, "actions": [{"type": "linear"}]}`, "LINEAR_API_KEY"},
 		{`{"name": "x", "conditions": {"new": true}, "actions": [{"type": "email", "to": ["a@b.test"]}]}`, "SMTP_URL"},
 		{`{"name": "x", "otra": 1}`, "otra"},

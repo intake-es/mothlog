@@ -7,5 +7,5 @@
     "content-type": "application/json"
   },
   "status": 200,
-  "response": "{\"state\":\"not_found\",\"missingChunks\":[\"ba07e5b10bf8f6725265c1fef8a59a7ac7bb33cc\"],\"detail\":\"faltan 1 de 1 trozos\"}\n"
+  "response": "{\"state\":\"not_found\",\"missingChunks\":[\"ba07e5b10bf8f6725265c1fef8a59a7ac7bb33cc\"],\"detail\":\"missing 1 of 1 chunks\"}\n"
 }

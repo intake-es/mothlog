@@ -1,4 +1,4 @@
-DATABASE_URL ?= postgres://intake_errors:intake_errors@127.0.0.1:5433/intake_errors?sslmode=disable
+DATABASE_URL ?= postgres://mothlog:mothlog@127.0.0.1:5433/mothlog?sslmode=disable
 
 .PHONY: run test lint carga
 
@@ -8,7 +8,7 @@ CARGA ?=
 
 run:
 	docker compose up -d --wait db
-	DATABASE_URL='$(DATABASE_URL)' go run ./cmd/intake-errors
+	DATABASE_URL='$(DATABASE_URL)' go run ./cmd/mothlog
 
 test:
 	go test ./...

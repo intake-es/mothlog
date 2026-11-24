@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // MaxSessionReleases es cuántas releases puede tener un proyecto para que una
@@ -22,7 +22,7 @@ const SessionBudget = 10
 
 // errSessionRelease es una sesión de una release nueva cuando el proyecto ya
 // tiene MaxSessionReleases: se descarta y se cuenta.
-var errSessionRelease = errors.New("el proyecto tiene demasiadas releases para crear otra desde una sesión")
+var errSessionRelease = errors.New("the project has too many releases to create another one from a session")
 
 // sessionRelease crea la release de una sesión si cabe.
 func (in *Ingester) sessionRelease(ctx context.Context, tx db.Tx, projectID int64, release string, now time.Time) error {
@@ -32,11 +32,11 @@ func (in *Ingester) sessionRelease(ctx context.Context, tx db.Tx, projectID int6
 		return nil
 	}
 	if !errors.Is(err, db.ErrNoRows) {
-		return fmt.Errorf("buscar release: %w", err)
+		return fmt.Errorf("find release: %w", err)
 	}
 	var n int64
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM releases WHERE project_id = $1`, projectID).Scan(&n); err != nil {
-		return fmt.Errorf("contar releases: %w", err)
+		return fmt.Errorf("count releases: %w", err)
 	}
 	if n >= in.maxReleases {
 		return errSessionRelease
@@ -126,17 +126,17 @@ func (in *Ingester) IngestSession(ctx context.Context, projectID int64, s *envel
 				SELECT release, environment, hour, init_seen, status, errors, sent_at, user_hash
 				FROM session_states WHERE project_id = $1 AND sid = $2`+tx.Dialect().ForUpdate(), projectID, sid[:16]).
 				Scan(&release, &env, &hour, &old.initSeen, &old.status, &old.errors, &old.sentAt, &old.userHash); err != nil {
-				return fmt.Errorf("leer la sesión: %w", err)
+				return fmt.Errorf("read session: %w", err)
 			}
 			next = merge(old, upd)
 			if _, err := tx.Exec(ctx, `
 				UPDATE session_states SET init_seen = $3, status = $4, errors = $5, sent_at = $6, user_hash = $7, updated_at = now()
 				WHERE project_id = $1 AND sid = $2`,
 				projectID, sid[:16], next.initSeen, next.status, next.errors, next.sentAt, next.userHash); err != nil {
-				return fmt.Errorf("guardar la sesión: %w", err)
+				return fmt.Errorf("save session: %w", err)
 			}
 		default:
-			return fmt.Errorf("guardar la sesión: %w", err)
+			return fmt.Errorf("save session: %w", err)
 		}
 
 		before, after := old.counts(), next.counts()
@@ -185,7 +185,7 @@ func addSessions(ctx context.Context, tx db.Tx, projectID int64, release, env st
 			abnormal = release_sessions.abnormal + EXCLUDED.abnormal`,
 		projectID, release, env, hour, d[0], d[1], d[2], d[3])
 	if err != nil {
-		return fmt.Errorf("contar sesiones: %w", err)
+		return fmt.Errorf("count sessions: %w", err)
 	}
 	return nil
 }
@@ -199,7 +199,7 @@ func addUser(ctx context.Context, tx db.Tx, projectID int64, release, env string
 			last_seen = `+tx.Dialect().Greatest("release_users.last_seen", "EXCLUDED.last_seen"),
 		projectID, release, env, user, crashed, now)
 	if err != nil {
-		return fmt.Errorf("contar usuarios de la release: %w", err)
+		return fmt.Errorf("count release users: %w", err)
 	}
 	return nil
 }
@@ -260,7 +260,7 @@ func PurgeSessions(ctx context.Context, pool db.DB, cutoff, now time.Time) (int6
 	} {
 		tag, err := pool.Exec(ctx, q.sql, q.at)
 		if err != nil {
-			return n, fmt.Errorf("borrar sesiones: %w", err)
+			return n, fmt.Errorf("delete sessions: %w", err)
 		}
 		n += tag.RowsAffected()
 	}
@@ -311,7 +311,7 @@ func (h *Handler) parseSessions(ctx context.Context, projectID int64, items []en
 		}
 		if err != nil {
 			h.dropOther(projectID, store.DropSessionInvalid, 1)
-			h.log.DebugContext(ctx, "sesión ignorada", "proyecto", projectID, "err", err)
+			h.log.DebugContext(ctx, "session ignored", "project", projectID, "err", err)
 			continue
 		}
 		out = append(out, s)
@@ -331,9 +331,9 @@ func (h *Handler) sessions(ctx context.Context, projectID int64, items []session
 		switch {
 		case errors.Is(err, errSessionRelease):
 			h.dropOther(projectID, store.DropSessionReleaseLimit, 1)
-			h.log.DebugContext(ctx, "sesión descartada", "proyecto", projectID, "err", err)
+			h.log.DebugContext(ctx, "session dropped", "project", projectID, "err", err)
 		case err != nil:
-			h.log.ErrorContext(ctx, "guardar sesión", "proyecto", projectID, "err", err)
+			h.log.ErrorContext(ctx, "save session", "project", projectID, "err", err)
 		}
 	}
 }

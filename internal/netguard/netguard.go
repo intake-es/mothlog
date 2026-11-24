@@ -120,7 +120,7 @@ func Classify(a netip.Addr) Class {
 }
 
 // ErrBlocked es una dirección a la que no se pide.
-var ErrBlocked = errors.New("dirección bloqueada")
+var ErrBlocked = errors.New("blocked address")
 
 // Check dice por qué el monitor de disponibilidad no puede pedir a la
 // dirección, o nil si puede.
@@ -157,9 +157,9 @@ type BlockedError struct {
 
 func (e *BlockedError) Error() string {
 	if e.Private {
-		return fmt.Sprintf("%s: %s es de una red privada (%s=1 las permite)", ErrBlocked, e.Addr, e.Env)
+		return fmt.Sprintf("%s: %s is on a private network (%s=1 allows them)", ErrBlocked, e.Addr, e.Env)
 	}
-	return fmt.Sprintf("%s: %s es de metadatos, link-local o reservada", ErrBlocked, e.Addr)
+	return fmt.Sprintf("%s: %s is a metadata, link-local or reserved address", ErrBlocked, e.Addr)
 }
 
 func (e *BlockedError) Is(target error) bool { return target == ErrBlocked }
@@ -167,9 +167,9 @@ func (e *BlockedError) Is(target error) bool { return target == ErrBlocked }
 // Reason es el error sin la dirección, que puede ser la de un nombre interno.
 func (e *BlockedError) Reason() string {
 	if e.Private {
-		return fmt.Sprintf("%s: es de una red privada (%s=1 las permite)", ErrBlocked, e.Env)
+		return fmt.Sprintf("%s: it is on a private network (%s=1 allows them)", ErrBlocked, e.Env)
 	}
-	return fmt.Sprintf("%s: es de metadatos, link-local o reservada", ErrBlocked)
+	return fmt.Sprintf("%s: it is a metadata, link-local or reserved address", ErrBlocked)
 }
 
 // Transport solo conecta a las direcciones que permite p, mirándolas justo

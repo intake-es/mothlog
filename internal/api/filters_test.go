@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func TestFiltersAPI(t *testing.T) {
@@ -53,11 +53,11 @@ func TestFiltersAPI(t *testing.T) {
 	}
 
 	for _, tc := range []struct{ body, want string }{
-		{`{"messages": ["(roto"]}`, "expresión regular"},
+		{`{"messages": ["(roto"]}`, "regular expression"},
 		{`{"sample_rate": 2}`, "sample_rate"},
 		{`{"events_per_issue_per_hour": 0}`, "events_per_issue_per_hour"},
 		{`{"otra_cosa": 1}`, "otra_cosa"},
-		{`no es json`, "cuerpo no válido"},
+		{`no es json`, "invalid body"},
 	} {
 		code, b := e.do(t, http.MethodPatch, path, tc.body)
 		if code != http.StatusBadRequest || !strings.Contains(string(b), tc.want) {

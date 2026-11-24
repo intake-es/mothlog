@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Register añade /auth/session, /auth/github/login, /auth/github/callback,
@@ -72,7 +72,7 @@ func (a *Auth) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := a.sign("state", st)
 	if err != nil {
-		http.Error(w, "error interno", http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	http.SetCookie(w, a.cookie(stateCookie, v, "/auth/github/", stateTTL))
@@ -99,7 +99,7 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(stateCookie)
 	if err != nil || !a.verify("state", c.Value, &st) || a.cfg.Now().Unix() >= st.Expires ||
 		subtle.ConstantTimeCompare([]byte(st.State), []byte(q.Get("state"))) != 1 {
-		a.log.Warn("login: state no válido")
+		a.log.Warn("login: invalid state")
 		toLogin(w, r, "state")
 		return
 	}
@@ -111,7 +111,7 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token, err := a.exchange(ctx, q.Get("code"))
 	if err != nil {
-		a.log.Warn("login: no se pudo canjear el código de GitHub", "err", err)
+		a.log.Warn("login: could not exchange the GitHub code", "err", err)
 		toLogin(w, r, "github")
 		return
 	}
@@ -132,11 +132,11 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	code, err := a.githubGet(ctx, token, "/user/memberships/orgs/"+url.PathEscape(a.cfg.Org), &membership)
 	switch {
 	case err != nil || code >= 500:
-		a.log.Warn("login: membresía", "status", code, "err", err)
+		a.log.Warn("login: membership", "status", code, "err", err)
 		toLogin(w, r, "github")
 		return
 	case code != http.StatusOK || membership.State != "active":
-		a.log.Warn("login rechazado: no es miembro activo de la org", "login", user.Login, "org", a.cfg.Org, "status", code, "state", membership.State)
+		a.log.Warn("login rejected: not an active member of the org", "login", user.Login, "org", a.cfg.Org, "status", code, "state", membership.State)
 		toLogin(w, r, "org")
 		return
 	}
@@ -154,7 +154,7 @@ func (a *Auth) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.setSession(w, login, name); err != nil {
-		http.Error(w, "error interno", http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	a.log.Info("login", "provider", store.LoginGitHub, "login", login, "github_id", user.ID)
@@ -184,10 +184,10 @@ func (a *Auth) exchange(ctx context.Context, code string) (string, error) {
 		Error       string `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<16)).Decode(&body); err != nil {
-		return "", fmt.Errorf("respuesta %d: %w", res.StatusCode, err)
+		return "", fmt.Errorf("response %d: %w", res.StatusCode, err)
 	}
 	if body.AccessToken == "" {
-		return "", fmt.Errorf("respuesta %d sin access_token: %q", res.StatusCode, body.Error)
+		return "", fmt.Errorf("response %d without access_token: %q", res.StatusCode, body.Error)
 	}
 	return body.AccessToken, nil
 }
@@ -220,12 +220,12 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !a.hostAllowed(r) {
-		a.log.Warn("login de desarrollo rechazado: Host ajeno", "host", r.Host)
-		http.Error(w, "Host no permitido con UI_DEV_LOGIN", http.StatusForbidden)
+		a.log.Warn("dev login rejected: foreign Host", "host", r.Host)
+		http.Error(w, "Host not allowed with UI_DEV_LOGIN", http.StatusForbidden)
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(r.URL.Query().Get("key")), []byte(a.devKey)) != 1 {
-		a.log.Warn("login de desarrollo rechazado: falta la clave o no es la del log")
+		a.log.Warn("dev login rejected: the key is missing or is not the one from the log")
 		toLogin(w, r, "dev_key")
 		return
 	}
@@ -235,7 +235,7 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.setSession(w, login, devName); err != nil {
-		http.Error(w, "error interno", http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, safeNext(r.URL.Query().Get("next")), http.StatusFound)
@@ -245,7 +245,7 @@ func (a *Auth) handleDevLogin(w http.ResponseWriter, r *http.Request) {
 // de la persona emitidas hasta ahora, también las de otros navegadores.
 func (a *Auth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if a.enabled() && !a.sameOrigin(r) {
-		http.Error(w, "Origin no es el de PUBLIC_URL", http.StatusForbidden)
+		http.Error(w, "Origin is not PUBLIC_URL's", http.StatusForbidden)
 		return
 	}
 	http.SetCookie(w, a.cookie(a.sessionName(), "", "/", -1))
@@ -253,13 +253,13 @@ func (a *Auth) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Sin poder comprobarla no se puede revocar: decirlo, para que no
 		// parezca cerrada mientras una copia de la cookie sigue valiendo.
-		http.Error(w, "no se ha podido cerrar la sesión en el servidor", http.StatusInternalServerError)
+		http.Error(w, "could not end the session on the server", http.StatusInternalServerError)
 		return
 	}
 	if ok {
 		if _, err := a.people.RevokeSessions(r.Context(), s.Login, a.cfg.Now()); err != nil {
-			a.log.Error("logout: revocar la sesión", "login", s.Login, "err", err)
-			http.Error(w, "error interno", http.StatusInternalServerError)
+			a.log.Error("logout: revoke session", "login", s.Login, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		a.log.Info("logout", "login", s.Login)

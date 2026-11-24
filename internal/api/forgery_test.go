@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 func postItem(t *testing.T, url, key, typ string, item any) int {
@@ -64,12 +65,14 @@ var (
 func TestEventCannotForgeAgentMarkdown(t *testing.T) {
 	ctx := context.Background()
 	db := storetest.NewDB(t)
+	// En español, con las mismas comprobaciones que antes de pasar al inglés.
+	db.SetDefaultLanguage(string(lang.ES))
 	p := db.AddProject(t, "tienda")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	mux := http.NewServeMux()
 	mux.Handle(ingest.Pattern, ingest.NewHandler(db.Store, ingest.NewIngester(db.Pool(), nil, nil, log),
 		ingest.NewRateLimiter(10000), ingest.NewDrops(db.Store), log))
-	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com"}); err != nil {
+	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com", Lang: lang.ES}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(mux)
@@ -192,7 +195,7 @@ func TestEventCannotForgeAgentMarkdown(t *testing.T) {
 			t.Errorf("%s: líneas «comentó:» = %q, los comentarios de verdad son %q", name, got, real)
 		}
 		for line := range strings.SplitSeq(section(md, "## Qué puedes hacer"), "\n") {
-			if line == "" || strings.HasPrefix(line, "Con el MCP de intake-errors") {
+			if line == "" || strings.HasPrefix(line, "Con el MCP de Mothlog") {
 				continue
 			}
 			if !slices.ContainsFunc(actionBullets, func(b string) bool { return strings.HasPrefix(line, b) }) {

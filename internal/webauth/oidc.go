@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (
@@ -95,19 +95,19 @@ type oidcMeta struct {
 
 func newOIDCProvider(cfg OIDCConfig, client *http.Client, now func() time.Time) (*oidcProvider, error) {
 	if cfg.Issuer == "" || cfg.ClientID == "" {
-		return nil, errors.New("el login con OIDC necesita OIDC_ISSUER y OIDC_CLIENT_ID")
+		return nil, errors.New("OIDC login needs OIDC_ISSUER and OIDC_CLIENT_ID")
 	}
 	if err := checkEndpoint(cfg.Issuer, cfg.Issuer); err != nil {
 		return nil, fmt.Errorf("OIDC_ISSUER: %w", err)
 	}
 	if u, _ := url.Parse(cfg.Issuer); u.RawQuery != "" || u.Fragment != "" {
-		return nil, errors.New("OIDC_ISSUER no puede llevar ? ni #")
+		return nil, errors.New("OIDC_ISSUER can't contain ? or #")
 	}
 	domains := make([]string, 0, len(cfg.AllowedDomains))
 	for _, d := range cfg.AllowedDomains {
 		d = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(d), "@"))
 		if d == "" || strings.ContainsAny(d, "@/") {
-			return nil, fmt.Errorf("OIDC_ALLOWED_DOMAINS: %q no es un dominio", d)
+			return nil, fmt.Errorf("OIDC_ALLOWED_DOMAINS: %q is not a domain", d)
 		}
 		domains = append(domains, d)
 	}
@@ -115,9 +115,9 @@ func newOIDCProvider(cfg OIDCConfig, client *http.Client, now func() time.Time) 
 	limited := len(cfg.AllowedDomains) > 0 || len(cfg.AllowedGroups) > 0
 	switch {
 	case !limited && !cfg.AllowAny:
-		return nil, errors.New("el login con OIDC necesita OIDC_ALLOWED_DOMAINS u OIDC_ALLOWED_GROUPS; para dejar entrar a cualquiera con cuenta en el emisor, OIDC_ALLOW_ANY=1")
+		return nil, errors.New("OIDC login needs OIDC_ALLOWED_DOMAINS or OIDC_ALLOWED_GROUPS; to let in anyone with an account at the issuer, OIDC_ALLOW_ANY=1")
 	case limited && cfg.AllowAny:
-		return nil, errors.New("OIDC_ALLOW_ANY=1 deja entrar a cualquiera: no va con OIDC_ALLOWED_DOMAINS ni OIDC_ALLOWED_GROUPS")
+		return nil, errors.New("OIDC_ALLOW_ANY=1 lets anyone in: it doesn't go with OIDC_ALLOWED_DOMAINS or OIDC_ALLOWED_GROUPS")
 	}
 	if len(cfg.Scopes) == 0 {
 		cfg.Scopes = []string{"openid", "email", "profile"}
@@ -139,7 +139,7 @@ func newOIDCProvider(cfg OIDCConfig, client *http.Client, now func() time.Time) 
 func checkEndpoint(raw, issuer string) error {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return fmt.Errorf("%q no es una URL absoluta", raw)
+		return fmt.Errorf("%q is not an absolute URL", raw)
 	}
 	switch u.Scheme {
 	case "https":
@@ -150,7 +150,7 @@ func checkEndpoint(raw, issuer string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%q tiene que ser https", raw)
+	return fmt.Errorf("%q must be https", raw)
 }
 
 func (p *oidcProvider) getJSON(ctx context.Context, rawURL, bearer string, v any) error {
@@ -185,21 +185,21 @@ func (p *oidcProvider) discover(ctx context.Context) (*oidcMeta, error) {
 	}
 	var m oidcMeta
 	if err := p.getJSON(ctx, strings.TrimSuffix(p.cfg.Issuer, "/")+"/.well-known/openid-configuration", "", &m); err != nil {
-		return nil, fmt.Errorf("descubrimiento: %w", err)
+		return nil, fmt.Errorf("discovery: %w", err)
 	}
 	if m.Issuer != p.cfg.Issuer {
-		return nil, fmt.Errorf("descubrimiento: issuer %q no es OIDC_ISSUER %q", m.Issuer, p.cfg.Issuer)
+		return nil, fmt.Errorf("discovery: issuer %q is not OIDC_ISSUER %q", m.Issuer, p.cfg.Issuer)
 	}
 	for _, e := range []string{m.AuthorizationEndpoint, m.TokenEndpoint, m.JWKSURI} {
 		if err := checkEndpoint(e, p.cfg.Issuer); err != nil {
-			return nil, fmt.Errorf("descubrimiento: %w", err)
+			return nil, fmt.Errorf("discovery: %w", err)
 		}
 	}
 	if m.UserinfoEndpoint != "" && checkEndpoint(m.UserinfoEndpoint, p.cfg.Issuer) != nil {
 		m.UserinfoEndpoint = ""
 	}
 	if len(m.CodeChallengeMethods) > 0 && !slices.Contains(m.CodeChallengeMethods, "S256") {
-		return nil, errors.New("descubrimiento: el emisor no admite PKCE con S256")
+		return nil, errors.New("discovery: the issuer doesn't support PKCE with S256")
 	}
 	p.meta, p.metaAt = &m, p.now()
 	return p.meta, nil
@@ -238,18 +238,18 @@ func (p *oidcProvider) signingKeys(ctx context.Context, jwksURI string, refresh 
 func (p *oidcProvider) verifyIDToken(ctx context.Context, meta *oidcMeta, token, nonce string) (map[string]any, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
-		return nil, errors.New("id_token: no es un JWT")
+		return nil, errors.New("id_token: not a JWT")
 	}
 	var header struct {
 		Alg string `json:"alg"`
 		Kid string `json:"kid"`
 	}
 	if err := decodeSegment(parts[0], &header); err != nil {
-		return nil, fmt.Errorf("id_token: cabecera: %w", err)
+		return nil, fmt.Errorf("id_token: header: %w", err)
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return nil, errors.New("id_token: firma ilegible")
+		return nil, errors.New("id_token: unreadable signature")
 	}
 	signed := []byte(parts[0] + "." + parts[1])
 	verified := false
@@ -274,7 +274,7 @@ func (p *oidcProvider) verifyIDToken(ctx context.Context, meta *oidcMeta, token,
 		}
 	}
 	if !verified {
-		return nil, fmt.Errorf("id_token: firma no válida (alg %q, kid %q)", header.Alg, header.Kid)
+		return nil, fmt.Errorf("id_token: invalid signature (alg %q, kid %q)", header.Alg, header.Kid)
 	}
 
 	var claims map[string]any
@@ -297,17 +297,17 @@ func (p *oidcProvider) verifyIDToken(ctx context.Context, meta *oidcMeta, token,
 		return nil, fmt.Errorf("id_token: caducado (exp %v)", claims["exp"])
 	}
 	if iat, ok := numericDate(claims["iat"]); ok && iat.After(now.Add(clockLeeway)) {
-		return nil, errors.New("id_token: iat en el futuro")
+		return nil, errors.New("id_token: iat in the future")
 	}
 	if nbf, ok := numericDate(claims["nbf"]); ok && nbf.After(now.Add(clockLeeway)) {
-		return nil, errors.New("id_token: todavía no vale (nbf)")
+		return nil, errors.New("id_token: not valid yet (nbf)")
 	}
 	got, _ := claims["nonce"].(string)
 	if nonce == "" || subtle.ConstantTimeCompare([]byte(got), []byte(nonce)) != 1 {
-		return nil, errors.New("id_token: el nonce no cuadra")
+		return nil, errors.New("id_token: nonce mismatch")
 	}
 	if sub, _ := claims["sub"].(string); sub == "" {
-		return nil, errors.New("id_token: sin sub")
+		return nil, errors.New("id_token: no sub")
 	}
 	return claims, nil
 }
@@ -391,10 +391,10 @@ func (p *oidcProvider) exchange(ctx context.Context, meta *oidcMeta, code, verif
 		Error       string `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&body); err != nil {
-		return "", "", fmt.Errorf("token: respuesta %d: %w", res.StatusCode, err)
+		return "", "", fmt.Errorf("token: response %d: %w", res.StatusCode, err)
 	}
 	if res.StatusCode != http.StatusOK || body.IDToken == "" {
-		return "", "", fmt.Errorf("token: respuesta %d sin id_token: %q", res.StatusCode, body.Error)
+		return "", "", fmt.Errorf("token: response %d without id_token: %q", res.StatusCode, body.Error)
 	}
 	return body.IDToken, body.AccessToken, nil
 }
@@ -423,7 +423,7 @@ func (p *oidcProvider) fillFromUserinfo(ctx context.Context, meta *oidcMeta, acc
 		return fmt.Errorf("userinfo: %w", err)
 	}
 	if info["sub"] != claims["sub"] {
-		return errors.New("userinfo: el sub no es el del id_token")
+		return errors.New("userinfo: the sub is not the id_token's")
 	}
 	for k, v := range info {
 		if _, ok := claims[k]; !ok {
@@ -470,7 +470,7 @@ func (a *Auth) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	meta, err := a.oidc.discover(r.Context())
 	if err != nil {
-		a.log.Warn("login oidc: no se pudo leer el emisor", "err", err)
+		a.log.Warn("oidc login: could not read the issuer", "err", err)
 		toLogin(w, r, "oidc")
 		return
 	}
@@ -483,7 +483,7 @@ func (a *Auth) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	v, err := a.sign("oidc-state", st)
 	if err != nil {
-		http.Error(w, "error interno", http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	http.SetCookie(w, a.cookie(oidcStateCookie, v, "/auth/oidc/", stateTTL))
@@ -519,17 +519,17 @@ func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	c, err := r.Cookie(oidcStateCookie)
 	if err != nil || !a.verify("oidc-state", c.Value, &st) || a.cfg.Now().Unix() >= st.Expires ||
 		subtle.ConstantTimeCompare([]byte(st.State), []byte(q.Get("state"))) != 1 {
-		a.log.Warn("login rechazado: state no válido", "provider", store.LoginOIDC)
+		a.log.Warn("login rejected: invalid state", "provider", store.LoginOIDC)
 		toLogin(w, r, "state")
 		return
 	}
 	if iss := q.Get("iss"); iss != "" && iss != a.oidc.cfg.Issuer {
-		a.log.Warn("login rechazado: iss de la respuesta no es el emisor", "provider", store.LoginOIDC, "iss", iss)
+		a.log.Warn("login rejected: the response iss is not the issuer", "provider", store.LoginOIDC, "iss", iss)
 		toLogin(w, r, "oidc")
 		return
 	}
 	if q.Get("error") != "" || q.Get("code") == "" {
-		a.log.Info("login cancelado en el proveedor", "provider", store.LoginOIDC, "error", q.Get("error"))
+		a.log.Info("login canceled at the provider", "provider", store.LoginOIDC, "error", q.Get("error"))
 		toLogin(w, r, "oidc_denied")
 		return
 	}
@@ -537,25 +537,25 @@ func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	meta, err := a.oidc.discover(ctx)
 	if err != nil {
-		a.log.Warn("login oidc: no se pudo leer el emisor", "err", err)
+		a.log.Warn("oidc login: could not read the issuer", "err", err)
 		toLogin(w, r, "oidc")
 		return
 	}
 	idToken, accessToken, err := a.oidc.exchange(ctx, meta, q.Get("code"), st.Verifier, a.oidcCallbackURL())
 	if err != nil {
-		a.log.Warn("login oidc: no se pudo canjear el código", "err", err)
+		a.log.Warn("oidc login: could not exchange the code", "err", err)
 		toLogin(w, r, "oidc")
 		return
 	}
 	claims, err := a.oidc.verifyIDToken(ctx, meta, idToken, st.Nonce)
 	if err != nil {
-		a.log.Warn("login rechazado: id_token no válido", "provider", store.LoginOIDC, "err", err)
+		a.log.Warn("login rejected: invalid id_token", "provider", store.LoginOIDC, "err", err)
 		toLogin(w, r, "oidc")
 		return
 	}
 	sub, _ := claims["sub"].(string)
 	if err := a.oidc.fillFromUserinfo(ctx, meta, accessToken, claims); err != nil {
-		a.log.Warn("login oidc: userinfo", "sub", sub, "err", err)
+		a.log.Warn("oidc login: userinfo", "sub", sub, "err", err)
 		toLogin(w, r, "oidc")
 		return
 	}
@@ -563,7 +563,7 @@ func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		// Del rechazado, solo el sub y el dominio del correo: no se guarda nada más.
 		email, _ := claims["email"].(string)
 		_, domain, _ := strings.Cut(email, "@")
-		a.log.Warn("login rechazado: fuera de los límites de OIDC", "provider", store.LoginOIDC, "reason", reason,
+		a.log.Warn("login rejected: outside the OIDC limits", "provider", store.LoginOIDC, "reason", reason,
 			"sub", sub, "email_domain", domain, "email_verified", boolClaim(claims["email_verified"]))
 		toLogin(w, r, reason)
 		return
@@ -602,15 +602,15 @@ func (a *Auth) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(shown, oidcLoginPrefix) && !strings.HasPrefix(login, oidcLoginPrefix) {
 		renamed, err := a.people.RenamePerson(ctx, login, oidcLoginPrefix+login)
 		if err != nil {
-			a.log.Error("login oidc: poner el prefijo al login", "login", login, "sub", sub, "err", err)
+			a.log.Error("oidc login: prefix the login", "login", login, "sub", sub, "err", err)
 			toLogin(w, r, "save")
 			return
 		}
-		a.log.Warn("login oidc: el login sin correo verificado pasa a llevar el prefijo", "from", login, "to", renamed, "sub", sub)
+		a.log.Warn("oidc login: the login without a verified email gets the prefix", "from", login, "to", renamed, "sub", sub)
 		login = renamed
 	}
 	if err := a.setSession(w, login, name); err != nil {
-		http.Error(w, "error interno", http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	a.log.Info("login", "provider", store.LoginOIDC, "login", login, "sub", sub)

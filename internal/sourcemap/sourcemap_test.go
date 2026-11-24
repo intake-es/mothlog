@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const (

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
-	"github.com/intake-es/intake-errors/internal/webhooks"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/webhooks"
 )
 
 // postText es post con la respuesta en texto.
@@ -83,7 +83,7 @@ func TestSignedBodyReplayedWithOtherDeliveryIsIgnored(t *testing.T) {
 	w.reopen(t, id)
 	for _, delivery := range []string{"gh-1", "gh-otra", ""} {
 		code, msg := postText(t, gurl, githubHeaders(body, delivery), body)
-		if code != 200 || msg != "ya recibida" {
+		if code != 200 || msg != "already received" {
 			t.Errorf("GitHub reenviada con entrega %q: %d %q", delivery, code, msg)
 		}
 		if s := w.status(t, id); s != "open" {
@@ -108,7 +108,7 @@ func TestSignedBodyReplayedWithOtherDeliveryIsIgnored(t *testing.T) {
 			headers["Linear-Delivery"] = delivery
 		}
 		code, msg := postText(t, lurl, headers, fresh)
-		if code != 200 || msg != "ya recibida" {
+		if code != 200 || msg != "already received" {
 			t.Errorf("Linear reenviada con entrega %q: %d %q", delivery, code, msg)
 		}
 		if s := w.status(t, id); s != "open" {
@@ -139,7 +139,7 @@ func TestOldGitHubDeliveryIsRejected(t *testing.T) {
 	}{"issue vieja": {"issues", old}, "issue sin updated_at": {"issues", undated}, "PR viejo": {"pull_request", oldPR}} {
 		h := githubHeaders(c.body, "vieja-"+name)
 		h["X-GitHub-Event"] = c.event
-		if code, msg := postText(t, gurl, h, c.body); code != http.StatusUnauthorized || !strings.Contains(msg, "entrega vieja") {
+		if code, msg := postText(t, gurl, h, c.body); code != http.StatusUnauthorized || !strings.Contains(msg, "stale delivery") {
 			t.Errorf("%s: %d %q", name, code, msg)
 		}
 	}

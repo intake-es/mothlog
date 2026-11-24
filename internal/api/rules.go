@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Alerts comprueba y prueba las reglas de aviso.
@@ -39,7 +39,7 @@ func ruleIDs(w http.ResponseWriter, r *http.Request) (int64, int64, bool) {
 	}
 	id, err := strconv.ParseInt(r.PathValue("rule"), 10, 64)
 	if err != nil || id <= 0 {
-		writeError(w, http.StatusNotFound, "no encontrado")
+		writeError(w, http.StatusNotFound, "not found")
 		return 0, 0, false
 	}
 	return project, id, true
@@ -80,7 +80,7 @@ func decodeRule(w http.ResponseWriter, r *http.Request) (store.Rule, bool) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&ru); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo no válido: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return ru, false
 	}
 	return ru, true
@@ -170,11 +170,11 @@ func (h *handlers) testRule(w http.ResponseWriter, r *http.Request) {
 		ActionID string `json:"action_id"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body.ActionID == "" {
-		writeError(w, http.StatusBadRequest, "el cuerpo debe ser {\"action_id\": \"...\"}")
+		writeError(w, http.StatusBadRequest, "the body must be {\"action_id\": \"...\"}")
 		return
 	}
 	if h.alerts == nil {
-		writeError(w, http.StatusServiceUnavailable, "los avisos no están activos en este servidor")
+		writeError(w, http.StatusServiceUnavailable, "alerts are not active on this server")
 		return
 	}
 	ru, err := h.st.Rule(r.Context(), project, id)

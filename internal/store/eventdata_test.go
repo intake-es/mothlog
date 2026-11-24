@@ -22,9 +22,9 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 // fixtureEvents son los eventos de testdata/envelopes.
@@ -565,7 +565,7 @@ func TestRunEventConversionRepeats(t *testing.T) {
 	logged := func() bool {
 		mu.Lock()
 		defer mu.Unlock()
-		return strings.Contains(buf.String(), "eventos convertidos")
+		return strings.Contains(buf.String(), "events converted")
 	}
 	for !logged() {
 		time.Sleep(5 * time.Millisecond)
@@ -587,7 +587,7 @@ func TestRunEventConversionRepeats(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	total := 0
-	for _, m := range regexp.MustCompile(`eventos=(\d+)`).FindAllStringSubmatch(buf.String(), -1) {
+	for _, m := range regexp.MustCompile(`events=(\d+)`).FindAllStringSubmatch(buf.String(), -1) {
 		n, _ := strconv.Atoi(m[1])
 		total += n
 	}

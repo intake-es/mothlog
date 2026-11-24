@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func target(u string) store.UptimeTarget {
@@ -58,7 +58,7 @@ func TestCheckOK(t *testing.T) {
 		t.Errorf("bien = %+v", res)
 	}
 	res = c.Check(context.Background(), target(srv.URL+"/falta"), now)
-	if res.OK || *res.StatusCode != 404 || res.Error != "código 404" {
+	if res.OK || *res.StatusCode != 404 || res.Error != "status 404" {
 		t.Errorf("404 = %+v", res)
 	}
 	tg := target(srv.URL + "/falta")
@@ -98,7 +98,7 @@ func TestCheckBlocksMetadata(t *testing.T) {
 		redirect.URL + "/?to=" + url.QueryEscape("http://metadata.prueba/computeMetadata/v1/"),
 	} {
 		res := c.Check(context.Background(), target(u), time.Now())
-		if res.OK || res.StatusCode != nil || !strings.Contains(res.Error, "bloqueada") {
+		if res.OK || res.StatusCode != nil || !strings.Contains(res.Error, "blocked address") {
 			t.Errorf("%s = %+v", u, res)
 		}
 	}
@@ -114,7 +114,7 @@ func TestCheckPrivateNetworks(t *testing.T) {
 	closed := NewChecker(false, dns)
 	for _, u := range []string{srv.URL + "/", byName} {
 		res := closed.Check(context.Background(), target(u), time.Now())
-		if res.OK || !strings.Contains(res.Error, "red privada") {
+		if res.OK || !strings.Contains(res.Error, "private network") {
 			t.Errorf("sin permitir %s = %+v", u, res)
 		}
 	}
@@ -139,7 +139,7 @@ func TestCheckRedirectLimit(t *testing.T) {
 		t.Errorf("5 redirecciones = %+v", res)
 	}
 	res := c.Check(context.Background(), target(srv.URL+"/?n=6"), time.Now())
-	if res.OK || !strings.Contains(res.Error, "más de 5 redirecciones") {
+	if res.OK || !strings.Contains(res.Error, "more than 5 redirects") {
 		t.Errorf("6 redirecciones = %+v", res)
 	}
 }
@@ -185,7 +185,7 @@ func TestCheckTimeoutAndRefused(t *testing.T) {
 	tg := target(slow.URL + "/")
 	tg.Timeout = 300 * time.Millisecond
 	res := c.Check(context.Background(), tg, time.Now())
-	if res.OK || res.Error != "sin respuesta en 300ms" || res.DurationMs < 300 {
+	if res.OK || res.Error != "no response in 300ms" || res.DurationMs < 300 {
 		t.Errorf("lento = %+v", res)
 	}
 
@@ -193,7 +193,7 @@ func TestCheckTimeoutAndRefused(t *testing.T) {
 	u := gone.URL
 	gone.Close()
 	res = c.Check(context.Background(), target(u+"/"), time.Now())
-	if res.OK || res.Error != "conexión rechazada" {
+	if res.OK || res.Error != "connection refused" {
 		t.Errorf("caído = %+v", res)
 	}
 }

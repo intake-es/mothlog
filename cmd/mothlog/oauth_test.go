@@ -22,9 +22,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 type syncBuffer struct {
@@ -366,7 +366,7 @@ func TestMCPOAuthEndToEnd(t *testing.T) {
 	code := s.authorize(t, clientID, redirect, verifier, []string{"read"})
 	tok, status := s.exchange(t, clientID, redirect, code, verifier)
 	if status != http.StatusOK || tok.Type != "Bearer" || tok.Scope != "read" || tok.Expires != 3600 ||
-		!strings.HasPrefix(tok.Access, "ieo_") || !strings.HasPrefix(tok.Refresh, "ier_") {
+		!strings.HasPrefix(tok.Access, "mlo_") || !strings.HasPrefix(tok.Refresh, "mlr_") {
 		t.Fatalf("canje = %d %+v", status, tok)
 	}
 
@@ -527,10 +527,63 @@ func TestMCPOAuthRevokeFromPanelAndPeople(t *testing.T) {
 	if err := peopleCommand(ctx, s.db.Store, []string{"revoke", "dev"}, &out, time.Now); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "concesiones de OAuth del MCP revocadas: 1") {
+	if !strings.Contains(out.String(), "MCP OAuth grants revoked: 1") {
 		t.Errorf("people revoke = %q", out.String())
 	}
 	if r := s.mcpStatus(t, b.Access); r.code != http.StatusUnauthorized {
 		t.Fatalf("/mcp tras people revoke = %d", r.code)
+	}
+}
+
+// Una conexión de OAuth autorizada antes del nombre Mothlog (cliente iec_,
+// acceso ieo_ y refresco ier_) sigue valiendo sin volver a autorizar: el
+// acceso entra en el MCP y el refresco da tokens nuevos, ya con mlo_ y mlr_.
+// Las filas son las que dejaba el código de antes: solo el sha256 de cada token.
+func TestMCPOAuthTokensFromBeforeRename(t *testing.T) {
+	s := startServer(t)
+	ctx := context.Background()
+	s.devLogin(t)
+	p := s.db.AddProject(t, "backend")
+	s.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "ZeroDivisionError: division by zero", Count: 1})
+
+	const clientID = "iec_cliente-de-antes"
+	access, refresh := "ieo_"+storetest.RandomHex(t, 32), "ier_"+storetest.RandomHex(t, 32)
+	now := time.Now().UTC()
+	if err := s.db.CreateOAuthClient(ctx, store.OAuthClient{ID: clientID, Name: "Cliente de antes",
+		RedirectURIs: []string{"http://127.0.0.1:9/cb"}}, now); err != nil {
+		t.Fatal(err)
+	}
+	var grant int64
+	if err := s.db.Pool().QueryRow(ctx, `INSERT INTO oauth_grants (login, client_id, client_name, redirect_uri, scopes, resource, created_at)
+		VALUES ('dev', $1, 'Cliente de antes', 'http://127.0.0.1:9/cb', 'read', $2, $3) RETURNING id`,
+		clientID, s.base+"/mcp", now).Scan(&grant); err != nil {
+		t.Fatal(err)
+	}
+	for kind, secret := range map[string]string{"access": access, "refresh": refresh} {
+		sum := sha256.Sum256([]byte(secret))
+		if _, err := s.db.Pool().Exec(ctx, `INSERT INTO oauth_tokens (token_sha256, grant_id, kind, scopes, created_at, expires_at)
+			VALUES ($1, $2, $3, 'read', $4, $5)`, sum[:], grant, kind, now, now.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cs, err := s.mcp(t, access)
+	if err != nil {
+		t.Fatalf("MCP con el acceso ieo_: %v", err)
+	}
+	if out, isErr := callTool(t, cs, "list_issues", nil); isErr || !strings.Contains(out, "ZeroDivisionError") {
+		t.Errorf("list_issues con el acceso ieo_ = %v %s", isErr, out)
+	}
+	_ = cs.Close()
+
+	tok, status := s.refresh(t, clientID, refresh)
+	if status != http.StatusOK || !strings.HasPrefix(tok.Access, "mlo_") || !strings.HasPrefix(tok.Refresh, "mlr_") || tok.Scope != "read" {
+		t.Fatalf("refresco con ier_ = %d %+v", status, tok)
+	}
+	if r := s.mcpStatus(t, tok.Access); r.code != http.StatusOK {
+		t.Fatalf("/mcp con el acceso refrescado = %d %s", r.code, r.body)
+	}
+	if bad, status := s.refresh(t, clientID, refresh); status != http.StatusBadRequest || bad.Error != "invalid_grant" {
+		t.Errorf("el refresco ier_ gastado sigue valiendo: %d %+v", status, bad)
 	}
 }

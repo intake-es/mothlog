@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/sentryimport/fake"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/sentryimport/fake"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 const testToken = "sntrys_eyJpYXQiOjE3MzAwMDAwMDB9_secretoDePrueba123"
@@ -311,7 +311,7 @@ func TestDryRunWritesNothing(t *testing.T) {
 	wantCounts(t, "proyectos", dry.Projects, Counts{Created: 3})
 	wantCounts(t, "issues", dry.Issues, Counts{Created: 6, Skipped: 1})
 	wantCounts(t, "eventos", dry.Events, Counts{Created: 14})
-	if !strings.Contains(e.out.String(), "no se ha escrito nada") {
+	if !strings.Contains(e.out.String(), "nothing was written") {
 		t.Errorf("el informe no dice que es una prueba:\n%s", e.out.String())
 	}
 	real := e.run(Options{})
@@ -369,7 +369,7 @@ func TestRateLimitRetryAfter(t *testing.T) {
 	if throttled != 2 {
 		t.Errorf("%d respuestas 429, quiero 2", throttled)
 	}
-	if !strings.Contains(e.out.String(), "429 de la API: espero 7s") {
+	if !strings.Contains(e.out.String(), "429 from the API: waiting 7s") {
 		t.Errorf("el progreso no dice que espera:\n%s", e.out.String())
 	}
 }
@@ -453,7 +453,7 @@ func TestNotGroupedIsReported(t *testing.T) {
 	if r := e.issue("7001"); r.id == res.IssueID {
 		t.Error("ha mezclado el issue importado con el de la ingesta")
 	}
-	if !strings.Contains(e.out.String(), "no se agrupan") {
+	if !strings.Contains(e.out.String(), "don't group") {
 		t.Errorf("el informe no lo dice:\n%s", e.out.String())
 	}
 }

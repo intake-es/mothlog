@@ -1,7 +1,8 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type { Observable } from 'rxjs';
-import { t } from './i18n';
+import { lang, t } from './i18n';
+import { API_ERRORS_ES } from './i18n/api-errors';
 
 export type IssueStatus = 'open' | 'resolved' | 'resolved_next' | 'silenced';
 export type StatusFilter = IssueStatus | 'all';
@@ -883,14 +884,14 @@ export function queryError(err: unknown): QueryError | null {
 export function apiError(err: unknown): string {
   const e = err as { status?: number; error?: { error?: string } | string };
   if (e?.error && typeof e.error === 'object' && e.error.error) {
-    return e.error.error;
+    return localizeApiError(e.error.error);
   }
   // Las peticiones de texto (stacktrace.md, context.md) traen el JSON del error sin leer.
   if (typeof e?.error === 'string') {
     try {
       const body = JSON.parse(e.error) as { error?: unknown };
       if (typeof body?.error === 'string' && body.error) {
-        return body.error;
+        return localizeApiError(body.error);
       }
     } catch {
       // No era JSON.
@@ -900,4 +901,23 @@ export function apiError(err: unknown): string {
     return t('api.offline');
   }
   return t('api.failed');
+}
+
+/**
+ * La API responde en inglés: en español, el mensaje se traduce si es uno de
+ * los conocidos, con sus huecos traducidos a su vez; si no, se queda en inglés.
+ */
+export function localizeApiError(msg: string, depth = 0): string {
+  if (lang() !== 'es' || depth > 4) {
+    return msg;
+  }
+  for (const [pattern, es] of API_ERRORS_ES) {
+    const m = pattern.exec(msg);
+    if (m) {
+      return es.replace(/\$(\d)/g, (_, i: string) =>
+        localizeApiError(m[Number(i)] ?? '', depth + 1),
+      );
+    }
+  }
+  return msg;
 }

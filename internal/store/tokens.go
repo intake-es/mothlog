@@ -10,13 +10,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
-const TokenPrefix = "ie_"
+// TokenPrefix va delante de los tokens de la API.
+const TokenPrefix = "ml_"
+
+// LegacyTokenPrefix es el de los tokens creados antes del nombre Mothlog, que
+// siguen valiendo.
+const LegacyTokenPrefix = "ie_"
+
+// IsAPIToken dice si secret tiene la forma de un token de la API, nuevo o de antes.
+func IsAPIToken(secret string) bool {
+	return strings.HasPrefix(secret, TokenPrefix) || strings.HasPrefix(secret, LegacyTokenPrefix)
+}
 
 // ErrNameTaken: ya hay un token activo con ese nombre.
-var ErrNameTaken = errors.New("ya hay un token activo con ese nombre")
+var ErrNameTaken = errors.New("there is already an active token with that name")
 
 type Token struct {
 	ID         int64      `json:"id"`
@@ -35,7 +45,7 @@ func hashToken(secret string) []byte {
 func (s *Store) CreateToken(ctx context.Context, name string) (Token, string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return Token{}, "", fmt.Errorf("%w: el token necesita un nombre", ErrInvalid)
+		return Token{}, "", fmt.Errorf("%w: the token needs a name", ErrInvalid)
 	}
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -50,7 +60,7 @@ func (s *Store) CreateToken(ctx context.Context, name string) (Token, string, er
 		return Token{}, "", ErrNameTaken
 	}
 	if err != nil {
-		return Token{}, "", fmt.Errorf("crear token: %w", err)
+		return Token{}, "", fmt.Errorf("create token: %w", err)
 	}
 	return t, secret, nil
 }
@@ -60,7 +70,7 @@ func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
 		SELECT id, name, created_at, last_used_at, revoked_at
 		FROM api_tokens ORDER BY revoked_at IS NOT NULL, `+s.pool.Dialect().Collate("name")+`, id`)
 	if err != nil {
-		return nil, fmt.Errorf("listar tokens: %w", err)
+		return nil, fmt.Errorf("list tokens: %w", err)
 	}
 	return db.CollectRows(rows, func(r db.CollectableRow) (Token, error) {
 		var t Token
@@ -74,7 +84,7 @@ func (s *Store) RevokeToken(ctx context.Context, name string) error {
 	tag, err := s.pool.Exec(ctx,
 		`UPDATE api_tokens SET revoked_at = now() WHERE name = $1 AND revoked_at IS NULL`, name)
 	if err != nil {
-		return fmt.Errorf("revocar token: %w", err)
+		return fmt.Errorf("revoke token: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
@@ -84,7 +94,7 @@ func (s *Store) RevokeToken(ctx context.Context, name string) error {
 
 // Authenticate devuelve el token activo que corresponde a secret, o ErrNotFound.
 func (s *Store) Authenticate(ctx context.Context, secret string) (Token, error) {
-	if !strings.HasPrefix(secret, TokenPrefix) {
+	if !IsAPIToken(secret) {
 		return Token{}, ErrNotFound
 	}
 	var t Token
@@ -96,12 +106,12 @@ func (s *Store) Authenticate(ctx context.Context, secret string) (Token, error) 
 		return Token{}, ErrNotFound
 	}
 	if err != nil {
-		return Token{}, fmt.Errorf("buscar token: %w", err)
+		return Token{}, fmt.Errorf("find token: %w", err)
 	}
 	// Como mucho una escritura por minuto y token.
 	if t.LastUsedAt == nil || time.Since(*t.LastUsedAt) > time.Minute {
 		if _, err := s.pool.Exec(ctx, `UPDATE api_tokens SET last_used_at = now() WHERE id = $1`, t.ID); err != nil {
-			return Token{}, fmt.Errorf("marcar uso del token: %w", err)
+			return Token{}, fmt.Errorf("mark token use: %w", err)
 		}
 	}
 	return t, nil

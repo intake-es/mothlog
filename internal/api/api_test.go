@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 type env struct {
@@ -25,15 +26,20 @@ type env struct {
 	token string
 }
 
-func setup(t *testing.T) *env {
+func setup(t *testing.T) *env { t.Helper(); return setupLang(t, lang.EN) }
+
+// setupLang es setup con DEFAULT_LANGUAGE=l: el idioma del Markdown, del MCP
+// y del resumen de los proyectos sin configurar.
+func setupLang(t *testing.T, l lang.Lang) *env {
 	t.Helper()
 	db := storetest.NewDB(t)
+	db.SetDefaultLanguage(string(l))
 	mux := http.NewServeMux()
 	// Las rutas de ingesta y de source maps conviven con las de la API.
 	noop := func(http.ResponseWriter, *http.Request) {}
 	mux.HandleFunc("POST /api/{project_id}/envelope/", noop)
 	mux.HandleFunc("POST /api/{project_id}/releases/{release}/sourcemaps/", noop)
-	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com"}); err != nil {
+	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com", Lang: l}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(mux)
@@ -387,7 +393,7 @@ func TestEvents(t *testing.T) {
 }
 
 func TestStacktraceBackend(t *testing.T) {
-	e := setup(t)
+	e := setupLang(t, lang.ES)
 	p := e.db.AddProject(t, "backend")
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "ZeroDivisionError: division by zero", Culprit: "app in media", Count: 1})
 	ev := storetest.Fixture(t, "api-excepcion-1")
@@ -436,7 +442,7 @@ func TestStacktraceBackend(t *testing.T) {
 }
 
 func TestStacktraceFrontend(t *testing.T) {
-	e := setup(t)
+	e := setupLang(t, lang.ES)
 	p := e.db.AddProject(t, "front")
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "TypeError: Cannot read properties of undefined (reading 'reduce')", Culprit: "a"})
 	ev := storetest.Fixture(t, "web-typeerror-1")
@@ -481,7 +487,7 @@ func TestStacktraceFrontend(t *testing.T) {
 }
 
 func TestStacktraceBreadcrumbs(t *testing.T) {
-	e := setup(t)
+	e := setupLang(t, lang.ES)
 	p := e.db.AddProject(t, "front")
 	id := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "x"})
 	ev := storetest.Fixture(t, "web-typeerror-1")
@@ -609,7 +615,7 @@ func TestAuth(t *testing.T) {
 	for _, tc := range []struct{ name, header string }{
 		{"sin token", ""},
 		{"desconocido", "Bearer ie_desconocido"},
-		{"sin prefijo", "Bearer " + strings.TrimPrefix(e.token, "ie_")},
+		{"sin prefijo", "Bearer " + strings.TrimPrefix(e.token, "ml_")},
 		{"otro esquema", "Basic " + e.token},
 		{"revocado", "Bearer " + revoked},
 	} {

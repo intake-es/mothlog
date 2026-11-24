@@ -14,17 +14,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // ErrMalformed es un check-in que no se puede leer.
-var ErrMalformed = errors.New("check-in mal formado")
+var ErrMalformed = errors.New("malformed check-in")
 
 // ErrEnvironment es un check-in con un entorno que la API no aceptaría. No se
 // le quita, como a la release, porque sin él contaría como de production.
-var ErrEnvironment = fmt.Errorf("%w: entorno no válido", ErrMalformed)
+var ErrEnvironment = fmt.Errorf("%w: invalid environment", ErrMalformed)
 
 type payload struct {
 	CheckInID     string         `json:"check_in_id"`
@@ -50,7 +50,7 @@ func Parse(data []byte) (store.CheckInInput, error) {
 		return store.CheckInInput{}, fmt.Errorf("%w: %v", ErrMalformed, err)
 	}
 	if strings.TrimSpace(p.MonitorSlug) == "" {
-		return store.CheckInInput{}, fmt.Errorf("%w: falta monitor_slug", ErrMalformed)
+		return store.CheckInInput{}, fmt.Errorf("%w: missing monitor_slug", ErrMalformed)
 	}
 	in := store.CheckInInput{
 		CheckInID: normalizeID(p.CheckInID),
@@ -126,12 +126,12 @@ func (s *Service) CheckIn(ctx context.Context, projectID int64, in store.CheckIn
 		return res, err
 	}
 	if res.Outcome == store.CheckInIgnored {
-		s.log.InfoContext(ctx, "check-in ignorado", "proyecto", projectID, "monitor", in.Slug, "motivo", res.Reason)
+		s.log.InfoContext(ctx, "check-in ignored", "project", projectID, "monitor", in.Slug, "reason", res.Reason)
 	} else if res.Reason != "" {
-		s.log.WarnContext(ctx, "check-in", "proyecto", projectID, "monitor", in.Slug, "aviso", res.Reason)
+		s.log.WarnContext(ctx, "check-in", "project", projectID, "monitor", in.Slug, "warning", res.Reason)
 	}
 	if res.Created {
-		s.log.InfoContext(ctx, "monitor creado", "proyecto", projectID, "monitor", res.Monitor.Slug)
+		s.log.InfoContext(ctx, "monitor created", "project", projectID, "monitor", res.Monitor.Slug)
 	}
 	return res, nil
 }
@@ -151,16 +151,16 @@ func (s *Service) Run(ctx context.Context, interval, retention time.Duration) {
 		missed, timeouts, err := s.Sweep(ctx)
 		switch {
 		case err != nil && ctx.Err() == nil:
-			s.log.ErrorContext(ctx, "repasar monitores", "err", err)
+			s.log.ErrorContext(ctx, "sweep monitors", "err", err)
 		case missed > 0 || timeouts > 0:
-			s.log.InfoContext(ctx, "monitores", "missed", missed, "timeout", timeouts)
+			s.log.InfoContext(ctx, "monitors", "missed", missed, "timeout", timeouts)
 		}
 		if now := s.Now(); retention > 0 && now.Sub(purged) >= time.Hour {
 			purged = now
 			if n, err := s.st.PurgeCheckIns(ctx, now.Add(-retention)); err != nil && ctx.Err() == nil {
-				s.log.ErrorContext(ctx, "retención de check-ins", "err", err)
+				s.log.ErrorContext(ctx, "check-in retention", "err", err)
 			} else if n > 0 {
-				s.log.InfoContext(ctx, "retención", "check-ins", n)
+				s.log.InfoContext(ctx, "retention", "check-ins", n)
 			}
 		}
 		select {

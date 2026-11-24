@@ -8,12 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 func TestAssignAPI(t *testing.T) {
-	e := setupWithSession(t)
+	e := setupWithSessionLang(t, lang.ES)
 	ctx := context.Background()
 	p := e.db.AddProject(t, "web")
 	issue := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "TypeError"})
@@ -112,7 +113,7 @@ func TestAssignAPI(t *testing.T) {
 
 // Un agente se asigna un error por el MCP con me y lo encuentra con assigned:me.
 func TestMCPAssignMe(t *testing.T) {
-	e := setupWithSession(t)
+	e := setupWithSessionLang(t, lang.ES)
 	p := e.db.AddProject(t, "web")
 	issue := e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "TypeError: x is undefined"})
 	e.db.AddIssue(t, storetest.Issue{ProjectID: p.ID, Title: "Timeout"})

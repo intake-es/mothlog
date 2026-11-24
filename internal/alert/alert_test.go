@@ -18,11 +18,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 const (
@@ -399,13 +400,13 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("slack = %+v", msgs)
 	}
-	for _, want := range []string{"*Nuevo error* · backend · production", "*task failed id=88dfc065281046dfa0098d0fa91bbdf4",
-		"*Release*\nfixture-release-1", "Ver el error " + link, "ERR-101 en Linear " + linearURL("ERR-101")} {
+	for _, want := range []string{"*New error* · backend · production", "*task failed id=88dfc065281046dfa0098d0fa91bbdf4",
+		"*Release*\nfixture-release-1", "View error " + link, "ERR-101 in Linear " + linearURL("ERR-101")} {
 		if got := flatten(msgs[0]); !strings.Contains(got, want) {
 			t.Errorf("slack sin %q:\n%s", want, got)
 		}
 	}
-	if !strings.HasPrefix(msgs[0].Text, "Nuevo error en backend: task failed id=88dfc065281046dfa0098d0fa91bbdf4") {
+	if !strings.HasPrefix(msgs[0].Text, "New error in backend: task failed id=88dfc065281046dfa0098d0fa91bbdf4") {
 		t.Errorf("text = %q", msgs[0].Text)
 	}
 	issues, order := e.linear.snapshot()
@@ -416,7 +417,7 @@ func TestNewRepeatAndRegression(t *testing.T) {
 	if !strings.HasPrefix(li.Title, "[backend] task failed id=88dfc065281046dfa0098d0fa91bbdf4") {
 		t.Errorf("título = %q", li.Title)
 	}
-	if !strings.Contains(li.Description, "("+link+")") || !strings.Contains(li.Description, "# task failed") || !strings.Contains(li.Description, "- Proyecto: backend") {
+	if !strings.Contains(li.Description, "("+link+")") || !strings.Contains(li.Description, "# task failed") || !strings.Contains(li.Description, "- Project: backend") {
 		t.Errorf("descripción:\n%s", li.Description)
 	}
 	if !slices.Equal(li.Labels, baseLabels) {
@@ -449,8 +450,8 @@ func TestNewRepeatAndRegression(t *testing.T) {
 		t.Fatalf("enviados = %d, quiero 2", n)
 	}
 	msgs = e.slack.payloads(t)
-	if len(msgs) != 2 || !strings.Contains(flatten(msgs[1]), "*Ha vuelto* · backend · production · se resolvió el ") ||
-		!strings.Contains(flatten(msgs[1]), "*Eventos*\n3 en total") {
+	if len(msgs) != 2 || !strings.Contains(flatten(msgs[1]), "*Regression* · backend · production · resolved on ") ||
+		!strings.Contains(flatten(msgs[1]), "*Events*\n3 in total") {
 		t.Fatalf("slack = %+v", msgs)
 	}
 	issues, order = e.linear.snapshot()
@@ -875,7 +876,7 @@ func TestSlackWaitsForLinear(t *testing.T) {
 		t.Fatalf("enviados = %d", n)
 	}
 	msgs := e.slack.payloads(t)
-	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error", "ERR-101 en Linear"}) {
+	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"View error", "ERR-101 in Linear"}) {
 		t.Fatalf("botones = %v", buttons(msgs[0]))
 	}
 }
@@ -898,7 +899,7 @@ func TestSlackStopsWaitingForLinear(t *testing.T) {
 		t.Fatalf("enviados = %d", n)
 	}
 	msgs := e.slack.payloads(t)
-	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error"}) {
+	if len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"View error"}) {
 		t.Fatalf("mensajes = %+v", msgs)
 	}
 }
@@ -943,9 +944,15 @@ func TestResolvedAt(t *testing.T) {
 }
 
 // TestEndToEndTaskFailed manda el primer task failed del worker y, tras
-// resolverlo, el segundo.
+// resolverlo, el segundo, en inglés y con DEFAULT_LANGUAGE=es en español.
 func TestEndToEndTaskFailed(t *testing.T) {
-	e := newEnv(t, nil)
+	for _, l := range []lang.Lang{lang.EN, lang.ES} {
+		t.Run(string(l), func(t *testing.T) { endToEndTaskFailed(t, l) })
+	}
+}
+
+func endToEndTaskFailed(t *testing.T, l lang.Lang) {
+	e := newEnv(t, func(o *Options) { o.Lang = l })
 	ctx := context.Background()
 	first := e.ingest(t, "api-tarea-a-1")
 	if n := e.send(t); n != 2 {
@@ -968,7 +975,7 @@ func TestEndToEndTaskFailed(t *testing.T) {
 		for i, b := range bodies {
 			var pretty bytes.Buffer
 			_ = json.Indent(&pretty, b, "", "  ")
-			name := filepath.Join(dir, fmt.Sprintf("slack-falso-%d-%s.json", i+1, []string{"nuevo", "regresion"}[i]))
+			name := filepath.Join(dir, fmt.Sprintf("slack-falso-%s-%d-%s.json", l, i+1, []string{"nuevo", "regresion"}[i]))
 			if err := os.WriteFile(name, append(pretty.Bytes(), '\n'), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -980,23 +987,24 @@ func TestEndToEndTaskFailed(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("mensajes = %d", len(msgs))
 	}
-	today := spanishDate(e.clock.now(), e.clock.now())
+	today := localDate(l, e.clock.now(), e.clock.now())
 	want := []struct {
 		text   string
 		blocks []string
 		parts  []string
 	}{
 		{
-			"Nuevo error en backend: task failed id=88dfc065281046dfa0098d0fa91bbdf4",
+			l.T("New error in backend: ", "Nuevo error en backend: ") + "task failed id=88dfc065281046dfa0098d0fa91bbdf4",
 			[]string{"context", "section", "section", "actions"},
-			[]string{"*Nuevo error* · backend · production\n", "*task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura'",
-				"*Release*\nfixture-release-1\n", "Ver el error " + link, "ERR-101 en Linear " + linearURL("ERR-101")},
+			[]string{l.T("*New error*", "*Nuevo error*") + " · backend · production\n", "*task failed id=88dfc065281046dfa0098d0fa91bbdf4 name='enviar_factura'",
+				"*Release*\nfixture-release-1\n", l.T("View error ", "Ver el error ") + link, "ERR-101" + l.T(" in Linear ", " en Linear ") + linearURL("ERR-101")},
 		},
 		{
-			"Ha vuelto un error en backend: task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35",
+			l.T("Regression in backend: ", "Ha vuelto un error en backend: ") + "task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35",
 			[]string{"context", "section", "section", "actions"},
-			[]string{"*Ha vuelto* · backend · production · se resolvió el " + today + "\n", "*task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35",
-				"*Release*\nfixture-release-1\n", "*Eventos*\n2 en total\n", "Ver el error " + link, "ERR-101 en Linear " + linearURL("ERR-101")},
+			[]string{l.T("*Regression* · backend · production · resolved on ", "*Ha vuelto* · backend · production · se resolvió el ") + today + "\n", "*task failed id=fceb1a3e2ad94b5f8244e34b6d0f4d35",
+				"*Release*\nfixture-release-1\n", l.T("*Events*\n2 in total\n", "*Eventos*\n2 en total\n"), l.T("View error ", "Ver el error ") + link,
+				"ERR-101" + l.T(" in Linear ", " en Linear ") + linearURL("ERR-101")},
 		},
 	}
 	for i, m := range msgs {

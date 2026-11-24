@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 // referenceCanonical es la forma canónica escrita del modo más directo, sin

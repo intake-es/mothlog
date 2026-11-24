@@ -11,17 +11,17 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
-const rulesUsage = `uso de projects rules <nombre>:
-  (sin más)                      lista las reglas de aviso
-  show <id>                      enseña una en JSON, con los secretos tapados
-  create <fichero.json|->        crea una con el JSON de la API
-  edit <id> <fichero.json|->     la sustituye; los secretos vacíos o tapados no cambian
-  delete <id>                    la borra
-  test <id> [<acción>]           manda un aviso de prueba por una acción, o por todas`
+const rulesUsage = `usage of projects rules <name>:
+  (nothing else)                 lists the alert rules
+  show <id>                      shows one as JSON, with secrets masked
+  create <file.json|->           creates one from the API JSON
+  edit <id> <file.json|->        replaces it; empty or masked secrets don't change
+  delete <id>                    deletes it
+  test <id> [<action>]           sends a test alert through one action, or through all of them`
 
 // rulesCommand gestiona las reglas de aviso de un proyecto: args es <nombre> [<orden> …].
 func rulesCommand(ctx context.Context, db *store.Store, alerts api.Alerts, args []string, in io.Reader, out io.Writer) error {
@@ -36,7 +36,7 @@ func rulesCommand(ctx context.Context, db *store.Store, alerts api.Alerts, args 
 	ruleID := func() (int64, error) {
 		id, err := strconv.ParseInt(args[1], 10, 64)
 		if err != nil || id <= 0 {
-			return 0, fmt.Errorf("%q no es el id de una regla", args[1])
+			return 0, fmt.Errorf("%q is not a rule id", args[1])
 		}
 		return id, nil
 	}
@@ -90,7 +90,7 @@ func rulesCommand(ctx context.Context, db *store.Store, alerts api.Alerts, args 
 		if err := db.DeleteRule(ctx, p.ID, id); err != nil {
 			return ruleNotFound(err, id)
 		}
-		_, err = fmt.Fprintf(out, "regla %d borrada\n", id)
+		_, err = fmt.Fprintf(out, "rule %d deleted\n", id)
 		return err
 	case args[0] == "test" && (len(args) == 2 || len(args) == 3):
 		id, err := ruleID()
@@ -110,11 +110,11 @@ func rulesCommand(ctx context.Context, db *store.Store, alerts api.Alerts, args 
 				failed = true
 				_, _ = fmt.Fprintf(out, "%s (%s): %v\n", a.ID, a.Type, err)
 			} else {
-				_, _ = fmt.Fprintf(out, "%s (%s): enviado\n", a.ID, a.Type)
+				_, _ = fmt.Fprintf(out, "%s (%s): sent\n", a.ID, a.Type)
 			}
 		}
 		if failed {
-			return errors.New("algún aviso de prueba ha fallado")
+			return errors.New("some test alert failed")
 		}
 		return nil
 	}
@@ -123,7 +123,7 @@ func rulesCommand(ctx context.Context, db *store.Store, alerts api.Alerts, args 
 
 func ruleNotFound(err error, id int64) error {
 	if errors.Is(err, store.ErrNotFound) {
-		return fmt.Errorf("el proyecto no tiene ninguna regla %d", id)
+		return fmt.Errorf("the project has no rule %d", id)
 	}
 	return err
 }
@@ -141,7 +141,7 @@ func readRule(path string, in io.Reader) (store.Rule, error) {
 		return r, err
 	}
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return r, fmt.Errorf("la regla no es JSON válido: %w", err)
+		return r, fmt.Errorf("the rule is not valid JSON: %w", err)
 	}
 	return r, nil
 }
@@ -158,7 +158,7 @@ func printSaved(out io.Writer, r store.Rule, generated []string) error {
 		return err
 	}
 	if len(generated) > 0 {
-		_, err := fmt.Fprintln(out, "\nGuarda el secreto del webhook ahora: no se vuelve a mostrar entero.")
+		_, err := fmt.Fprintln(out, "\nSave the webhook secret now: it won't be shown in full again.")
 		return err
 	}
 	return nil
@@ -170,17 +170,17 @@ func listRules(ctx context.Context, db *store.Store, p store.Project, out io.Wri
 		return err
 	}
 	if len(rules) == 0 {
-		_, err := fmt.Fprintf(out, "%q no tiene reglas: avisa de los errores nuevos y las regresiones con SLACK_WEBHOOK_URL y LINEAR_API_KEY\n", p.Name)
+		_, err := fmt.Fprintf(out, "%q has no rules: it alerts on new errors and regressions with SLACK_WEBHOOK_URL and LINEAR_API_KEY\n", p.Name)
 		return err
 	}
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tNOMBRE\tACTIVA\tCONDICIONES\tACCIONES\tCADA")
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tACTIVE\tCONDITIONS\tACTIONS\tEVERY")
 	for _, r := range rules {
 		var acts []string
 		for _, a := range r.Actions {
 			acts = append(acts, a.Type+":"+a.ID)
 		}
-		active := "sí"
+		active := "yes"
 		if !r.Enabled {
 			active = "no"
 		}
@@ -196,27 +196,27 @@ func listRules(ctx context.Context, db *store.Store, p store.Project, out io.Wri
 func conditionsText(c store.RuleConditions) string {
 	var parts []string
 	if c.New {
-		parts = append(parts, "nuevo")
+		parts = append(parts, "new")
 	}
 	if c.Regressed {
-		parts = append(parts, "regresión")
+		parts = append(parts, "regression")
 	}
 	if f := c.Frequency; f != nil {
-		parts = append(parts, fmt.Sprintf(">%d eventos/%d min", f.Events, f.WindowMinutes))
+		parts = append(parts, fmt.Sprintf(">%d events/%d min", f.Events, f.WindowMinutes))
 	}
 	if u := c.Users; u != nil {
-		parts = append(parts, fmt.Sprintf(">%d usuarios", u.Users))
+		parts = append(parts, fmt.Sprintf(">%d users", u.Users))
 	}
-	s := strings.Join(parts, " o ")
+	s := strings.Join(parts, " or ")
 	var filters []string
 	if len(c.Environments) > 0 {
-		filters = append(filters, "entorno "+strings.Join(c.Environments, "|"))
+		filters = append(filters, "environment "+strings.Join(c.Environments, "|"))
 	}
 	if len(c.Levels) > 0 {
-		filters = append(filters, "nivel "+strings.Join(c.Levels, "|"))
+		filters = append(filters, "level "+strings.Join(c.Levels, "|"))
 	}
 	for _, t := range c.Tags {
-		filters = append(filters, "etiqueta "+t.Key+"="+t.Value)
+		filters = append(filters, "tag "+t.Key+"="+t.Value)
 	}
 	if len(filters) > 0 {
 		s += "; " + strings.Join(filters, ", ")

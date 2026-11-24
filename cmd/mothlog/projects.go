@@ -14,13 +14,13 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
-const projectsUsage = "uso: intake-errors projects create <nombre> | projects list | projects labels <nombre> [<id>[,<id>…] | --clear]" +
-	" | projects filters <nombre> [set <clave> [<valor>…]] | projects dropped <nombre> [<días>]" +
-	" | projects rules <nombre> [show|create|edit|delete|test …]"
+const projectsUsage = "usage: mothlog projects create <name> | projects list | projects labels <name> [<id>[,<id>…] | --clear]" +
+	" | projects filters <name> [set <key> [<value>…]] | projects dropped <name> [<days>]" +
+	" | projects rules <name> [show|create|edit|delete|test …]"
 
 func projects(cfg config, args []string, out io.Writer) error {
 	if len(args) == 0 {
@@ -44,7 +44,7 @@ func projects(cfg config, args []string, out io.Writer) error {
 	case args[0] == "create" && len(args) == 2:
 		name := strings.TrimSpace(args[1])
 		if name == "" {
-			return errors.New("el nombre no puede estar vacío")
+			return errors.New("the name can't be empty")
 		}
 		key, err := newPublicKey()
 		if err != nil {
@@ -63,7 +63,7 @@ func projects(cfg config, args []string, out io.Writer) error {
 			return err
 		}
 		tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-		_, _ = fmt.Fprintln(tw, "ID\tNOMBRE\tDSN")
+		_, _ = fmt.Fprintln(tw, "ID\tNAME\tDSN")
 		for _, p := range ps {
 			d, _ := dsn(cfg.PublicURL, p)
 			_, _ = fmt.Fprintf(tw, "%d\t%s\t%s\n", p.ID, p.Name, d)
@@ -96,11 +96,11 @@ func newPublicKey() (string, error) {
 
 func dsn(publicURL string, p store.Project) (string, error) {
 	if publicURL == "" {
-		return "", errors.New("falta PUBLIC_URL para escribir el DSN")
+		return "", errors.New("PUBLIC_URL is needed to write the DSN")
 	}
 	u, err := url.Parse(publicURL)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", fmt.Errorf("PUBLIC_URL no válida: %q", publicURL)
+		return "", fmt.Errorf("invalid PUBLIC_URL: %q", publicURL)
 	}
 	return fmt.Sprintf("%s://%s@%s/%d", u.Scheme, p.PublicKey, u.Host, p.ID), nil
 }
@@ -111,7 +111,7 @@ func labelsCommand(ctx context.Context, db *store.Store, args []string, out io.W
 	name := args[0]
 	notFound := func(err error) error {
 		if errors.Is(err, store.ErrNotFound) {
-			return fmt.Errorf("no hay ningún proyecto llamado %q", name)
+			return fmt.Errorf("there is no project named %q", name)
 		}
 		return err
 	}
@@ -121,7 +121,7 @@ func labelsCommand(ctx context.Context, db *store.Store, args []string, out io.W
 			return notFound(err)
 		}
 		if len(p.LinearLabelIDs) == 0 {
-			_, err = fmt.Fprintf(out, "las issues de Linear de %q no llevan etiquetas propias, solo las de LINEAR_LABEL_IDS\n", name)
+			_, err = fmt.Fprintf(out, "Linear issues from %q have no labels of their own, only those in LINEAR_LABEL_IDS\n", name)
 			return err
 		}
 		_, err = fmt.Fprintln(out, strings.Join(p.LinearLabelIDs, "\n"))
@@ -140,9 +140,9 @@ func labelsCommand(ctx context.Context, db *store.Store, args []string, out io.W
 	}
 	var err error
 	if len(ids) == 0 {
-		_, err = fmt.Fprintf(out, "las issues de Linear de %q ya no llevan etiquetas propias\n", name)
+		_, err = fmt.Fprintf(out, "Linear issues from %q no longer have labels of their own\n", name)
 	} else {
-		_, err = fmt.Fprintf(out, "las issues de Linear de %q llevan además: %s\n", name, strings.Join(ids, ", "))
+		_, err = fmt.Fprintf(out, "Linear issues from %q also get: %s\n", name, strings.Join(ids, ", "))
 	}
 	return err
 }
@@ -152,10 +152,10 @@ func parseLabelIDs(s string) ([]string, error) {
 	for _, id := range strings.Split(s, ",") {
 		id = strings.TrimSpace(id)
 		if id == "" {
-			return nil, fmt.Errorf("id de etiqueta vacío en %q", s)
+			return nil, fmt.Errorf("empty label id in %q", s)
 		}
 		if strings.HasPrefix(id, "-") || strings.ContainsAny(id, " \t") {
-			return nil, fmt.Errorf("id de etiqueta no válido: %q", id)
+			return nil, fmt.Errorf("invalid label id: %q", id)
 		}
 		if !slices.Contains(ids, id) {
 			ids = append(ids, id)

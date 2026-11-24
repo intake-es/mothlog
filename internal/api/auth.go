@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Principal es quien hace la petición.
@@ -25,13 +25,13 @@ type Authenticator func(r *http.Request) (p Principal, ok bool, err error)
 
 // ErrBadToken es el error de un Authenticator que reconoce el token pero no
 // lo acepta: es un 401.
-var ErrBadToken = errors.New("token no válido o revocado")
+var ErrBadToken = errors.New("invalid or revoked token")
 
 // ErrForbidden envuelve el error de un Authenticator que reconoce la petición
 // pero no la acepta: es un 403 con su mensaje.
-var ErrForbidden = errors.New("prohibido")
+var ErrForbidden = errors.New("forbidden")
 
-// BearerToken autentica con `Authorization: Bearer ie_…`.
+// BearerToken autentica con `Authorization: Bearer ml_…` (o ie_…, los de antes).
 func BearerToken(st *store.Store) Authenticator {
 	return func(r *http.Request) (Principal, bool, error) {
 		h := r.Header.Get("Authorization")
@@ -70,7 +70,7 @@ func RequireAuth(auths ...Authenticator) func(http.Handler) http.Handler {
 // 401; badToken dice si la petición traía un token que no vale.
 func RequireAuthChallenge(challenge func(badToken bool) string, auths ...Authenticator) func(http.Handler) http.Handler {
 	if challenge == nil {
-		challenge = func(bool) string { return `Bearer realm="intake-errors"` }
+		challenge = func(bool) string { return `Bearer realm="mothlog"` }
 	}
 	unauthorized := func(w http.ResponseWriter, msg string, badToken bool) {
 		w.Header().Set("WWW-Authenticate", challenge(badToken))
@@ -90,8 +90,8 @@ func RequireAuthChallenge(challenge func(badToken bool) string, auths ...Authent
 					return
 				}
 				if err != nil {
-					slog.ErrorContext(r.Context(), "autenticar", "err", err)
-					writeError(w, http.StatusInternalServerError, "error interno")
+					slog.ErrorContext(r.Context(), "authenticate", "err", err)
+					writeError(w, http.StatusInternalServerError, "internal error")
 					return
 				}
 				if ok {
@@ -99,7 +99,7 @@ func RequireAuthChallenge(challenge func(badToken bool) string, auths ...Authent
 					return
 				}
 			}
-			unauthorized(w, "falta Authorization: Bearer <token>", false)
+			unauthorized(w, "missing Authorization: Bearer <token>", false)
 		})
 	}
 }

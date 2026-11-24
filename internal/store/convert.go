@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 // ConvertOptions dice cómo convertir los eventos guardados en events.data.
@@ -95,7 +95,7 @@ func (s *Store) convertBatch(ctx context.Context, after int64, o ConvertOptions)
 			}
 			enc, err := encodeLegacy(data)
 			if err != nil && o.Log != nil {
-				o.Log.WarnContext(ctx, "convertir evento: se guarda tal cual", "id", id, "err", err)
+				o.Log.WarnContext(ctx, "convert event: stored as is", "id", id, "err", err)
 			}
 			ids, blobs = append(ids, id), append(blobs, enc.Data)
 			labels, idents = append(labels, enc.UserLabel), append(idents, enc.UserIdent)
@@ -123,7 +123,7 @@ func (s *Store) convertBatch(ctx context.Context, after int64, o ConvertOptions)
 		return err
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("convertir eventos: %w", err)
+		return 0, 0, fmt.Errorf("convert events: %w", err)
 	}
 	return n, last, nil
 }
@@ -151,7 +151,7 @@ func (s *Store) RunEventConversion(ctx context.Context, log *slog.Logger, retry,
 		start := time.Now()
 		n, err := s.ConvertLegacyEvents(ctx, DefaultConvertOptions(log))
 		if n > 0 {
-			log.InfoContext(ctx, "eventos convertidos al formato comprimido", "eventos", n, "duración", time.Since(start).Round(time.Millisecond))
+			log.InfoContext(ctx, "events converted to the compressed format", "events", n, "duration", time.Since(start).Round(time.Millisecond))
 		}
 		if ctx.Err() != nil {
 			return
@@ -165,7 +165,7 @@ func (s *Store) RunEventConversion(ctx context.Context, log *slog.Logger, retry,
 		}
 		wait := every
 		if err != nil {
-			log.ErrorContext(ctx, "convertir eventos", "err", err)
+			log.ErrorContext(ctx, "convert events", "err", err)
 			wait = retry
 		}
 		select {
@@ -182,7 +182,7 @@ func (s *Store) hasLegacyEvents(ctx context.Context) (bool, error) {
 	var left bool
 	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM events WHERE data IS NOT NULL)`).Scan(&left)
 	if err != nil {
-		return false, fmt.Errorf("buscar eventos sin convertir: %w", err)
+		return false, fmt.Errorf("find unconverted events: %w", err)
 	}
 	return left, nil
 }

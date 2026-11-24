@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 version: 2
 
-project_name: intake-errors
+project_name: mothlog
 
 before:
   hooks:
@@ -9,9 +9,9 @@ before:
     - npm --prefix web run build
 
 builds:
-  - id: intake-errors
-    main: ./cmd/intake-errors
-    binary: intake-errors
+  - id: mothlog
+    main: ./cmd/mothlog
+    binary: mothlog
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin]
@@ -35,11 +35,11 @@ snapshot:
   version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
 
 dockers_v2:
-  - id: intake-errors
-    ids: [intake-errors]
+  - id: mothlog
+    ids: [mothlog]
     dockerfile: Dockerfile.release
     images:
-      - ghcr.io/{{ tolower (envOrDefault "GITHUB_REPOSITORY_OWNER" "intake-es") }}/intake-errors
+      - ghcr.io/{{ tolower (envOrDefault "GITHUB_REPOSITORY_OWNER" "intake-es") }}/mothlog
     tags:
       - "{{ .Version }}"
       - "{{ if not .Prerelease }}latest{{ end }}"
@@ -47,7 +47,7 @@ dockers_v2:
       - linux/amd64
       - linux/arm64
     labels:
-      org.opencontainers.image.title: intake-errors
+      org.opencontainers.image.title: mothlog
       org.opencontainers.image.source: "{{ .GitURL }}"
       org.opencontainers.image.version: "{{ .Version }}"
       org.opencontainers.image.revision: "{{ .FullCommit }}"

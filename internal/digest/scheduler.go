@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // TickInterval es cada cuánto mira el proceso si toca algún resumen.
@@ -44,19 +44,19 @@ func (s *Scheduler) Tick(ctx context.Context) (int, error) {
 		if !send {
 			d, err := Build(ctx, s.st, Options{Config: c, Start: start, End: end, Base: s.base})
 			if err != nil {
-				s.log.ErrorContext(ctx, "armar el resumen", "proyecto", c.ProjectID, "err", err)
+				s.log.ErrorContext(ctx, "build digest", "project", c.ProjectID, "err", err)
 				continue
 			}
 			send = !d.Empty
 		}
 		ok, err := s.st.EnqueueDigest(ctx, c.ProjectID, start, end, send, now)
 		if err != nil {
-			s.log.ErrorContext(ctx, "encolar el resumen", "proyecto", c.ProjectID, "err", err)
+			s.log.ErrorContext(ctx, "enqueue digest", "project", c.ProjectID, "err", err)
 			continue
 		}
 		if ok {
 			n++
-			s.log.InfoContext(ctx, "resumen encolado", "proyecto", c.ProjectID, "desde", start, "hasta", end, "vacío_sin_envío", !send)
+			s.log.InfoContext(ctx, "digest enqueued", "project", c.ProjectID, "from", start, "to", end, "empty_not_sent", !send)
 		}
 	}
 	return n, nil
@@ -68,7 +68,7 @@ func (s *Scheduler) Run(ctx context.Context, interval time.Duration) {
 	defer t.Stop()
 	for {
 		if _, err := s.Tick(ctx); err != nil && ctx.Err() == nil {
-			s.log.ErrorContext(ctx, "resúmenes", "err", err)
+			s.log.ErrorContext(ctx, "digests", "err", err)
 		}
 		select {
 		case <-ctx.Done():

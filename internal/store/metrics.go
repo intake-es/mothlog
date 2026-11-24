@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // OutboxStats son las filas de alert_outbox de un canal.
@@ -64,7 +64,7 @@ func (s *Store) MetricsSnapshot(ctx context.Context) (MetricsSnapshot, error) {
 		})
 	})
 	if err := s.pool.SendBatch(ctx, b); err != nil {
-		return MetricsSnapshot{}, fmt.Errorf("leer métricas: %w", err)
+		return MetricsSnapshot{}, fmt.Errorf("read metrics: %w", err)
 	}
 	return snap, nil
 }

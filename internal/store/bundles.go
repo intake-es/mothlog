@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // PutUploadChunks guarda trozos de una subida por trozos, por su sha1 en hexadecimal.
@@ -18,7 +18,7 @@ func (s *Store) PutUploadChunks(ctx context.Context, chunks map[string][]byte) e
 			ON CONFLICT (sha1) DO UPDATE SET uploaded_at = now()`, sum, data)
 	}
 	if err := s.pool.SendBatch(ctx, b); err != nil {
-		return fmt.Errorf("guardar trozos: %w", err)
+		return fmt.Errorf("save chunks: %w", err)
 	}
 	return nil
 }
@@ -27,11 +27,11 @@ func (s *Store) PutUploadChunks(ctx context.Context, chunks map[string][]byte) e
 func (s *Store) MissingUploadChunks(ctx context.Context, sums []string) ([]string, error) {
 	rows, err := s.pool.Query(ctx, `SELECT sha1 FROM upload_chunks WHERE `+s.pool.Dialect().InList("sha1", "$1"), sums)
 	if err != nil {
-		return nil, fmt.Errorf("buscar trozos: %w", err)
+		return nil, fmt.Errorf("find chunks: %w", err)
 	}
 	have, err := db.CollectRows(rows, db.RowTo[string])
 	if err != nil {
-		return nil, fmt.Errorf("buscar trozos: %w", err)
+		return nil, fmt.Errorf("find chunks: %w", err)
 	}
 	found := make(map[string]bool, len(have))
 	for _, h := range have {
@@ -55,7 +55,7 @@ func (s *Store) UploadChunk(ctx context.Context, sum string) ([]byte, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("leer trozo: %w", err)
+		return nil, fmt.Errorf("read chunk: %w", err)
 	}
 	return data, nil
 }
@@ -64,7 +64,7 @@ func (s *Store) UploadChunk(ctx context.Context, sum string) ([]byte, error) {
 func (s *Store) DeleteUploadChunksBefore(ctx context.Context, t time.Time) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM upload_chunks WHERE uploaded_at < $1`, t)
 	if err != nil {
-		return 0, fmt.Errorf("borrar trozos: %w", err)
+		return 0, fmt.Errorf("delete chunks: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }
@@ -85,7 +85,7 @@ func (s *Store) BundleAssembled(ctx context.Context, checksum string, projectIDs
 		`SELECT count(*) FROM artifact_bundles WHERE checksum = $1 AND `+s.pool.Dialect().InList("project_id", "$2"),
 		checksum, projectIDs).Scan(&n)
 	if err != nil {
-		return false, fmt.Errorf("buscar bundle: %w", err)
+		return false, fmt.Errorf("find bundle: %w", err)
 	}
 	return n == len(projectIDs), nil
 }
@@ -107,7 +107,7 @@ func (s *Store) PutBundle(ctx context.Context, b Bundle) error {
 				return ErrNotFound
 			}
 			if err != nil {
-				return fmt.Errorf("guardar bundle: %w", err)
+				return fmt.Errorf("save bundle: %w", err)
 			}
 		}
 		return nil

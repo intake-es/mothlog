@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"slices"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Channels son los canales por defecto del servidor (Slack y Linear) y la
@@ -73,7 +73,7 @@ func (h *handlers) setDefaultAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	var body map[string]json.RawMessage
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body == nil {
-		writeError(w, http.StatusBadRequest, `el cuerpo debe ser {"slack": true|false, "linear": true|false}`)
+		writeError(w, http.StatusBadRequest, `the body must be {"slack": true|false, "linear": true|false}`)
 		return
 	}
 	d, err := h.st.DefaultAlerts(r.Context(), id)
@@ -84,7 +84,7 @@ func (h *handlers) setDefaultAlerts(w http.ResponseWriter, r *http.Request) {
 	for k, raw := range body {
 		var v *bool
 		if err := json.Unmarshal(raw, &v); err != nil || v == nil {
-			writeError(w, http.StatusBadRequest, k+" debe ser true o false")
+			writeError(w, http.StatusBadRequest, k+" must be true or false")
 			return
 		}
 		switch k {
@@ -93,7 +93,7 @@ func (h *handlers) setDefaultAlerts(w http.ResponseWriter, r *http.Request) {
 		case "linear":
 			d.Linear = *v
 		default:
-			writeError(w, http.StatusBadRequest, "canal desconocido: "+k+"; son slack y linear")
+			writeError(w, http.StatusBadRequest, "unknown channel: "+k+"; they are slack and linear")
 			return
 		}
 	}
@@ -120,15 +120,15 @@ func (h *handlers) createLinear(w http.ResponseWriter, r *http.Request) {
 	}
 	a := actorFrom(r.Context())
 	if a == nil {
-		writeError(w, http.StatusForbidden, "no se sabe quién la crea")
+		writeError(w, http.StatusForbidden, "unknown creator")
 		return
 	}
 	link, created, err := h.channels.CreateLinear(r.Context(), id, *a)
 	var le *alert.LinearError
 	switch {
 	case errors.As(err, &le):
-		slog.ErrorContext(r.Context(), "crear issue de Linear", "issue", id, "err", le.Err)
-		writeError(w, http.StatusBadGateway, "Linear no ha podido crear la issue; prueba otra vez en un rato")
+		slog.ErrorContext(r.Context(), "create Linear issue", "issue", id, "err", le.Err)
+		writeError(w, http.StatusBadGateway, "Linear could not create the issue; try again in a while")
 		return
 	case errors.Is(err, alert.ErrLinearOff):
 		writeError(w, http.StatusConflict, err.Error())

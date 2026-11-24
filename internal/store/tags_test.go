@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/intake-es/intake-errors/migrations"
+	"github.com/intake-es/mothlog/migrations"
 )
 
 // La migración cuenta las etiquetas y los usuarios de los eventos que ya

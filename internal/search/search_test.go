@@ -90,14 +90,14 @@ func TestParseErrors(t *testing.T) {
 		pos   int
 		inMsg string
 	}{
-		{`os:"Mac OS`, ErrUnclosedQuote, 3, "comillas de cierre"},
-		{`"sin cerrar`, ErrUnclosedQuote, 0, "comillas de cierre"},
-		{`timeout "a`, ErrUnclosedQuote, 8, "carácter 9"},
-		{":Chrome", ErrEmptyKey, 0, "falta la clave"},
+		{`os:"Mac OS`, ErrUnclosedQuote, 3, "closing quotes"},
+		{`"sin cerrar`, ErrUnclosedQuote, 0, "closing quotes"},
+		{`timeout "a`, ErrUnclosedQuote, 8, "character 9"},
+		{":Chrome", ErrEmptyKey, 0, "missing key"},
 		{"! browser:Chrome", ErrLoneNegation, 0, "!browser:Chrome"},
 		{"timeout !", ErrLoneNegation, 8, "!"},
-		{"is:abierto", ErrBadStatus, 3, "is:abierto no existe; is: es open, resolved, resolved_next, silenced, regressed"},
-		{`os:"Mac"OS`, ErrAfterQuote, 8, "espacio"},
+		{"is:abierto", ErrBadStatus, 3, "is:abierto does not exist; is: is open, resolved, resolved_next, silenced, regressed"},
+		{`os:"Mac"OS`, ErrAfterQuote, 8, "space goes after"},
 	}
 	for _, tt := range tests {
 		_, err := Parse(tt.in)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type githubRepo struct {
@@ -55,7 +55,7 @@ type githubPullPayload struct {
 func (h *Handler) github(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.opts.GitHubSecret == "" {
-		reply(w, http.StatusServiceUnavailable, "falta GITHUB_WEBHOOK_SECRET en el servidor")
+		reply(w, http.StatusServiceUnavailable, "GITHUB_WEBHOOK_SECRET is missing on the server")
 		return
 	}
 	body, ok := readBody(w, r)
@@ -64,12 +64,12 @@ func (h *Handler) github(w http.ResponseWriter, r *http.Request) {
 	}
 	sig, found := strings.CutPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
 	if !found {
-		h.opts.Log.WarnContext(ctx, "webhook de GitHub rechazado", "motivo", "sin X-Hub-Signature-256")
+		h.opts.Log.WarnContext(ctx, "GitHub webhook rejected", "reason", "no X-Hub-Signature-256")
 		reply(w, http.StatusUnauthorized, errSignature.Error())
 		return
 	}
 	if err := verify(h.opts.GitHubSecret, body, sig); err != nil {
-		h.opts.Log.WarnContext(ctx, "webhook de GitHub rechazado", "motivo", err)
+		h.opts.Log.WarnContext(ctx, "GitHub webhook rejected", "reason", err)
 		reply(w, http.StatusUnauthorized, err.Error())
 		return
 	}
@@ -84,37 +84,37 @@ func (h *Handler) github(w http.ResponseWriter, r *http.Request) {
 	case "issues":
 		var p githubIssuesPayload
 		if err := json.Unmarshal(body, &p); err != nil {
-			reply(w, http.StatusBadRequest, "cuerpo no válido")
+			reply(w, http.StatusBadRequest, "invalid body")
 			return
 		}
 		updated, apply = p.Issue.UpdatedAt, func() error { return h.githubIssue(r, p) }
 	case "pull_request":
 		var p githubPullPayload
 		if err := json.Unmarshal(body, &p); err != nil {
-			reply(w, http.StatusBadRequest, "cuerpo no válido")
+			reply(w, http.StatusBadRequest, "invalid body")
 			return
 		}
 		updated, apply = p.PullRequest.UpdatedAt, func() error { return h.githubPull(r, p) }
 	}
 	if apply != nil && (updated.IsZero() || h.opts.Now().Sub(updated) > store.WebhookDeliveryRetention) {
-		h.opts.Log.WarnContext(ctx, "webhook de GitHub rechazado", "motivo", "entrega vieja", "entrega", delivery, "updated_at", updated)
-		reply(w, http.StatusUnauthorized, "entrega vieja o sin updated_at")
+		h.opts.Log.WarnContext(ctx, "GitHub webhook rejected", "reason", "stale delivery", "delivery", delivery, "updated_at", updated)
+		reply(w, http.StatusUnauthorized, "stale delivery or no updated_at")
 		return
 	}
 	// Una repetida se reconoce por su id o por su cuerpo.
 	fresh, err := h.st.RecordWebhookDelivery(ctx, store.ProviderGitHub, delivery, body, event)
 	if err != nil {
-		h.opts.Log.ErrorContext(ctx, "webhook de GitHub", "err", err)
-		reply(w, http.StatusInternalServerError, "error interno")
+		h.opts.Log.ErrorContext(ctx, "GitHub webhook", "err", err)
+		reply(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if !fresh {
-		h.opts.Log.WarnContext(ctx, "webhook de GitHub repetido", "entrega", delivery)
-		reply(w, http.StatusOK, "ya recibida")
+		h.opts.Log.WarnContext(ctx, "duplicate GitHub webhook", "delivery", delivery)
+		reply(w, http.StatusOK, "already received")
 		return
 	}
 	if apply == nil {
-		reply(w, http.StatusOK, "ignorada")
+		reply(w, http.StatusOK, "ignored")
 		return
 	}
 	if err := apply(); err != nil {
@@ -212,7 +212,7 @@ func (h *Handler) githubPull(r *http.Request, p githubPullPayload) error {
 		}
 	}
 	if skipped > 0 {
-		h.opts.Log.WarnContext(ctx, "PR con demasiados errores enlazados", "pr", pr.HTMLURL, "sin_enlazar", skipped, "tope", MaxLinkedIssues)
+		h.opts.Log.WarnContext(ctx, "PR with too many linked errors", "pr", pr.HTMLURL, "unlinked", skipped, "limit", MaxLinkedIssues)
 	}
 	return nil
 }

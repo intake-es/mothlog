@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // withReleaseEnv devuelve el envío del navegador con otro event_id, release y

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var ErrNoPublicKey = errors.New("falta la clave pública del DSN")
+var ErrNoPublicKey = errors.New("the DSN public key is missing")
 
 // PublicKey saca la clave pública de X-Sentry-Auth (SDK de servidor) o de
 // sentry_key en la query (navegador).

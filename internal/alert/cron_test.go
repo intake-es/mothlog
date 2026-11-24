@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func cronConfig() *store.MonitorConfig {
@@ -65,15 +65,15 @@ func TestCronDefaultAlerts(t *testing.T) {
 		t.Errorf("avisos = %v; quería %v", kinds, want)
 	}
 	msgs := e.slack.payloads(t)
-	if len(msgs) != 5 || msgs[0].Text != "Cron fallido en backend: falla" || !slices.Equal(buttons(msgs[0]), []string{"Ver el monitor"}) {
+	if len(msgs) != 5 || msgs[0].Text != "Cron failed in backend: falla" || !slices.Equal(buttons(msgs[0]), []string{"View monitor"}) {
 		t.Fatalf("slack = %+v", msgs)
 	}
 	body, _ := json.Marshal(msgs[1])
-	if !strings.Contains(string(body), "Cron pasado de tiempo") || !strings.Contains(string(body), "5 min") {
+	if !strings.Contains(string(body), "Cron timed out") || !strings.Contains(string(body), "5 min") {
 		t.Errorf("timeout = %s", body)
 	}
 	issues, order := e.linear.snapshot()
-	if len(order) != 5 || !strings.HasPrefix(issues[order[0]].Title, "[backend] Cron fallido: falla") ||
+	if len(order) != 5 || !strings.HasPrefix(issues[order[0]].Title, "[backend] Cron failed: falla") ||
 		!strings.Contains(issues[order[0]].Description, fmt.Sprintf("%s/monitors/%d/falla", publicURL, e.project)) {
 		t.Errorf("linear = %+v", issues[order[0]])
 	}
@@ -89,7 +89,7 @@ func TestCronRuleKeepsIssueDefaults(t *testing.T) {
 	if n := e.send(t); n != 2 {
 		t.Fatalf("enviados = %d", n)
 	}
-	if got := e.slack.messages(); len(got) != 1 || !strings.HasPrefix(got[0], "Nuevo error en backend") {
+	if got := e.slack.messages(); len(got) != 1 || !strings.HasPrefix(got[0], "New error in backend") {
 		t.Errorf("slack = %v", got)
 	}
 	if reqs := hook.all(); len(reqs) != 1 || reqs[0].Header.Get(HeaderEvent) != store.KindCronFailed {
@@ -106,7 +106,7 @@ func TestIssueRuleKeepsCronDefaults(t *testing.T) {
 	if n := e.send(t); n != 1 {
 		t.Fatalf("enviados = %d", n)
 	}
-	if got := e.slack.messages(); len(got) != 1 || !strings.HasPrefix(got[0], "Cron fallido en backend") {
+	if got := e.slack.messages(); len(got) != 1 || !strings.HasPrefix(got[0], "Cron failed in backend") {
 		t.Errorf("slack = %v", got)
 	}
 	if len(hook.all()) != 0 {
@@ -162,7 +162,7 @@ func TestCronRuleConditions(t *testing.T) {
 	if pl.Issue != nil || pl.Event != nil || pl.Monitor == nil || pl.CheckIn == nil || pl.Project != "backend" ||
 		pl.Monitor.URL != fmt.Sprintf("%s/monitors/%d/a", publicURL, e.project) || pl.Monitor.Schedule.Crontab != "*/10 * * * *" ||
 		pl.CheckIn.Status != "error" || pl.CheckIn.Release != "1.2.0" || pl.CheckIn.Environment != "production" ||
-		!strings.HasPrefix(pl.Markdown, "# Cron fallido: a") {
+		!strings.HasPrefix(pl.Markdown, "# Cron failed: a") {
 		t.Errorf("payload = %s", r.Body)
 	}
 }
@@ -170,7 +170,7 @@ func TestCronRuleConditions(t *testing.T) {
 func TestCronRuleValidation(t *testing.T) {
 	r := webhookRule("https://hook.example.com", store.RuleConditions{Cron: &store.CronCondition{}})
 	r.Name = "x"
-	if _, err := r.Normalize(); err == nil || !strings.Contains(err.Error(), "failed, missed, timeout o recovered") {
+	if _, err := r.Normalize(); err == nil || !strings.Contains(err.Error(), "failed, missed, timeout or recovered") {
 		t.Errorf("cron vacío: %v", err)
 	}
 	r.Conditions.Cron = &store.CronCondition{Missed: true, Monitors: []string{" copia ", "copia", ""}}
@@ -208,15 +208,15 @@ func TestCronEachAction(t *testing.T) {
 			t.Errorf("sin enviar: %+v", o)
 		}
 	}
-	if m := mail.messages(); len(m) != 1 || !strings.Contains(m[0].Data, "Cron sin ejecutar en backend: copia") ||
-		!strings.Contains(m[0].Data, "Margen: 1 min") {
+	if m := mail.messages(); len(m) != 1 || !strings.Contains(m[0].Data, "Cron missed in backend: copia") ||
+		!strings.Contains(m[0].Data, "Margin: 1 min") {
 		t.Errorf("correo = %+v", m)
 	}
 	var dp discordPayload
-	if d := discordSrv.all(); len(d) != 1 || json.Unmarshal(d[0].Body, &dp) != nil || dp.Content != "**Cron sin ejecutar** · backend · production" {
+	if d := discordSrv.all(); len(d) != 1 || json.Unmarshal(d[0].Body, &dp) != nil || dp.Content != "**Cron missed** · backend · production" {
 		t.Errorf("discord = %+v", dp)
 	}
-	if tg := telegramSrv.all(); len(tg) != 1 || !strings.Contains(string(tg[0].Body), "Ver el monitor") {
+	if tg := telegramSrv.all(); len(tg) != 1 || !strings.Contains(string(tg[0].Body), "View monitor") {
 		t.Errorf("telegram = %+v", tg)
 	}
 	if nt := ntfySrv.all(); len(nt) != 1 || nt[0].Header.Get("Tags") != "alarm_clock" || nt[0].Header.Get("Priority") != "high" {

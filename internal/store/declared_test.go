@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/migrations"
-	sqlitemigrations "github.com/intake-es/intake-errors/migrations/sqlite"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/migrations"
+	sqlitemigrations "github.com/intake-es/mothlog/migrations/sqlite"
 )
 
 // seedDeclared deja, antes de la 00024, una release finalizada, una con
@@ -94,7 +94,7 @@ func TestMigrationDeclaredReleasesPostgres(t *testing.T) {
 
 func TestMigrationDeclaredReleasesSQLite(t *testing.T) {
 	ctx := context.Background()
-	lite, err := db.OpenSQLite(ctx, "sqlite://"+filepath.Join(t.TempDir(), "intake.db"), db.SQLiteOptions{})
+	lite, err := db.OpenSQLite(ctx, "sqlite://"+filepath.Join(t.TempDir(), "mothlog.db"), db.SQLiteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

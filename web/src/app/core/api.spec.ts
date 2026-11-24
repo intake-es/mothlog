@@ -66,12 +66,23 @@ describe('Api', () => {
     req.flush({ data: [] });
   });
 
-  it('saca el mensaje de los errores de la API', () => {
-    expect(apiError({ status: 409, error: { error: 'el último evento no tiene release' } })).toBe(
-      'el último evento no tiene release',
-    );
-    expect(apiError({ status: 404, error: '{"error":"no encontrado"}' })).toBe('no encontrado');
+  it('saca el mensaje de los errores de la API y, en español, lo traduce', () => {
+    lang.set('es');
+    expect(
+      apiError({ status: 409, error: { error: "the issue's latest event has no release" } }),
+    ).toBe('el último evento del issue no tiene release');
+    expect(apiError({ status: 404, error: '{"error":"not found"}' })).toBe('no encontrado');
+    expect(
+      apiError({
+        status: 400,
+        error: { error: 'invalid parameter: missing url (action 1, slack)' },
+      }),
+    ).toBe('parámetro no válido: falta url (acción 1, slack)');
+    expect(apiError({ status: 400, error: { error: 'something new' } })).toBe('something new');
     expect(apiError({ status: 0 })).toBe('No hay conexión con el servidor.');
     expect(apiError({ status: 500, error: 'texto' })).toBe('Algo ha fallado en el servidor.');
+    lang.set('en');
+    expect(apiError({ status: 404, error: '{"error":"not found"}' })).toBe('not found');
+    lang.set('es');
   });
 });

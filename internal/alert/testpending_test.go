@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // «Probar» manda sin guardar nada: ni enlaces que aplicar después ni
@@ -33,7 +34,7 @@ func TestTestPendingSavesNothing(t *testing.T) {
 		{ID: "lin", Type: store.ActionLinear},
 	} {
 		r := store.Rule{ID: 1, ProjectID: e.project, Name: "prueba", Actions: []store.RuleAction{act}}
-		p := testPending(project, r, time.Now())
+		p := testPending(project, r, time.Now(), lang.EN)
 		if !p.test {
 			t.Fatalf("%s: el aviso de prueba no va marcado como prueba", act.Type)
 		}

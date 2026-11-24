@@ -14,12 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/sourcemap"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/sourcemap"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 // sessionAuth hace de la sesión de la interfaz: X-Test-User es el login.
@@ -31,12 +32,16 @@ func sessionAuth(r *http.Request) (api.Principal, bool, error) {
 }
 
 // setupWithSession es setup con la sesión de la interfaz además del token.
-func setupWithSession(t *testing.T) *env {
+func setupWithSession(t *testing.T) *env { t.Helper(); return setupWithSessionLang(t, lang.EN) }
+
+// setupWithSessionLang es setupWithSession con DEFAULT_LANGUAGE=l.
+func setupWithSessionLang(t *testing.T, l lang.Lang) *env {
 	t.Helper()
 	db := storetest.NewDB(t)
+	db.SetDefaultLanguage(string(l))
 	mux := http.NewServeMux()
 	auth := api.RequireAuth(api.BearerToken(db.Store), sessionAuth)
-	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com", Auth: auth}); err != nil {
+	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com", Auth: auth, Lang: l}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(mux)
@@ -129,7 +134,7 @@ func TestCommentsAndHistoryAPI(t *testing.T) {
 
 	// Solo se borra lo propio.
 	path := base + "/comments/" + strconv.FormatInt(anas.ID, 10)
-	if code, b := e.do(t, http.MethodDelete, path, ""); code != http.StatusForbidden || !strings.Contains(string(b), "tus comentarios") {
+	if code, b := e.do(t, http.MethodDelete, path, ""); code != http.StatusForbidden || !strings.Contains(string(b), "your own comments") {
 		t.Errorf("borrar el de otro = %d %s", code, b)
 	}
 	if code, _ := e.asUser(t, "ana", http.MethodDelete, path, ""); code != http.StatusNoContent {
@@ -154,9 +159,12 @@ type ingestEnv struct {
 	ing *ingest.Ingester
 }
 
-func setupIngest(t *testing.T) ingestEnv {
+func setupIngest(t *testing.T) ingestEnv { t.Helper(); return setupIngestLang(t, lang.EN) }
+
+// setupIngestLang es setupIngest con DEFAULT_LANGUAGE=l.
+func setupIngestLang(t *testing.T, l lang.Lang) ingestEnv {
 	t.Helper()
-	e := setupWithSession(t)
+	e := setupWithSessionLang(t, l)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	maps := sourcemap.New(e.db.Store, log, sourcemap.Options{})
 	return ingestEnv{env: e, ing: ingest.NewIngester(e.db.Pool(), maps, nil, log)}
@@ -215,7 +223,7 @@ func wantAll(t *testing.T, what, doc string, parts ...string) {
 }
 
 func TestContextMarkdownPython(t *testing.T) {
-	e := setupIngest(t)
+	e := setupIngestLang(t, lang.ES)
 	p := e.db.AddProject(t, "backend")
 	id := e.send(t, p.ID, "api-excepcion-1", func(ev *event.Event) { ev.User = &event.User{ID: "u1"} })
 	e.send(t, p.ID, "api-excepcion-1", func(ev *event.Event) { ev.User = &event.User{ID: "u2"} })
@@ -289,7 +297,7 @@ func TestContextMarkdownPython(t *testing.T) {
 }
 
 func TestContextMarkdownBrowser(t *testing.T) {
-	e := setupIngest(t)
+	e := setupIngestLang(t, lang.ES)
 	web := e.db.AddProject(t, "web")
 	putTestSourceMaps(t, e.db, web.ID)
 	id := e.send(t, web.ID, "web-typeerror-1", func(ev *event.Event) {
@@ -318,14 +326,14 @@ func TestContextMarkdownBrowser(t *testing.T) {
 		"- Request: https://app.example.com/pedidos",
 		"### Breadcrumbs\n\nDel más viejo al más nuevo",
 		"agente (token) desde el MCP: open → resolved_next (release fixture-release-1)\n  > Arreglado en `src/carrito.ts`\n",
-		"intake-errors al desplegar: resolved_next → resolved (release fixture-release-2)\n",
+		"Mothlog al desplegar: resolved_next → resolved (release fixture-release-2)\n",
 	)
 }
 
 // Un issue con muchos breadcrumbs y comentarios largos pasa del tamaño: se
 // recorta y lo dice.
 func TestContextMarkdownTrimmed(t *testing.T) {
-	e := setupIngest(t)
+	e := setupIngestLang(t, lang.ES)
 	web := e.db.AddProject(t, "web")
 	putTestSourceMaps(t, e.db, web.ID)
 	id := e.send(t, web.ID, "web-typeerror-1", func(ev *event.Event) {
@@ -371,7 +379,7 @@ func TestLLMsTxt(t *testing.T) {
 		t.Fatalf("llms.txt = %d %s", res.StatusCode, res.Header.Get("Content-Type"))
 	}
 	wantAll(t, "llms.txt", string(b),
-		"# intake-errors\n\n> ",
+		"# Mothlog\n\n> ",
 		"https://errors.example.com/mcp",
 		"`get_issue_context`",
 		"https://errors.example.com/api/0/issues/{id}/context.md",

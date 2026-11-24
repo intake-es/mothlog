@@ -1,5 +1,5 @@
 // sentry-falso sirve una API de Sentry falsa con testdata/sentry/ para probar
-// a mano intake-errors import sentry. Acepta el token de SENTRY_IMPORT_TOKEN.
+// a mano mothlog import sentry. Acepta el token de SENTRY_IMPORT_TOKEN.
 //
 //	SENTRY_IMPORT_TOKEN=… go run ./tools/sentry-falso -addr 127.0.0.1:7803
 //
@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/sentryimport/fake"
+	"github.com/intake-es/mothlog/internal/sentryimport/fake"
 )
 
 func main() {

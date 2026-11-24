@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // pkceValue son los 43 a 128 caracteres de RFC 7636.
@@ -82,49 +82,49 @@ func (s *Server) errorRedirect(w http.ResponseWriter, r *http.Request, redirect,
 func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizations.allow(clientIP(r), s.cfg.Now()) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(limitWindow.Seconds())))
-		http.Error(w, "demasiadas peticiones de autorización desde esta dirección; vuelve a probar en unos minutos", http.StatusTooManyRequests)
+		http.Error(w, "too many authorization requests from this address; try again in a few minutes", http.StatusTooManyRequests)
 		return
 	}
 	q := r.URL.Query()
 	ctx := r.Context()
 	c, err := s.lookupClient(ctx, q.Get("client_id"))
 	if errors.Is(err, errClient) {
-		s.log.Warn("oauth: autorizar con un cliente desconocido", "client_id", q.Get("client_id"), "err", err)
+		s.log.Warn("oauth: authorize with an unknown client", "client_id", q.Get("client_id"), "err", err)
 		s.toPanel(w, r, "client")
 		return
 	}
 	if err != nil {
-		s.log.Error("oauth: leer cliente", "err", err)
+		s.log.Error("oauth: read client", "err", err)
 		s.toPanel(w, r, "server")
 		return
 	}
 	redirect := q.Get("redirect_uri")
 	// Sin redirect_uri no se acepta: el canje la exige igual que llegó aquí.
 	if !redirectMatches(c.RedirectURIs, redirect) {
-		s.log.Warn("oauth: redirect_uri que no es del cliente", "client_id", c.ID, "redirect_uri", redirect)
+		s.log.Warn("oauth: redirect_uri not registered for the client", "client_id", c.ID, "redirect_uri", redirect)
 		s.toPanel(w, r, "redirect")
 		return
 	}
 	state := q.Get("state")
 	if len(state) > maxState {
-		s.errorRedirect(w, r, redirect, "", "invalid_request", "state es demasiado largo")
+		s.errorRedirect(w, r, redirect, "", "invalid_request", "state is too long")
 		return
 	}
 	switch {
 	case q.Get("response_type") != "code":
-		s.errorRedirect(w, r, redirect, state, "unsupported_response_type", "solo response_type=code")
+		s.errorRedirect(w, r, redirect, state, "unsupported_response_type", "only response_type=code")
 		return
 	case q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256":
-		s.errorRedirect(w, r, redirect, state, "invalid_request", "hace falta PKCE con code_challenge_method=S256")
+		s.errorRedirect(w, r, redirect, state, "invalid_request", "PKCE with code_challenge_method=S256 is required")
 		return
 	case !pkceValue.MatchString(q.Get("code_challenge")):
-		s.errorRedirect(w, r, redirect, state, "invalid_request", "code_challenge no es válido")
+		s.errorRedirect(w, r, redirect, state, "invalid_request", "code_challenge is not valid")
 		return
 	case q.Get("resource") == "":
-		s.errorRedirect(w, r, redirect, state, "invalid_target", "falta resource, que es "+s.resource)
+		s.errorRedirect(w, r, redirect, state, "invalid_target", "missing resource, which is "+s.resource)
 		return
 	case !s.sameResource(q.Get("resource")):
-		s.errorRedirect(w, r, redirect, state, "invalid_target", "este servidor solo da acceso a "+s.resource)
+		s.errorRedirect(w, r, redirect, state, "invalid_target", "this server only grants access to "+s.resource)
 		return
 	}
 	now := s.cfg.Now()
@@ -134,8 +134,8 @@ func (s *Server) authorize(w http.ResponseWriter, r *http.Request) {
 		Resource: s.resource, ExpiresAt: now.Add(requestTTL),
 	}
 	if err := s.st.CreateOAuthRequest(ctx, req, now); err != nil {
-		s.log.Error("oauth: guardar petición", "err", err)
-		s.errorRedirect(w, r, redirect, state, "server_error", "error interno")
+		s.log.Error("oauth: save request", "err", err)
+		s.errorRedirect(w, r, redirect, state, "server_error", "internal error")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -167,10 +167,10 @@ func (s *Server) ok(w http.ResponseWriter, r *http.Request, err error) bool {
 	case err == nil:
 		return true
 	case errors.Is(err, store.ErrNotFound):
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "esta petición ya no existe, ha caducado o ya se respondió"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "this request no longer exists, has expired or was already answered"})
 	default:
 		s.log.ErrorContext(r.Context(), "oauth", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "error interno"})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
 	}
 	return false
 }
@@ -181,7 +181,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		Scopes []string `json:"scopes"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4<<10)).Decode(&body); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "cuerpo no válido"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
 	}
 	ctx := r.Context()
@@ -197,7 +197,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(granted) == 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "marca al menos un permiso de los que pide"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "select at least one of the requested scopes"})
 		return
 	}
 	p, _ := api.PrincipalFrom(ctx)
@@ -205,7 +205,7 @@ func (s *Server) approve(w http.ResponseWriter, r *http.Request) {
 	if !s.ok(w, r, err) {
 		return
 	}
-	s.log.Info("oauth: consentimiento", "login", p.Name, "client_id", req.ClientID, "client", req.ClientName, "scopes", strings.Join(granted, " "))
+	s.log.Info("oauth: consent", "login", p.Name, "client_id", req.ClientID, "client", req.ClientName, "scopes", strings.Join(granted, " "))
 	params := url.Values{"code": {code}, "iss": {s.issuer}}
 	if req.State != "" {
 		params.Set("state", req.State)
@@ -218,7 +218,7 @@ func (s *Server) deny(w http.ResponseWriter, r *http.Request) {
 	if !s.ok(w, r, err) {
 		return
 	}
-	params := url.Values{"error": {"access_denied"}, "error_description": {"la persona no ha dado acceso"}, "iss": {s.issuer}}
+	params := url.Values{"error": {"access_denied"}, "error_description": {"the user did not grant access"}, "iss": {s.issuer}}
 	if req.State != "" {
 		params.Set("state", req.State)
 	}
@@ -237,19 +237,19 @@ func (s *Server) grants(w http.ResponseWriter, r *http.Request) {
 func (s *Server) revokeGrant(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no existe esa aplicación"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such application"})
 		return
 	}
 	p, _ := api.PrincipalFrom(r.Context())
 	err = s.st.RevokeOAuthGrant(r.Context(), p.Name, id, s.cfg.Now())
 	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no existe esa aplicación"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such application"})
 		return
 	}
 	if !s.ok(w, r, err) {
 		return
 	}
-	s.log.Info("oauth: concesión revocada en el panel", "login", p.Name, "grant", id)
+	s.log.Info("oauth: grant revoked in the panel", "login", p.Name, "grant", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -263,17 +263,17 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Pragma", "no-cache")
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err != nil {
-		oauthError(w, http.StatusBadRequest, "invalid_request", "el cuerpo tiene que ir como application/x-www-form-urlencoded")
+		oauthError(w, http.StatusBadRequest, "invalid_request", "the body must be application/x-www-form-urlencoded")
 		return
 	}
 	f := r.PostForm
 	clientID := f.Get("client_id")
 	if clientID == "" {
-		oauthError(w, http.StatusUnauthorized, "invalid_client", "falta client_id")
+		oauthError(w, http.StatusUnauthorized, "invalid_client", "missing client_id")
 		return
 	}
 	if res := f.Get("resource"); res != "" && !s.sameResource(res) {
-		oauthError(w, http.StatusBadRequest, "invalid_target", "este servidor solo da acceso a "+s.resource)
+		oauthError(w, http.StatusBadRequest, "invalid_target", "this server only grants access to "+s.resource)
 		return
 	}
 	now := s.cfg.Now()
@@ -282,19 +282,19 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 	switch f.Get("grant_type") {
 	case "authorization_code":
 		if !pkceValue.MatchString(f.Get("code_verifier")) {
-			oauthError(w, http.StatusBadRequest, "invalid_request", "falta code_verifier o no es válido")
+			oauthError(w, http.StatusBadRequest, "invalid_request", "code_verifier is missing or invalid")
 			return
 		}
 		toks, err = s.st.ExchangeOAuthCode(r.Context(), f.Get("code"), func(req store.OAuthRequest) error {
 			switch {
 			case req.ClientID != clientID:
-				return fmt.Errorf("%w: el código es de otro cliente", errGrant)
+				return fmt.Errorf("%w: the code belongs to another client", errGrant)
 			case f.Get("redirect_uri") != req.RedirectURI:
-				return fmt.Errorf("%w: redirect_uri no es la de la autorización", errGrant)
+				return fmt.Errorf("%w: redirect_uri is not the one from the authorization", errGrant)
 			case subtle.ConstantTimeCompare([]byte(s256(f.Get("code_verifier"))), []byte(req.CodeChallenge)) != 1:
-				return fmt.Errorf("%w: code_verifier no corresponde a code_challenge", errGrant)
+				return fmt.Errorf("%w: code_verifier does not match code_challenge", errGrant)
 			case !s.sameResource(req.Resource):
-				return fmt.Errorf("%w: el código es de otro recurso", errGrant)
+				return fmt.Errorf("%w: the code belongs to another resource", errGrant)
 			}
 			return nil
 		}, s.cfg.TTL, now)
@@ -305,26 +305,26 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		}
 		toks, err = s.st.RefreshOAuth(r.Context(), f.Get("refresh_token"), clientID, narrow, s.cfg.TTL, now)
 	default:
-		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "solo authorization_code y refresh_token")
+		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "only authorization_code and refresh_token")
 		return
 	}
 	switch {
 	case errors.Is(err, store.ErrOAuthReused):
-		s.log.Warn("oauth: código o refresco reusado: concesión revocada", "client_id", clientID, "grant_type", f.Get("grant_type"))
-		oauthError(w, http.StatusBadRequest, "invalid_grant", "ya se había usado: la concesión queda revocada")
+		s.log.Warn("oauth: code or refresh token reused: grant revoked", "client_id", clientID, "grant_type", f.Get("grant_type"))
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "already used: the grant is revoked")
 		return
 	case errors.Is(err, store.ErrInvalid):
 		oauthError(w, http.StatusBadRequest, "invalid_scope", err.Error())
 		return
 	case errors.Is(err, store.ErrOAuthExpired), errors.Is(err, store.ErrNotFound):
-		oauthError(w, http.StatusBadRequest, "invalid_grant", "no vale, ha caducado o se revocó")
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "invalid, expired or revoked")
 		return
 	case errors.Is(err, errGrant):
 		oauthError(w, http.StatusBadRequest, "invalid_grant", strings.TrimPrefix(err.Error(), errGrant.Error()+": "))
 		return
 	case err != nil:
 		s.log.Error("oauth: token", "err", err)
-		oauthError(w, http.StatusInternalServerError, "server_error", "error interno")
+		oauthError(w, http.StatusInternalServerError, "server_error", "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -341,17 +341,17 @@ func (s *Server) revoke(w http.ResponseWriter, r *http.Request) {
 	cors(w)
 	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
 	if err := r.ParseForm(); err != nil || r.PostForm.Get("token") == "" {
-		oauthError(w, http.StatusBadRequest, "invalid_request", "falta token")
+		oauthError(w, http.StatusBadRequest, "invalid_request", "missing token")
 		return
 	}
 	clientID := r.PostForm.Get("client_id")
 	if clientID == "" {
-		oauthError(w, http.StatusUnauthorized, "invalid_client", "falta client_id")
+		oauthError(w, http.StatusUnauthorized, "invalid_client", "missing client_id")
 		return
 	}
 	if err := s.st.RevokeOAuthToken(r.Context(), r.PostForm.Get("token"), clientID, s.cfg.Now()); err != nil {
-		s.log.Error("oauth: revocar", "err", err)
-		oauthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "no se ha podido revocar")
+		s.log.Error("oauth: revoke", "err", err)
+		oauthError(w, http.StatusServiceUnavailable, "temporarily_unavailable", "could not revoke")
 		return
 	}
 	w.WriteHeader(http.StatusOK)

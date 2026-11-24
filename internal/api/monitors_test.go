@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/cron"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/cron"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type monitorJSON struct {
@@ -121,7 +121,7 @@ func TestMCPMonitors(t *testing.T) {
 		t.Fatalf("get_monitor = %s", out)
 	}
 	out, isErr = call(t, cs, "get_monitor", map[string]any{"project": "backend", "slug": "nadie"})
-	if !isErr || !strings.Contains(out, "no existe ese monitor") {
+	if !isErr || !strings.Contains(out, "no such monitor") {
 		t.Errorf("get_monitor de uno que no existe = %s", out)
 	}
 }

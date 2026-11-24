@@ -16,11 +16,11 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
-	"github.com/intake-es/intake-errors/migrations"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
+	"github.com/intake-es/mothlog/migrations"
 )
 
 // La migración 00011 rellena las etiquetas y los usuarios de los eventos que

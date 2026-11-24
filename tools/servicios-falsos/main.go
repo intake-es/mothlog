@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/intake-es/intake-errors/internal/webhooks/fakes"
+	"github.com/intake-es/mothlog/internal/webhooks/fakes"
 )
 
 func main() {

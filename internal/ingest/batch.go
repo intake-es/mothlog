@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // BatchOptions dicen cómo se juntan en un lote los eventos que llegan a la vez.
@@ -151,9 +151,9 @@ func (b *batcher) run() {
 func (b *batcher) write(items []*pending) {
 	defer func() {
 		if r := recover(); r != nil {
-			b.in.log.Error("pánico al guardar un lote", "eventos", len(items), "pánico", r, "pila", string(debug.Stack()))
+			b.in.log.Error("panic while saving a batch", "events", len(items), "panic", r, "stack", string(debug.Stack()))
 			for _, it := range items {
-				it.res, it.err = Result{}, fmt.Errorf("guardar evento: pánico: %v", r)
+				it.res, it.err = Result{}, fmt.Errorf("save event: panic: %v", r)
 			}
 		}
 	}()
@@ -204,7 +204,7 @@ func (b *batcher) queued() int {
 
 // errConflict es un evento que otro ha guardado entre la búsqueda de
 // repetidos y la escritura del lote.
-var errConflict = errors.New("evento guardado a la vez por otro")
+var errConflict = errors.New("event saved at the same time by another")
 
 // writeBatch guarda el lote en una transacción. Si falla, guarda sus eventos
 // de uno en uno, para que el que falla no tumbe a los demás.
@@ -220,7 +220,7 @@ func (in *Ingester) writeBatch(items []*pending) {
 		return
 	}
 	if len(items) > 1 {
-		in.log.WarnContext(ctx, "lote fallido, se guarda evento a evento", "eventos", len(items), "err", err)
+		in.log.WarnContext(ctx, "batch failed, saving event by event", "events", len(items), "err", err)
 	}
 	for _, it := range items {
 		it.res, it.err = in.ingestOne(it.ctx, it)
@@ -338,7 +338,7 @@ func (in *Ingester) saveBatch(ctx context.Context, tx db.Tx, items []*pending) e
 					return err
 				}
 				if found == nil {
-					return errors.New("el issue desapareció tras un conflicto")
+					return errors.New("the issue disappeared after a conflict")
 				}
 				is = &batchIssue{lockedIssue: *found}
 			}
@@ -455,7 +455,7 @@ func (in *Ingester) saveBatch(ctx context.Context, tx db.Tx, items []*pending) e
 		if errors.Is(err, errConflict) {
 			return err
 		}
-		return fmt.Errorf("guardar el lote: %w", err)
+		return fmt.Errorf("save batch: %w", err)
 	}
 	for _, r := range regressions {
 		if err := store.RecordRegression(ctx, tx, r.issueID, r.from, r.release); err != nil {
@@ -467,7 +467,7 @@ func (in *Ingester) saveBatch(ctx context.Context, tx db.Tx, items []*pending) e
 			continue
 		}
 		if err := in.notifier.IssueChanged(ctx, tx, it.ev, it.res); err != nil {
-			return fmt.Errorf("avisar: %w", err)
+			return fmt.Errorf("alert: %w", err)
 		}
 	}
 	return nil
@@ -541,7 +541,7 @@ func readBatch(ctx context.Context, tx db.Tx, items []*pending) (map[eventKey]bo
 			})
 	}
 	if err := tx.SendBatch(ctx, reads); err != nil {
-		return nil, nil, nil, fmt.Errorf("leer el lote: %w", err)
+		return nil, nil, nil, fmt.Errorf("read batch: %w", err)
 	}
 	return seen, issues, releases, nil
 }
@@ -562,7 +562,7 @@ func createIssue(ctx context.Context, tx db.Tx, it *pending, hour time.Time) (in
 		return 0, nil
 	}
 	if err != nil {
-		return 0, fmt.Errorf("crear issue: %w", err)
+		return 0, fmt.Errorf("create issue: %w", err)
 	}
 	return id, nil
 }

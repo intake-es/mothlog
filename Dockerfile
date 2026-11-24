@@ -13,10 +13,10 @@ COPY cmd ./cmd
 COPY internal ./internal
 COPY migrations ./migrations
 COPY --from=web /src/internal/ui/dist/app ./internal/ui/dist/app
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/intake-errors ./cmd/intake-errors
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mothlog ./cmd/mothlog
 
 FROM gcr.io/distroless/static-debian13:nonroot
-COPY --from=build /out/intake-errors /intake-errors
+COPY --from=build /out/mothlog /mothlog
 ENV LISTEN_ADDR=:8000
 EXPOSE 8000
-ENTRYPOINT ["/intake-errors"]
+ENTRYPOINT ["/mothlog"]

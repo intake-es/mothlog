@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // ImportEvent guarda un evento traído de otro servicio en un issue que ya
@@ -19,7 +19,7 @@ func (in *Ingester) ImportEvent(ctx context.Context, projectID, issueID int64, e
 		return false, fmt.Errorf("%w: event_id %q", event.ErrInvalid, ev.ID)
 	}
 	if ev.Timestamp.IsZero() {
-		return false, fmt.Errorf("%w: el evento %s no tiene fecha", event.ErrInvalid, ev.ID)
+		return false, fmt.Errorf("%w: event %s has no timestamp", event.ErrInvalid, ev.ID)
 	}
 	data, err := store.EncodeEvent(ev)
 	if err != nil {

@@ -19,19 +19,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	dbpkg "github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/digest"
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/api"
+	dbpkg "github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/digest"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 // Las salidas de referencia se generaron con el código anterior a guardar el
 // evento comprimido; UPDATE_GOLDEN=1 las reescribe.
 const goldenFile = "testdata/fixtures_golden.txt"
+
+// goldenFileES es la misma salida con DEFAULT_LANGUAGE=es: la de antes de
+// pasar al inglés, con Mothlog donde decía el nombre viejo.
+const goldenFileES = "testdata/fixtures_golden_es.txt"
 
 const fixturesDir = "../../testdata/envelopes"
 
@@ -53,13 +58,14 @@ type goldenEnv struct {
 // setupFixtures carga todos los envíos grabados por la ingesta HTTP y, además,
 // variantes de sus eventos con usuarios, organization_id y contexts poco
 // corrientes, para que las consultas de usuarios y organizaciones tengan datos.
-func setupFixtures(t *testing.T) *goldenEnv {
+func setupFixtures(t *testing.T, l lang.Lang) *goldenEnv {
 	t.Helper()
 	// Las fechas salen en la zona local; fija para que la referencia no dependa de la máquina.
 	local := time.Local
 	time.Local = time.UTC
 	t.Cleanup(func() { time.Local = local })
 	db := storetest.NewDB(t)
+	db.SetDefaultLanguage(string(l))
 	ctx := context.Background()
 	for _, p := range fixtureProjects {
 		if _, err := db.Pool().Exec(ctx, storetest.ProjectWithIDSQL(db.Pool().Dialect()),
@@ -71,7 +77,7 @@ func setupFixtures(t *testing.T) *goldenEnv {
 	ing := ingest.NewIngester(db.Pool(), nil, nil, log)
 	mux := http.NewServeMux()
 	mux.Handle(ingest.Pattern, ingest.NewHandler(db.Store, ing, ingest.NewRateLimiter(10000), ingest.NewDrops(db.Store), log))
-	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com"}); err != nil {
+	if err := api.Register(mux, db.Store, api.Options{PublicURL: "https://errors.example.com", Lang: l}); err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(mux)
@@ -398,7 +404,9 @@ func (e *goldenEnv) outputs(t *testing.T) string {
 	return b.String()
 }
 
-func checkGolden(t *testing.T, got string) {
+func checkGolden(t *testing.T, got string) { checkGoldenFile(t, goldenFile, got) }
+
+func checkGoldenFile(t *testing.T, goldenFile, got string) {
 	t.Helper()
 	if os.Getenv("UPDATE_GOLDEN") == "1" {
 		if err := os.WriteFile(goldenFile, []byte(got), 0o644); err != nil {
@@ -423,8 +431,15 @@ func checkGolden(t *testing.T, got string) {
 }
 
 func TestFixturesOutputsMatchGolden(t *testing.T) {
-	e := setupFixtures(t)
+	e := setupFixtures(t, lang.EN)
 	checkGolden(t, e.outputs(t))
+}
+
+// Con DEFAULT_LANGUAGE=es, el Markdown y lo que devuelve el MCP salen como
+// antes de pasar al inglés.
+func TestFixturesOutputsMatchGoldenSpanish(t *testing.T) {
+	e := setupFixtures(t, lang.ES)
+	checkGoldenFile(t, goldenFileES, e.outputs(t))
 }
 
 func (e *goldenEnv) eventIDs(t *testing.T, where string) []int64 {
@@ -444,7 +459,7 @@ func (e *goldenEnv) eventIDs(t *testing.T, where string) []int64 {
 // formato y una vez convertidos, todo se lee igual que antes del cambio.
 func TestFixturesOutputsWithLegacyEvents(t *testing.T) {
 	storetest.OnlyPostgres(t, "los eventos de antes, en jsonb, no existen en SQLite y su conversión no hace nada")
-	e := setupFixtures(t)
+	e := setupFixtures(t, lang.EN)
 	ctx := context.Background()
 	all := e.eventIDs(t, "true")
 	e.db.MakeLegacy(t, all...)

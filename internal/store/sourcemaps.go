@@ -9,7 +9,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // SourceMapFile es un .map subido para un release; File es el nombre del .js
@@ -58,7 +58,7 @@ func putSourceMaps(ctx context.Context, tx db.Tx, projectID int64, release strin
 			return ErrNotFound
 		}
 		if err != nil {
-			return fmt.Errorf("guardar source map %s: %w", f.File, err)
+			return fmt.Errorf("save source map %s: %w", f.File, err)
 		}
 	}
 	return nil
@@ -87,15 +87,15 @@ func (s *Store) sourceMap(ctx context.Context, q string, args ...any) ([]byte, e
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("leer source map: %w", err)
+		return nil, fmt.Errorf("read source map: %w", err)
 	}
 	zr, err := gzip.NewReader(bytes.NewReader(gz))
 	if err != nil {
-		return nil, fmt.Errorf("leer source map: %w", err)
+		return nil, fmt.Errorf("read source map: %w", err)
 	}
 	b, err := io.ReadAll(zr)
 	if err != nil {
-		return nil, fmt.Errorf("leer source map: %w", err)
+		return nil, fmt.Errorf("read source map: %w", err)
 	}
 	return b, nil
 }
@@ -104,10 +104,10 @@ func (s *Store) sourceMap(ctx context.Context, q string, args ...any) ([]byte, e
 func (s *Store) DeleteSourceMapsBefore(ctx context.Context, t time.Time) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM sourcemaps WHERE uploaded_at < $1`, t)
 	if err != nil {
-		return 0, fmt.Errorf("borrar source maps: %w", err)
+		return 0, fmt.Errorf("delete source maps: %w", err)
 	}
 	if _, err := s.pool.Exec(ctx, `DELETE FROM artifact_bundles WHERE assembled_at < $1`, t); err != nil {
-		return 0, fmt.Errorf("borrar bundles: %w", err)
+		return 0, fmt.Errorf("delete bundles: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }

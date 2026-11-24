@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/monitor"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/monitor"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func TestCheckInFixturesWithoutMonitorsAreIgnored(t *testing.T) {

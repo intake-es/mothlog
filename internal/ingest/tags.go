@@ -8,10 +8,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/search"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/search"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // maxEventTags es cuántas tags propias del evento se cuentan como mucho.
@@ -119,7 +119,7 @@ func (in *Ingester) recordTags(ctx context.Context, tx db.Tx, issueID int64, ev 
 	if d.Name() == "sqlite" {
 		// SQLite no tiene INSERT dentro de WITH: van una detrás de otra.
 		if _, err := tx.Exec(ctx, insertTags, issueID, keys, values, ev.Timestamp); err != nil {
-			return fmt.Errorf("contar etiquetas: %w", err)
+			return fmt.Errorf("count tags: %w", err)
 		}
 		if userHash == nil {
 			return nil
@@ -129,7 +129,7 @@ func (in *Ingester) recordTags(ctx context.Context, tx db.Tx, issueID int64, ev 
 			_, err = tx.Exec(ctx, `UPDATE issues SET user_count = user_count + 1 WHERE id = $1`, issueID)
 		}
 		if err != nil {
-			return fmt.Errorf("contar etiquetas: %w", err)
+			return fmt.Errorf("count tags: %w", err)
 		}
 		return nil
 	}
@@ -145,7 +145,7 @@ func (in *Ingester) recordTags(ctx context.Context, tx db.Tx, issueID int64, ev 
 		WHERE id = $1 AND EXISTS (SELECT 1 FROM u)`,
 		issueID, keys, values, ev.Timestamp, userHash)
 	if err != nil {
-		return fmt.Errorf("contar etiquetas: %w", err)
+		return fmt.Errorf("count tags: %w", err)
 	}
 	return nil
 }

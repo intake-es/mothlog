@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 const LinearEndpoint = "https://api.linear.app/graphql"
@@ -36,7 +36,7 @@ type linear struct {
 	unstarted string
 }
 
-var errLinearNotFound = errors.New("la issue de Linear no existe")
+var errLinearNotFound = errors.New("the Linear issue does not exist")
 
 // linearRef es lo que se guarda de una issue de Linear: el identifier
 // (ERR-123) y la url van en el botón del aviso de Slack.
@@ -113,9 +113,9 @@ func (l *linear) create(ctx context.Context, p *pending) (linearRef, error) {
 	}
 	var desc strings.Builder
 	if link := p.link; link != "" {
-		fmt.Fprintf(&desc, "[Ver en intake-errors](%s)\n\n", link)
+		desc.WriteString(viewIn(p.l, link) + "\n\n")
 	}
-	desc.WriteString(markdown.IssueInert(d))
+	desc.WriteString(markdown.IssueInert(d, p.l))
 
 	input := map[string]any{
 		"id":          p.createID,
@@ -149,7 +149,7 @@ func (l *linear) create(ctx context.Context, p *pending) (linearRef, error) {
 		return linearRef{}, err
 	}
 	if !out.IssueCreate.Success || out.IssueCreate.Issue.ID == "" {
-		return linearRef{}, errors.New("linear: issueCreate sin éxito")
+		return linearRef{}, errors.New("linear: issueCreate was not successful")
 	}
 	return out.IssueCreate.Issue, nil
 }
@@ -185,7 +185,7 @@ func (l *linear) reopenAndComment(ctx context.Context, p *pending) error {
 	err = l.do(ctx, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,
 		map[string]any{"id": p.linear, "input": input}, &upd)
 	if err == nil && !upd.IssueUpdate.Success {
-		err = errors.New("linear: issueUpdate sin éxito")
+		err = errors.New("linear: issueUpdate was not successful")
 	}
 	if err != nil {
 		// El estado guardado puede haberse borrado en Linear: se vuelve a buscar.
@@ -193,7 +193,7 @@ func (l *linear) reopenAndComment(ctx context.Context, p *pending) error {
 		return err
 	}
 
-	return l.comment(ctx, p, "Ha vuelto a ocurrir")
+	return l.comment(ctx, p, p.l.T("It happened again", "Ha vuelto a ocurrir"))
 }
 
 func (l *linear) commentOnly(ctx context.Context, p *pending) (linearRef, error) {
@@ -210,9 +210,9 @@ func (l *linear) commentOnly(ctx context.Context, p *pending) (linearRef, error)
 
 func (l *linear) comment(ctx context.Context, p *pending, what string) error {
 	body := fmt.Sprintf("%s: release %s, %s.",
-		what, orNone(markdown.InertText(p.release), "(ninguno)"), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
+		what, orNone(markdown.InertText(p.release), p.l.T("(none)", "(ninguno)")), p.eventAt.UTC().Format("2006-01-02 15:04 UTC"))
 	if link := p.link; link != "" {
-		body += fmt.Sprintf("\n\n[Ver en intake-errors](%s)", link)
+		body += "\n\n" + viewIn(p.l, link)
 	}
 	var com struct{ CommentCreate struct{ Success bool } }
 	err := l.do(ctx, `mutation($input: CommentCreateInput!) { commentCreate(input: $input) { success } }`,
@@ -221,7 +221,7 @@ func (l *linear) comment(ctx context.Context, p *pending, what string) error {
 		return err
 	}
 	if !com.CommentCreate.Success {
-		return errors.New("linear: commentCreate sin éxito")
+		return errors.New("linear: commentCreate was not successful")
 	}
 	return nil
 }
@@ -275,7 +275,7 @@ func (l *linear) unstartedState(ctx context.Context) (string, error) {
 	}
 	nodes := out.Team.States.Nodes
 	if len(nodes) == 0 {
-		return "", errors.New("linear: el equipo no tiene ningún estado unstarted")
+		return "", errors.New("linear: the team has no unstarted state")
 	}
 	best := nodes[0]
 	for _, n := range nodes[1:] {
@@ -350,7 +350,7 @@ func (l *linear) do(ctx context.Context, query string, vars map[string]any, out 
 		return fmt.Errorf("linear: %s", resp.Status)
 	}
 	if err := json.Unmarshal(res.Data, out); err != nil {
-		return fmt.Errorf("linear: respuesta inesperada: %w", err)
+		return fmt.Errorf("linear: unexpected response: %w", err)
 	}
 	return nil
 }
@@ -410,13 +410,13 @@ func (l *linear) moveTo(ctx context.Context, id, category string) (linearState, 
 		}
 	}
 	if best == nil {
-		return cur, false, fmt.Errorf("linear: el equipo no tiene ningún estado %s", want)
+		return cur, false, fmt.Errorf("linear: the team has no %s state", want)
 	}
 	var upd struct{ IssueUpdate struct{ Success bool } }
 	err = l.do(ctx, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`,
 		map[string]any{"id": id, "input": map[string]any{"stateId": best.ID}}, &upd)
 	if err == nil && !upd.IssueUpdate.Success {
-		err = errors.New("linear: issueUpdate sin éxito")
+		err = errors.New("linear: issueUpdate was not successful")
 	}
 	if err != nil {
 		return cur, false, err

@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/metrics"
-	"github.com/intake-es/intake-errors/internal/monitor"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/metrics"
+	"github.com/intake-es/mothlog/internal/monitor"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // snapshotCounter cuenta las lecturas de la base para /metrics.
@@ -154,48 +154,48 @@ func TestMetricsMatchFixtures(t *testing.T) {
 
 	got := scrape(t, m)
 	want := map[string]float64{
-		`intake_events_received_total{project="1"}`:                        6,
-		`intake_events_received_total{project="2"}`:                        3,
-		`intake_events_saved_total{project="1"}`:                           2,
-		`intake_events_saved_total{project="2"}`:                           2,
-		`intake_events_dropped_total{project="1",reason="issue_limit"}`:    2,
-		`intake_events_dropped_total{project="1",reason="duplicate"}`:      1,
-		`intake_events_dropped_total{project="1",reason="exception_type"}`: 1,
-		`intake_events_dropped_total{project="2",reason="rate_limit"}`:     1,
-		`intake_envelopes_rejected_total{code="400"}`:                      1,
-		`intake_envelopes_rejected_total{code="401"}`:                      1,
-		`intake_envelopes_rejected_total{code="413"}`:                      1,
-		`intake_envelopes_rejected_total{code="429"}`:                      1,
-		`intake_ingest_duration_seconds_count`:                             10,
-		`intake_ingest_duration_seconds_bucket{le="+Inf"}`:                 10,
-		`intake_checkins_received_total{status="in_progress"}`:             1,
-		`intake_checkins_received_total{status="ok"}`:                      1,
-		`intake_metrics_db_up`:                                             1,
-		`intake_alert_outbox{channel="slack",status="pending"}`:            1,
-		`intake_alert_outbox{channel="slack",status="failed"}`:             1,
-		`intake_alert_outbox{channel="slack",status="sent"}`:               0,
-		`intake_alert_outbox{channel="linear",status="sent"}`:              1,
-		`intake_alert_outbox{channel="email",status="sent"}`:               1,
-		`intake_alert_outbox_oldest_pending_seconds{channel="linear"}`:     0,
-		`intake_digests_sent_total{channel="email"}`:                       1,
-		`intake_digests_sent_total{channel="slack"}`:                       0,
-		`intake_cron_monitors{status="ok"}`:                                1,
-		`intake_cron_monitors{status="error"}`:                             0,
-		`intake_uptime_monitors{status="up"}`:                              1,
-		`intake_uptime_monitors{status="down"}`:                            1,
-		`intake_uptime_monitors{status="paused"}`:                          1,
-		`intake_project_info{project="1",name="api"}`:                      1,
+		`mothlog_events_received_total{project="1"}`:                        6,
+		`mothlog_events_received_total{project="2"}`:                        3,
+		`mothlog_events_saved_total{project="1"}`:                           2,
+		`mothlog_events_saved_total{project="2"}`:                           2,
+		`mothlog_events_dropped_total{project="1",reason="issue_limit"}`:    2,
+		`mothlog_events_dropped_total{project="1",reason="duplicate"}`:      1,
+		`mothlog_events_dropped_total{project="1",reason="exception_type"}`: 1,
+		`mothlog_events_dropped_total{project="2",reason="rate_limit"}`:     1,
+		`mothlog_envelopes_rejected_total{code="400"}`:                      1,
+		`mothlog_envelopes_rejected_total{code="401"}`:                      1,
+		`mothlog_envelopes_rejected_total{code="413"}`:                      1,
+		`mothlog_envelopes_rejected_total{code="429"}`:                      1,
+		`mothlog_ingest_duration_seconds_count`:                             10,
+		`mothlog_ingest_duration_seconds_bucket{le="+Inf"}`:                 10,
+		`mothlog_checkins_received_total{status="in_progress"}`:             1,
+		`mothlog_checkins_received_total{status="ok"}`:                      1,
+		`mothlog_metrics_db_up`:                                             1,
+		`mothlog_alert_outbox{channel="slack",status="pending"}`:            1,
+		`mothlog_alert_outbox{channel="slack",status="failed"}`:             1,
+		`mothlog_alert_outbox{channel="slack",status="sent"}`:               0,
+		`mothlog_alert_outbox{channel="linear",status="sent"}`:              1,
+		`mothlog_alert_outbox{channel="email",status="sent"}`:               1,
+		`mothlog_alert_outbox_oldest_pending_seconds{channel="linear"}`:     0,
+		`mothlog_digests_sent_total{channel="email"}`:                       1,
+		`mothlog_digests_sent_total{channel="slack"}`:                       0,
+		`mothlog_cron_monitors{status="ok"}`:                                1,
+		`mothlog_cron_monitors{status="error"}`:                             0,
+		`mothlog_uptime_monitors{status="up"}`:                              1,
+		`mothlog_uptime_monitors{status="down"}`:                            1,
+		`mothlog_uptime_monitors{status="paused"}`:                          1,
+		`mothlog_project_info{project="1",name="api"}`:                      1,
 	}
 	for k, v := range want {
 		if g, ok := got[k]; !ok || g != v {
 			t.Errorf("%s = %v (está: %v), quiero %v", k, g, ok, v)
 		}
 	}
-	if age := got[`intake_alert_outbox_oldest_pending_seconds{channel="slack"}`]; age < 3500 || age > 3700 {
+	if age := got[`mothlog_alert_outbox_oldest_pending_seconds{channel="slack"}`]; age < 3500 || age > 3700 {
 		t.Errorf("antigüedad del pendiente de slack = %v, quiero una hora", age)
 	}
 	for k := range got {
-		if strings.HasPrefix(k, "intake_events_dropped_total") && want[k] == 0 {
+		if strings.HasPrefix(k, "mothlog_events_dropped_total") && want[k] == 0 {
 			t.Errorf("descarte de más: %s = %v", k, got[k])
 		}
 	}
@@ -355,7 +355,7 @@ func TestCountingDoesNotQueryTheDatabase(t *testing.T) {
 		t.Errorf("con métricas %d consultas, sin ellas %d", with, without)
 	}
 	got := scrape(t, m)
-	if got[`intake_events_received_total{project="1"}`] != 40 || got[`intake_envelopes_rejected_total{code="401"}`] != 20 {
+	if got[`mothlog_events_received_total{project="1"}`] != 40 || got[`mothlog_envelopes_rejected_total{code="401"}`] != 20 {
 		t.Errorf("no contó lo enviado: %v", got)
 	}
 	t.Logf("80 envíos: %d consultas con métricas y %d sin ellas", with, without)

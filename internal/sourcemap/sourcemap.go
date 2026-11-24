@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type Store interface {
@@ -296,19 +296,19 @@ func (s *Service) load(ctx context.Context, k key) *Map {
 		return nil
 	}
 	if err != nil {
-		s.log.WarnContext(ctx, "source map: no se pudo leer", "project", k.project, "release", k.release, "file", k.file, "debug_id", k.debugID, "err", err)
+		s.log.WarnContext(ctx, "source map: could not read", "project", k.project, "release", k.release, "file", k.file, "debug_id", k.debugID, "err", err)
 		return nil
 	}
 	m, err := Parse(b)
 	if err != nil {
-		s.log.WarnContext(ctx, "source map roto", "project", k.project, "release", k.release, "file", k.file, "debug_id", k.debugID, "err", err)
+		s.log.WarnContext(ctx, "broken source map", "project", k.project, "release", k.release, "file", k.file, "debug_id", k.debugID, "err", err)
 		s.cache.putMissing(k)
 		return nil
 	}
 	// Uno que no cabe en la caché se vuelve a leer en cada evento que lo usa;
 	// desde que se rechazan al subirlos solo pueden ser de antes.
 	if !s.cache.put(k, m) {
-		s.log.WarnContext(ctx, "source map más grande que la caché", "project", k.project, "release", k.release, "file", k.file, "debug_id", k.debugID, "bytes", m.size, "cache_bytes", s.opts.CacheBytes)
+		s.log.WarnContext(ctx, "source map larger than the cache", "project", k.project, "release", k.release, "file", k.file, "debug_id", k.debugID, "bytes", m.size, "cache_bytes", s.opts.CacheBytes)
 	}
 	return m
 }
@@ -318,7 +318,7 @@ func (s *Service) checkSize(name string, m *Map) error {
 	if m.size+maxKeySize <= s.opts.CacheBytes {
 		return nil
 	}
-	return fmt.Errorf("%s ocupa %d MiB ya parseado y la caché de source maps es de %d MiB: divídelo en mapas más pequeños", name, (m.size+1<<20-1)>>20, s.opts.CacheBytes>>20)
+	return fmt.Errorf("%s takes %d MiB once parsed and the source map cache is %d MiB: split it into smaller maps", name, (m.size+1<<20-1)>>20, s.opts.CacheBytes>>20)
 }
 
 // Purge borra los mapas subidos hace más de maxAge y los trozos de más de chunkTTL.
@@ -342,9 +342,9 @@ func (s *Service) RunRetention(ctx context.Context, maxAge, every time.Duration)
 	for {
 		n, err := s.Purge(ctx, maxAge)
 		if err != nil {
-			s.log.ErrorContext(ctx, "retención de source maps", "err", err)
+			s.log.ErrorContext(ctx, "source map retention", "err", err)
 		} else if n > 0 {
-			s.log.InfoContext(ctx, "source maps caducados borrados", "n", n)
+			s.log.InfoContext(ctx, "expired source maps deleted", "n", n)
 		}
 		select {
 		case <-ctx.Done():

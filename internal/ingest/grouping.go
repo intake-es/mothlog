@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 const maxTitle = 200
@@ -38,7 +38,7 @@ func Group(ev *event.Event) Grouping {
 		g.Title = ev.Message
 	}
 	if g.Title == "" {
-		g.Title = "(sin mensaje)"
+		g.Title = "(no message)"
 	}
 	g.Title = truncate(g.Title, maxTitle)
 	return g

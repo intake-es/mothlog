@@ -1,7 +1,7 @@
 # Imagen de las versiones: GoReleaser deja cada binario ya compilado en $TARGETPLATFORM/.
 FROM gcr.io/distroless/static-debian13:nonroot
 ARG TARGETPLATFORM
-COPY $TARGETPLATFORM/intake-errors /intake-errors
+COPY $TARGETPLATFORM/mothlog /mothlog
 ENV LISTEN_ADDR=:8000
 EXPOSE 8000
-ENTRYPOINT ["/intake-errors"]
+ENTRYPOINT ["/mothlog"]

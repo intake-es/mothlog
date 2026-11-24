@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/sourcemap"
+	"github.com/intake-es/mothlog/internal/sourcemap"
 )
 
 func sessionPayload(sid, release string) string {

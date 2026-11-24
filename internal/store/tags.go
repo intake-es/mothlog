@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/search"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/search"
 )
 
 // UserIdent es lo que identifica a un usuario, por este orden: id, email,
@@ -53,7 +53,7 @@ type queryRower interface {
 func LoadUserHashKey(ctx context.Context, q queryRower) ([]byte, error) {
 	var k []byte
 	if err := q.QueryRow(ctx, `SELECT key FROM user_hash_key`).Scan(&k); err != nil {
-		return nil, fmt.Errorf("leer la clave de los usuarios: %w", err)
+		return nil, fmt.Errorf("read user key: %w", err)
 	}
 	return k, nil
 }
@@ -106,14 +106,14 @@ func (s *Store) IssueTags(ctx context.Context, issueID int64) (IssueTags, error)
 		return out, ErrNotFound
 	}
 	if err != nil {
-		return out, fmt.Errorf("leer issue: %w", err)
+		return out, fmt.Errorf("read issue: %w", err)
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT key, value, count, last_seen, sum(count) OVER (PARTITION BY key)
 		FROM issue_tag_values WHERE issue_id = $1
 		ORDER BY `+s.pool.Dialect().Collate("key")+`, count DESC, `+s.pool.Dialect().Collate("value"), issueID)
 	if err != nil {
-		return out, fmt.Errorf("etiquetas: %w", err)
+		return out, fmt.Errorf("tags: %w", err)
 	}
 	var key string
 	var v TagValue
@@ -131,7 +131,7 @@ func (s *Store) IssueTags(ctx context.Context, issueID int64) (IssueTags, error)
 		return nil
 	})
 	if err != nil {
-		return out, fmt.Errorf("etiquetas: %w", err)
+		return out, fmt.Errorf("tags: %w", err)
 	}
 	return out, nil
 }
@@ -159,14 +159,14 @@ func (s *Store) TagKeys(ctx context.Context, project string) ([]TagKey, error) {
 		WHERE $1 = '' OR CAST(p.id AS text) = $1 OR p.name = $1
 		GROUP BY t.key ORDER BY n DESC, `+s.pool.Dialect().Collate("t.key")+` LIMIT 100`, project)
 	if err != nil {
-		return nil, fmt.Errorf("claves de etiqueta: %w", err)
+		return nil, fmt.Errorf("tag keys: %w", err)
 	}
 	keys, err := db.CollectRows(rows, func(r db.CollectableRow) (TagKey, error) {
 		var k TagKey
 		return k, r.Scan(&k.Key, &k.Issues)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("claves de etiqueta: %w", err)
+		return nil, fmt.Errorf("tag keys: %w", err)
 	}
 	if keys == nil {
 		keys = []TagKey{}
@@ -188,14 +188,14 @@ func (s *Store) TagValues(ctx context.Context, project, key, prefix string) ([]T
 		GROUP BY t.value ORDER BY 3 DESC, `+s.pool.Dialect().Collate("t.value")+` LIMIT $4`,
 		key, project, prefixPattern(prefix), maxSuggestions)
 	if err != nil {
-		return nil, fmt.Errorf("valores de etiqueta: %w", err)
+		return nil, fmt.Errorf("tag values: %w", err)
 	}
 	vals, err := db.CollectRows(rows, func(r db.CollectableRow) (TagValueCount, error) {
 		var v TagValueCount
 		return v, r.Scan(&v.Value, &v.Issues, &v.Count)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("valores de etiqueta: %w", err)
+		return nil, fmt.Errorf("tag values: %w", err)
 	}
 	if vals == nil {
 		vals = []TagValueCount{}

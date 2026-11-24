@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // MaxReleaseIssues es cuántos issues de cada grupo trae el detalle de una release.
@@ -49,11 +49,11 @@ func validName(what, s string) (string, error) {
 	s = strings.TrimSpace(s)
 	switch {
 	case s == "":
-		return "", fmt.Errorf("%w: falta %s", ErrInvalid, what)
+		return "", fmt.Errorf("%w: missing %s", ErrInvalid, what)
 	case len(s) > maxNameLen:
-		return "", fmt.Errorf("%w: %s pasa de %d caracteres", ErrInvalid, what, maxNameLen)
+		return "", fmt.Errorf("%w: %s is over %d characters", ErrInvalid, what, maxNameLen)
 	case strings.ContainsAny(s, "\n\r\t"):
-		return "", fmt.Errorf("%w: %s no puede llevar saltos de línea ni tabuladores", ErrInvalid, what)
+		return "", fmt.Errorf("%w: %s can't contain line breaks or tabs", ErrInvalid, what)
 	}
 	return s, nil
 }
@@ -67,7 +67,7 @@ func EnsureRelease(ctx context.Context, q Querier, projectID int64, version stri
 		return id, false, nil
 	}
 	if !errors.Is(err, db.ErrNoRows) {
-		return 0, false, fmt.Errorf("buscar release: %w", err)
+		return 0, false, fmt.Errorf("find release: %w", err)
 	}
 	err = q.QueryRow(ctx, `
 		INSERT INTO releases (project_id, version, first_seen) VALUES ($1, $2, $3)
@@ -80,7 +80,7 @@ func EnsureRelease(ctx context.Context, q Querier, projectID int64, version stri
 		if db.IsForeignKeyViolation(err) {
 			return 0, false, ErrNotFound
 		}
-		return 0, false, fmt.Errorf("crear release: %w", err)
+		return 0, false, fmt.Errorf("create release: %w", err)
 	}
 	return id, true, nil
 }
@@ -89,7 +89,7 @@ func EnsureRelease(ctx context.Context, q Querier, projectID int64, version stri
 // estaba ya. Solo a las declaradas les llega un despliegue sin proyectos.
 func declareRelease(ctx context.Context, q Querier, id int64, now time.Time) error {
 	if _, err := q.Exec(ctx, `UPDATE releases SET declared_at = COALESCE(declared_at, $2) WHERE id = $1`, id, now); err != nil {
-		return fmt.Errorf("declarar release: %w", err)
+		return fmt.Errorf("declare release: %w", err)
 	}
 	return nil
 }
@@ -114,7 +114,7 @@ func CompareReleases(ctx context.Context, q Querier, projectID int64, a, b strin
 		return 0, false, false, nil
 	}
 	if err != nil {
-		return 0, false, false, fmt.Errorf("comparar releases: %w", err)
+		return 0, false, false, fmt.Errorf("compare releases: %w", err)
 	}
 	return cmp, true, false, nil
 }
@@ -132,7 +132,7 @@ func TrackEvent(ctx context.Context, q Querier, projectID, issueID int64, releas
 			regressed_at = COALESCE(EXCLUDED.regressed_at, issue_stats.regressed_at)`,
 		issueID, projectID, release, environment, at, regressed)
 	if err != nil {
-		return fmt.Errorf("contar el evento por release y entorno: %w", err)
+		return fmt.Errorf("count event by release and environment: %w", err)
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func (s *Store) FinalizeRelease(ctx context.Context, projectID int64, version st
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE releases SET finalized_at = COALESCE(finalized_at, $2),
 		declared_at = COALESCE(declared_at, $3) WHERE id = $1`, id, at, now); err != nil {
-		return Release{}, fmt.Errorf("finalizar release: %w", err)
+		return Release{}, fmt.Errorf("finalize release: %w", err)
 	}
 	return s.Release(ctx, projectID, version, "")
 }
@@ -202,13 +202,13 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO deploys (release_id, environment, deployed_at) VALUES ($1, $2, $3)
 			RETURNING id, deployed_at`, id, environment, at).Scan(&d.ID, &d.DeployedAt); err != nil {
-			return fmt.Errorf("guardar despliegue: %w", err)
+			return fmt.Errorf("save deploy: %w", err)
 		}
 		rows, err := tx.Query(ctx, `
 			SELECT id, COALESCE(resolved_in_release, '') FROM issues
 			WHERE project_id = $1 AND status = 'resolved_next'`+tx.Dialect().ForUpdate(), projectID)
 		if err != nil {
-			return fmt.Errorf("resolver issues: %w", err)
+			return fmt.Errorf("resolve issues: %w", err)
 		}
 		type pending struct {
 			id      int64
@@ -220,7 +220,7 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 			return p, err
 		})
 		if err != nil {
-			return fmt.Errorf("resolver issues: %w", err)
+			return fmt.Errorf("resolve issues: %w", err)
 		}
 		// Una release resuelta que no está en la tabla cuenta como anterior.
 		for _, p := range next {
@@ -240,7 +240,7 @@ func (s *Store) AddDeploy(ctx context.Context, projectID int64, version, environ
 				resolved_at = COALESCE(resolved_at, now())
 			WHERE `+tx.Dialect().InList("id", "$1"), resolved, version)
 		if err != nil {
-			return fmt.Errorf("resolver issues: %w", err)
+			return fmt.Errorf("resolve issues: %w", err)
 		}
 		for _, id := range resolved {
 			if err := recordStatusChange(ctx, tx, id, nil, SourceDeploy, "resolved_next", "resolved", &version, nil); err != nil {
@@ -345,11 +345,11 @@ func (s *Store) ListReleases(ctx context.Context, f ReleaseFilter) (ReleasePage,
 	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT %s FROM %s WHERE %s
 		ORDER BY r.first_seen DESC, r.id DESC LIMIT %d`, releaseColumns, releaseFrom(s.pool.Dialect()), strings.Join(where, " AND "), limit+1), args...)
 	if err != nil {
-		return ReleasePage{}, fmt.Errorf("listar releases: %w", err)
+		return ReleasePage{}, fmt.Errorf("list releases: %w", err)
 	}
 	rels, err := db.CollectRows(rows, func(r db.CollectableRow) (Release, error) { return scanRelease(r) })
 	if err != nil {
-		return ReleasePage{}, fmt.Errorf("listar releases: %w", err)
+		return ReleasePage{}, fmt.Errorf("list releases: %w", err)
 	}
 	page := ReleasePage{Releases: rels}
 	if len(rels) > limit {
@@ -385,7 +385,7 @@ func (s *Store) loadDeploys(ctx context.Context, rels []Release, env string) err
 		WHERE `+s.pool.Dialect().InList("release_id", "$1")+` AND ($2 = '' OR environment = $2)
 		ORDER BY deployed_at DESC, id DESC`, ids, env)
 	if err != nil {
-		return fmt.Errorf("leer despliegues: %w", err)
+		return fmt.Errorf("read deploys: %w", err)
 	}
 	var rid int64
 	var d Deploy
@@ -394,7 +394,7 @@ func (s *Store) loadDeploys(ctx context.Context, rels []Release, env string) err
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("leer despliegues: %w", err)
+		return fmt.Errorf("read deploys: %w", err)
 	}
 	return nil
 }
@@ -408,7 +408,7 @@ func (s *Store) Release(ctx context.Context, projectID int64, version, env strin
 		return Release{}, ErrNotFound
 	}
 	if err != nil {
-		return Release{}, fmt.Errorf("leer release: %w", err)
+		return Release{}, fmt.Errorf("read release: %w", err)
 	}
 	rels := []Release{r}
 	if err := s.loadDeploys(ctx, rels, env); err != nil {
@@ -464,7 +464,7 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 			  ORDER BY o.first_seen, o.id LIMIT 1)
 		FROM releases r WHERE r.id = $1`, r.ID).Scan(&d.Previous, &d.Next)
 	if err != nil {
-		return ReleaseDetail{}, fmt.Errorf("releases de al lado: %w", err)
+		return ReleaseDetail{}, fmt.Errorf("neighbor releases: %w", err)
 	}
 
 	dl := s.pool.Dialect()
@@ -487,7 +487,7 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 			ORDER BY st.n DESC, i.id DESC LIMIT %d`, cols, from, join, where, MaxReleaseIssues)
 		rows, err := s.pool.Query(ctx, q, args...)
 		if err != nil {
-			return nil, fmt.Errorf("issues de la release: %w", err)
+			return nil, fmt.Errorf("release issues: %w", err)
 		}
 		out, err := db.CollectRows(rows, func(row db.CollectableRow) (ReleaseIssue, error) {
 			var ri ReleaseIssue
@@ -498,7 +498,7 @@ func (s *Store) ReleaseDetail(ctx context.Context, projectID int64, version, env
 			return ri, err
 		})
 		if err != nil {
-			return nil, fmt.Errorf("issues de la release: %w", err)
+			return nil, fmt.Errorf("release issues: %w", err)
 		}
 		if out == nil {
 			out = []ReleaseIssue{}
@@ -560,7 +560,7 @@ func (s *Store) Environments(ctx context.Context, project string) ([]Environment
 		WHERE s.environment <> '' AND ($1 = '' OR CAST(p.id AS text) = $1 OR p.name = $1)
 		GROUP BY s.environment ORDER BY max(s.last_seen) DESC, `+s.pool.Dialect().Collate("s.environment"), project)
 	if err != nil {
-		return nil, fmt.Errorf("listar entornos: %w", err)
+		return nil, fmt.Errorf("list environments: %w", err)
 	}
 	envs, err := db.CollectRows(rows, func(r db.CollectableRow) (Environment, error) {
 		var e Environment
@@ -568,7 +568,7 @@ func (s *Store) Environments(ctx context.Context, project string) ([]Environment
 		return e, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("listar entornos: %w", err)
+		return nil, fmt.Errorf("list environments: %w", err)
 	}
 	if envs == nil {
 		envs = []Environment{}
@@ -583,7 +583,7 @@ func (s *Store) ReleaseProjects(ctx context.Context, version string) ([]Project,
 	rows, err := s.pool.Query(ctx, `SELECT `+projectColumns+` FROM projects
 		WHERE id IN (SELECT project_id FROM releases WHERE version = $1 AND declared_at IS NOT NULL) ORDER BY id`, version)
 	if err != nil {
-		return nil, fmt.Errorf("proyectos de la release: %w", err)
+		return nil, fmt.Errorf("release projects: %w", err)
 	}
 	ps, err := db.CollectRows(rows, func(r db.CollectableRow) (Project, error) {
 		var p Project
@@ -591,7 +591,7 @@ func (s *Store) ReleaseProjects(ctx context.Context, version string) ([]Project,
 		return p, err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("proyectos de la release: %w", err)
+		return nil, fmt.Errorf("release projects: %w", err)
 	}
 	return ps, nil
 }

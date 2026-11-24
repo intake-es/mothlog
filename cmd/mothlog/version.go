@@ -26,11 +26,11 @@ func printVersion(out io.Writer) error {
 		}
 	}
 	if c == "" {
-		c = "desconocido"
+		c = "unknown"
 	}
 	if d == "" {
-		d = "desconocida"
+		d = "unknown"
 	}
-	_, err := fmt.Fprintf(out, "intake-errors %s\ncommit: %s\nfecha: %s\n", version, c, d)
+	_, err := fmt.Fprintf(out, "mothlog %s\ncommit: %s\ndate: %s\n", version, c, d)
 	return err
 }

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // Lo que se anuncia a sentry-cli para la subida por trozos.
@@ -71,10 +71,10 @@ func (s *Service) cli(h func(http.ResponseWriter, *http.Request) error) http.Han
 		switch {
 		case errors.As(err, &ce):
 		case errors.As(err, &tooBig):
-			ce = &cliError{http.StatusRequestEntityTooLarge, fmt.Sprintf("la petición pasa de %d MiB", tooBig.Limit>>20)}
+			ce = &cliError{http.StatusRequestEntityTooLarge, fmt.Sprintf("the request is over %d MiB", tooBig.Limit>>20)}
 		default:
 			s.log.ErrorContext(r.Context(), "sentry-cli", "path", r.URL.Path, "err", err)
-			ce = &cliError{http.StatusInternalServerError, "error interno"}
+			ce = &cliError{http.StatusInternalServerError, "internal error"}
 		}
 		writeJSON(w, ce.code, map[string]string{"detail": ce.msg, "error": ce.msg})
 	}
@@ -107,7 +107,7 @@ func (s *Service) chunkUpload(w http.ResponseWriter, r *http.Request) error {
 	r.Body = http.MaxBytesReader(w, r.Body, chunkRequestSize+1<<20)
 	mr, err := r.MultipartReader()
 	if err != nil {
-		return cliErr(http.StatusBadRequest, "se espera multipart/form-data con campos file o file_gzip")
+		return cliErr(http.StatusBadRequest, "expected multipart/form-data with file or file_gzip fields")
 	}
 	chunks := map[string][]byte{}
 	for {
@@ -127,13 +127,13 @@ func (s *Service) chunkUpload(w http.ResponseWriter, r *http.Request) error {
 		}
 		sum := strings.ToLower(part.FileName())
 		if !isSHA1(sum) {
-			return cliErr(http.StatusBadRequest, "el nombre del trozo %q no es su sha1", part.FileName())
+			return cliErr(http.StatusBadRequest, "the chunk name %q is not its sha1", part.FileName())
 		}
 		var body io.Reader = part
 		if form == "file_gzip" {
 			zr, err := gzip.NewReader(part)
 			if err != nil {
-				return cliErr(http.StatusBadRequest, "el trozo %s no es gzip: %v", sum, err)
+				return cliErr(http.StatusBadRequest, "chunk %s is not gzip: %v", sum, err)
 			}
 			body = zr
 		}
@@ -143,21 +143,21 @@ func (s *Service) chunkUpload(w http.ResponseWriter, r *http.Request) error {
 			if errors.As(err, &tooBig) {
 				return err
 			}
-			return cliErr(http.StatusBadRequest, "no se pudo leer el trozo %s: %v", sum, err)
+			return cliErr(http.StatusBadRequest, "could not read chunk %s: %v", sum, err)
 		}
 		if len(data) > chunkSize {
-			return cliErr(http.StatusRequestEntityTooLarge, "el trozo %s pasa de %d MiB", sum, chunkSize>>20)
+			return cliErr(http.StatusRequestEntityTooLarge, "chunk %s is over %d MiB", sum, chunkSize>>20)
 		}
 		if got := sha1.Sum(data); hex.EncodeToString(got[:]) != sum {
-			return cliErr(http.StatusBadRequest, "el trozo %s no coincide con su sha1", sum)
+			return cliErr(http.StatusBadRequest, "chunk %s does not match its sha1", sum)
 		}
 		chunks[sum] = data
 		if len(chunks) > chunksPerRequest {
-			return cliErr(http.StatusBadRequest, "más de %d trozos en una petición", chunksPerRequest)
+			return cliErr(http.StatusBadRequest, "more than %d chunks in one request", chunksPerRequest)
 		}
 	}
 	if len(chunks) == 0 {
-		return cliErr(http.StatusBadRequest, "ningún trozo")
+		return cliErr(http.StatusBadRequest, "no chunks")
 	}
 	if err := s.store.PutUploadChunks(r.Context(), chunks); err != nil {
 		return err
@@ -171,7 +171,7 @@ func multipartErr(err error) error {
 	if errors.As(err, &tooBig) {
 		return err
 	}
-	return cliErr(http.StatusBadRequest, "multipart no válido: %v", err)
+	return cliErr(http.StatusBadRequest, "invalid multipart: %v", err)
 }
 
 type assembleRequest struct {
@@ -207,19 +207,19 @@ func assembleState(w http.ResponseWriter, state string, missing []string, detail
 func (s *Service) assemble(w http.ResponseWriter, r *http.Request) error {
 	var req assembleRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		return cliErr(http.StatusBadRequest, "JSON no válido: %v", err)
+		return cliErr(http.StatusBadRequest, "invalid JSON: %v", err)
 	}
 	req.Checksum = strings.ToLower(req.Checksum)
 	if !isSHA1(req.Checksum) {
-		return cliErr(http.StatusBadRequest, "checksum no es un sha1")
+		return cliErr(http.StatusBadRequest, "checksum is not a sha1")
 	}
 	if len(req.Chunks) == 0 {
-		return cliErr(http.StatusBadRequest, "faltan los trozos (chunks)")
+		return cliErr(http.StatusBadRequest, "missing chunks")
 	}
 	for i, c := range req.Chunks {
 		req.Chunks[i] = strings.ToLower(c)
 		if !isSHA1(req.Chunks[i]) {
-			return cliErr(http.StatusBadRequest, "el trozo %q no es un sha1", c)
+			return cliErr(http.StatusBadRequest, "chunk %q is not a sha1", c)
 		}
 	}
 	ids, err := s.projectIDs(r, req.Projects)
@@ -251,7 +251,7 @@ func (s *Service) assemble(w http.ResponseWriter, r *http.Request) error {
 			assembleState(w, "ok", nil, "")
 			return nil
 		}
-		assembleState(w, "not_found", missing, fmt.Sprintf("faltan %d de %d trozos", len(missing), len(req.Chunks)))
+		assembleState(w, "not_found", missing, fmt.Sprintf("missing %d of %d chunks", len(missing), len(req.Chunks)))
 		return nil
 	}
 	var (
@@ -265,7 +265,7 @@ func (s *Service) assemble(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 	if detail != "" {
-		s.log.WarnContext(ctx, "artifact bundle rechazado", "checksum", req.Checksum, "detail", detail)
+		s.log.WarnContext(ctx, "artifact bundle rejected", "checksum", req.Checksum, "detail", detail)
 		assembleState(w, "error", nil, detail)
 		return nil
 	}
@@ -282,7 +282,7 @@ func (s *Service) assemble(w http.ResponseWriter, r *http.Request) error {
 	}
 	err = s.store.PutBundle(ctx, bundle)
 	if errors.Is(err, store.ErrNotFound) {
-		return cliErr(http.StatusNotFound, "proyecto no encontrado")
+		return cliErr(http.StatusNotFound, "project not found")
 	}
 	if err != nil {
 		return err
@@ -294,7 +294,7 @@ func (s *Service) assemble(w http.ResponseWriter, r *http.Request) error {
 			withID++
 		}
 	}
-	s.log.InfoContext(ctx, "artifact bundle guardado", "projects", req.Projects, "release", bundle.Release,
+	s.log.InfoContext(ctx, "artifact bundle saved", "projects", req.Projects, "release", bundle.Release,
 		"dist", bundle.Dist, "maps", len(files), "debug_ids", withID)
 	assembleState(w, "ok", nil, "")
 	return nil
@@ -313,25 +313,25 @@ func (s *Service) readChunks(r *http.Request, req assembleRequest) (b []byte, mi
 			return nil, nil, "", err
 		}
 		if int64(len(b)+len(c)) > s.opts.MaxBundleBytes {
-			return nil, nil, fmt.Sprintf("el bundle pasa de %d MiB", s.opts.MaxBundleBytes>>20), nil
+			return nil, nil, fmt.Sprintf("the bundle is over %d MiB", s.opts.MaxBundleBytes>>20), nil
 		}
 		b = append(b, c...)
 	}
 	if sum := sha1.Sum(b); hex.EncodeToString(sum[:]) != req.Checksum {
-		return nil, nil, "los trozos no forman el bundle del checksum " + req.Checksum, nil
+		return nil, nil, "the chunks don't make up the bundle with checksum " + req.Checksum, nil
 	}
 	return b, nil, "", nil
 }
 
 func (s *Service) projectIDs(r *http.Request, names []string) ([]int64, error) {
 	if len(names) == 0 {
-		return nil, cliErr(http.StatusBadRequest, "falta el proyecto")
+		return nil, cliErr(http.StatusBadRequest, "missing project")
 	}
 	var ids []int64
 	for _, name := range names {
 		p, err := s.store.ProjectByName(r.Context(), name)
 		if errors.Is(err, store.ErrNotFound) {
-			return nil, cliErr(http.StatusNotFound, "proyecto %q no encontrado", name)
+			return nil, cliErr(http.StatusNotFound, "project %q not found", name)
 		}
 		if errors.Is(err, store.ErrInvalid) {
 			return nil, cliErr(http.StatusBadRequest, "%v", err)
@@ -367,7 +367,7 @@ func (s *Service) uploadReleaseFile(w http.ResponseWriter, r *http.Request) erro
 	r.Body = http.MaxBytesReader(w, r.Body, s.opts.MaxFileBytes+1<<20)
 	mr, err := r.MultipartReader()
 	if err != nil {
-		return cliErr(http.StatusBadRequest, "se espera multipart/form-data con un campo file")
+		return cliErr(http.StatusBadRequest, "expected multipart/form-data with a file field")
 	}
 	var (
 		data          []byte
@@ -396,7 +396,7 @@ func (s *Service) uploadReleaseFile(w http.ResponseWriter, r *http.Request) erro
 				return multipartErr(err)
 			}
 			if int64(len(data)) > s.opts.MaxFileBytes {
-				return cliErr(http.StatusRequestEntityTooLarge, "%s pasa de %d MiB", filename, s.opts.MaxFileBytes>>20)
+				return cliErr(http.StatusRequestEntityTooLarge, "%s is over %d MiB", filename, s.opts.MaxFileBytes>>20)
 			}
 			gotFile = true
 		case "name":
@@ -417,7 +417,7 @@ func (s *Service) uploadReleaseFile(w http.ResponseWriter, r *http.Request) erro
 		}
 	}
 	if !gotFile {
-		return cliErr(http.StatusBadRequest, "falta el campo file")
+		return cliErr(http.StatusBadRequest, "missing file field")
 	}
 	if name == "" {
 		name = "~/" + path.Base(strings.ReplaceAll(filename, `\`, "/"))
@@ -425,7 +425,7 @@ func (s *Service) uploadReleaseFile(w http.ResponseWriter, r *http.Request) erro
 	if jsURL, ok := strings.CutSuffix(name, ".map"); ok {
 		sm, err := Parse(data)
 		if err != nil {
-			return cliErr(http.StatusBadRequest, "%s no es un source map v3 válido: %v", name, err)
+			return cliErr(http.StatusBadRequest, "%s is not a valid v3 source map: %v", name, err)
 		}
 		if err := s.checkSize(name, sm); err != nil {
 			return cliErr(http.StatusRequestEntityTooLarge, "%s", err.Error())
@@ -434,14 +434,14 @@ func (s *Service) uploadReleaseFile(w http.ResponseWriter, r *http.Request) erro
 		for _, id := range ids {
 			err := s.store.PutSourceMaps(r.Context(), id, release, []store.SourceMapFile{f})
 			if errors.Is(err, store.ErrNotFound) {
-				return cliErr(http.StatusNotFound, "proyecto no encontrado")
+				return cliErr(http.StatusNotFound, "project not found")
 			}
 			if err != nil {
 				return err
 			}
 		}
 		s.cache.clear()
-		s.log.InfoContext(r.Context(), "source map subido", "project", r.PathValue("project"), "release", release, "file", name)
+		s.log.InfoContext(r.Context(), "source map uploaded", "project", r.PathValue("project"), "release", release, "file", name)
 	}
 	sum := sha1.Sum(data)
 	var distJSON any

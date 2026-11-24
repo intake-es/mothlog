@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/envelope"
+	"github.com/intake-es/mothlog/internal/envelope"
 )
 
 // Los proyectos y claves con que se grabaron los fixtures.

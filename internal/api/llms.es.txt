@@ -1,4 +1,4 @@
-# intake-errors
+# Mothlog
 
 > Recibe los errores que envían los SDK de Sentry, los agrupa en issues y deja leerlos, comentarlos y resolverlos con una API REST y un servidor MCP. Todo pide `Authorization: Bearer <token>` salvo este fichero.
 

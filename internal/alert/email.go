@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/markdown"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/markdown"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type smtpConfig struct {
@@ -29,13 +29,13 @@ type smtpConfig struct {
 func parseSMTP(raw, from string) (*smtpConfig, error) {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "smtp" && u.Scheme != "smtps") || u.Hostname() == "" {
-		return nil, errors.New("SMTP_URL debe ser smtp://usuario:clave@host:puerto o smtps://…")
+		return nil, errors.New("SMTP_URL must be smtp://user:password@host:port or smtps://…")
 	}
 	if from == "" {
-		return nil, errors.New("con SMTP_URL hace falta SMTP_FROM, el remitente")
+		return nil, errors.New("SMTP_URL needs SMTP_FROM, the sender")
 	}
 	if _, err := mail.ParseAddress(from); err != nil {
-		return nil, fmt.Errorf("SMTP_FROM no es una dirección: %q", from)
+		return nil, fmt.Errorf("SMTP_FROM is not an address: %q", from)
 	}
 	c := &smtpConfig{host: u.Hostname(), implicit: u.Scheme == "smtps", from: from}
 	port := u.Port()
@@ -59,7 +59,7 @@ type email struct {
 func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte, error) {
 	s := summarize(p)
 	_, fallback := kindText(p)
-	subject := "[intake-errors] " + fallback + p.project + ": " + s.Headline
+	subject := subjectPrefix + fallback + p.project + ": " + s.Headline
 	var body strings.Builder
 	body.WriteString(s.text(p.link))
 	if !p.isMonitor() {
@@ -67,7 +67,7 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 		if err != nil {
 			return nil, err
 		}
-		body.WriteString("\n---\n\n" + markdown.Issue(d))
+		body.WriteString("\n---\n\n" + markdown.Issue(d, p.l))
 	}
 
 	var m strings.Builder
@@ -76,7 +76,7 @@ func (e *email) message(ctx context.Context, p *pending, now time.Time) ([]byte,
 	header("To", strings.Join(e.to, ", "))
 	header("Subject", mime.QEncoding.Encode("utf-8", oneLine(subject)))
 	header("Date", now.Format(time.RFC1123Z))
-	header("Message-ID", "<"+newUUID()+"@intake-errors>")
+	header("Message-ID", "<"+newUUID()+"@mothlog>")
 	header("MIME-Version", "1.0")
 	header("Content-Type", "text/plain; charset=utf-8")
 	header("Content-Transfer-Encoding", "8bit")
@@ -94,7 +94,7 @@ func (e *email) send(ctx context.Context, p *pending) error {
 		return err
 	}
 	if err := e.deliver(ctx, msg); err != nil {
-		return fmt.Errorf("correo: %w", err)
+		return fmt.Errorf("email: %w", err)
 	}
 	return nil
 }

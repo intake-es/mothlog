@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func (h *handlers) registerMonitors(route func(string, http.HandlerFunc)) {
@@ -87,7 +87,7 @@ func decodeMonitor(w http.ResponseWriter, r *http.Request) (store.MonitorInput, 
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&in); err != nil {
-		writeError(w, http.StatusBadRequest, "cuerpo no válido: "+err.Error())
+		writeError(w, http.StatusBadRequest, "invalid body: "+err.Error())
 		return in, false
 	}
 	return in, true

@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 // <salida> como tools/fixtures/navegador/grabar.mjs.
 const [dist, intake, out] = process.argv.slice(2);
 if (!dist || !intake || !out) {
-  console.error('uso: node navegador.mjs <dist> <url de intake-errors> <salida>');
+  console.error('uso: node navegador.mjs <dist> <url de mothlog> <salida>');
   process.exit(1);
 }
 mkdirSync(out, { recursive: true });

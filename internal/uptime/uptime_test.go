@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 // site es un servidor de prueba que se puede tirar y levantar.
@@ -190,7 +190,7 @@ func TestDownAndUpDefaultChannels(t *testing.T) {
 	e.send(t)
 
 	got := e.slack.all()
-	if len(got) != 2 || got[0] != "Monitor caído en web: home" || got[1] != "Monitor recuperado en web: home" {
+	if len(got) != 2 || got[0] != "Monitor down in web: home" || got[1] != "Monitor up in web: home" {
 		t.Fatalf("slack = %q", got)
 	}
 	m, _ := e.db.UptimeMonitor(context.Background(), e.project.ID, "home")
@@ -203,7 +203,7 @@ func TestDownAndUpDefaultChannels(t *testing.T) {
 	}
 	inc := d.Incidents[0]
 	if !inc.StartedAt.Equal(t0.Add(time.Minute)) || inc.EndedAt == nil || !inc.EndedAt.Equal(t0.Add(4*time.Minute)) ||
-		inc.DurationMs == nil || *inc.DurationMs != 3*60*1000 || inc.FirstError != "conexión cerrada sin respuesta" {
+		inc.DurationMs == nil || *inc.DurationMs != 3*60*1000 || inc.FirstError != "connection closed without a response" {
 		t.Errorf("incidente = %+v", inc)
 	}
 }
@@ -244,11 +244,11 @@ func TestWebhookRule(t *testing.T) {
 	if down.Uptime == nil || down.Uptime.Slug != "home" || down.Uptime.CheckURL != web.srv.URL+"/" ||
 		down.Uptime.URL != "https://errores.test/monitors/"+itoa(e.project.ID)+"/uptime/home" ||
 		down.Incident == nil || !down.Incident.StartedAt.Equal(t0) || down.Incident.EndedAt != nil || down.Issue != nil ||
-		!strings.HasPrefix(down.Markdown, "# Monitor caído: home") {
+		!strings.HasPrefix(down.Markdown, "# Monitor down: home") {
 		t.Errorf("caída = %+v", down)
 	}
 	if up.Incident == nil || up.Incident.DurationMs == nil || *up.Incident.DurationMs != 3*60*1000 ||
-		!strings.Contains(up.Markdown, "Caído durante: 3 min 0 s") {
+		!strings.Contains(up.Markdown, "Down for: 3 min 0 s") {
 		t.Errorf("vuelta = %+v %s", up.Incident, up.Markdown)
 	}
 	if s := e.slack.all(); len(s) != 0 {

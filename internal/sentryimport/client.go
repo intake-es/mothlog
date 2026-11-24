@@ -60,10 +60,10 @@ type Client struct {
 func NewClient(base, token string, hc *http.Client) (*Client, error) {
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(base), "/"))
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
-		return nil, fmt.Errorf("--url no válida: %q", base)
+		return nil, fmt.Errorf("invalid --url: %q", base)
 	}
 	if token == "" {
-		return nil, errors.New("falta SENTRY_IMPORT_TOKEN")
+		return nil, errors.New("SENTRY_IMPORT_TOKEN is missing")
 	}
 	if hc == nil {
 		hc = &http.Client{Timeout: time.Minute}
@@ -146,11 +146,11 @@ func (c *Client) nextPage(link string) (*url.URL, error) {
 		}
 		u, err := url.Parse(strings.Trim(strings.TrimSpace(target), "<>"))
 		if err != nil {
-			return nil, fmt.Errorf("enlace a la página siguiente no válido: %w", err)
+			return nil, fmt.Errorf("invalid next page link: %w", err)
 		}
 		u = c.base.ResolveReference(u)
 		if u.Scheme != c.base.Scheme || u.Host != c.base.Host {
-			return nil, fmt.Errorf("la página siguiente va a otro servidor (%s): no se sigue", u.Host)
+			return nil, fmt.Errorf("the next page goes to another server (%s): not followed", u.Host)
 		}
 		return u, nil
 	}
@@ -182,7 +182,7 @@ func (c *Client) get(ctx context.Context, u *url.URL, out any) (link string, err
 				return "", ctx.Err()
 			}
 			if attempt < maxRetries {
-				if err := c.wait(ctx, backoff(attempt), "la API no responde"); err != nil {
+				if err := c.wait(ctx, backoff(attempt), "the API is not responding"); err != nil {
 					return "", err
 				}
 				continue
@@ -197,12 +197,12 @@ func (c *Client) get(ctx context.Context, u *url.URL, out any) (link string, err
 			if d <= 0 {
 				d = backoff(attempt)
 			}
-			if err := c.wait(ctx, d, "429 de la API"); err != nil {
+			if err := c.wait(ctx, d, "429 from the API"); err != nil {
 				return "", err
 			}
 			continue
 		case resp.StatusCode >= 500 && attempt < maxRetries:
-			if err := c.wait(ctx, backoff(attempt), fmt.Sprintf("%d de la API", resp.StatusCode)); err != nil {
+			if err := c.wait(ctx, backoff(attempt), fmt.Sprintf("%d from the API", resp.StatusCode)); err != nil {
 				return "", err
 			}
 			continue
@@ -212,12 +212,12 @@ func (c *Client) get(ctx context.Context, u *url.URL, out any) (link string, err
 			return "", &APIError{Path: shown, Detail: c.redact(rerr.Error())}
 		}
 		if err := json.Unmarshal(body, out); err != nil {
-			return "", &APIError{Path: shown, Status: resp.StatusCode, Detail: "respuesta que no se entiende: " + c.redact(err.Error())}
+			return "", &APIError{Path: shown, Status: resp.StatusCode, Detail: "unreadable response: " + c.redact(err.Error())}
 		}
 		// Sin peticiones restantes, se espera a que el límite vuelva a empezar.
 		if resp.Header.Get("X-Sentry-Rate-Limit-Remaining") == "0" {
 			if d := resetIn(resp.Header, c.Now()); d > 0 {
-				if err := c.wait(ctx, d, "límite de la API agotado"); err != nil {
+				if err := c.wait(ctx, d, "API rate limit exhausted"); err != nil {
 					return "", err
 				}
 			}

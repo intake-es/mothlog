@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/alert"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
-	"github.com/intake-es/intake-errors/internal/webhooks"
-	"github.com/intake-es/intake-errors/internal/webhooks/fakes"
+	"github.com/intake-es/mothlog/internal/alert"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/webhooks"
+	"github.com/intake-es/mothlog/internal/webhooks/fakes"
 )
 
 const (
@@ -235,7 +235,7 @@ func TestRoundTripLinearAndGitHub(t *testing.T) {
 		t.Fatalf("enlace de GitHub %+v", gh)
 	}
 	gi, _ := w.gh.Issue(repo, 1)
-	if !strings.Contains(gi.Body, publicURLBase+"/issues/"+strconv.FormatInt(id, 10)) || !strings.Contains(gi.Body, "## Qué puedes hacer") ||
+	if !strings.Contains(gi.Body, publicURLBase+"/issues/"+strconv.FormatInt(id, 10)) || !strings.Contains(gi.Body, "## What you can do") ||
 		strings.Join(gi.Labels, ",") != "bug,errores" {
 		t.Errorf("issue de GitHub sin el context.md o sin etiquetas: %v\n%s", gi.Labels, gi.Body)
 	}

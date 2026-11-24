@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
-const releasesUsage = "uso: intake-errors releases new <proyecto> <versión> [--env <entorno>]"
+const releasesUsage = "usage: mothlog releases new <project> <version> [--env <environment>]"
 
 // releasesCommand crea una release a mano y, con --env, apunta su despliegue
 // en ese entorno.
@@ -37,9 +37,9 @@ func releasesCommand(ctx context.Context, db *store.Store, args []string, out io
 		return err
 	}
 	if created {
-		_, err = fmt.Fprintf(out, "release %s creada en %s\n", rel.Version, p.Name)
+		_, err = fmt.Fprintf(out, "release %s created in %s\n", rel.Version, p.Name)
 	} else {
-		_, err = fmt.Fprintf(out, "la release %s ya existía en %s\n", rel.Version, p.Name)
+		_, err = fmt.Fprintf(out, "release %s already existed in %s\n", rel.Version, p.Name)
 	}
 	if err != nil || env == "" {
 		return err
@@ -48,6 +48,6 @@ func releasesCommand(ctx context.Context, db *store.Store, args []string, out io
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(out, "desplegada en %s el %s; %d issues resueltos con ella\n", d.Environment, day(&d.DeployedAt), len(resolved))
+	_, err = fmt.Fprintf(out, "deployed to %s on %s; %d issues resolved with it\n", d.Environment, day(&d.DeployedAt), len(resolved))
 	return err
 }

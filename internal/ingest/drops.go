@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type dropKey struct {
@@ -75,13 +75,13 @@ func (d *Drops) Run(ctx context.Context, every time.Duration, log *slog.Logger) 
 		case <-ctx.Done():
 			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			if err := d.Flush(flushCtx); err != nil {
-				log.Error("guardar descartados", "err", err)
+				log.Error("save dropped", "err", err)
 			}
 			cancel()
 			return
 		case <-t.C:
 			if err := d.Flush(ctx); err != nil {
-				log.ErrorContext(ctx, "guardar descartados", "err", err)
+				log.ErrorContext(ctx, "save dropped", "err", err)
 			}
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // releaseJSON es una release como la devuelve Sentry a sentry-cli.
@@ -64,10 +64,10 @@ func (s *Service) newRelease(w http.ResponseWriter, r *http.Request) error {
 		Projects []string `json:"projects"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		return cliErr(http.StatusBadRequest, "JSON no válido: %v", err)
+		return cliErr(http.StatusBadRequest, "invalid JSON: %v", err)
 	}
 	if req.Version == "" {
-		return cliErr(http.StatusBadRequest, "falta version")
+		return cliErr(http.StatusBadRequest, "missing version")
 	}
 	if p := r.PathValue("project"); p != "" {
 		req.Projects = append(req.Projects, p)
@@ -80,10 +80,10 @@ func (s *Service) newRelease(w http.ResponseWriter, r *http.Request) error {
 	for _, id := range ids {
 		rel, created, err := s.store.CreateRelease(r.Context(), id, req.Version)
 		if err != nil {
-			return notFoundErr(err, "proyecto no encontrado")
+			return notFoundErr(err, "project not found")
 		}
 		if created {
-			s.log.InfoContext(r.Context(), "release creada", "project", rel.Project, "release", rel.Version)
+			s.log.InfoContext(r.Context(), "release created", "project", rel.Project, "release", rel.Version)
 		}
 		rels = append(rels, rel)
 	}
@@ -107,7 +107,7 @@ func (s *Service) releaseProjects(r *http.Request, version string, names []strin
 		return nil, nil, err
 	}
 	if len(ps) == 0 {
-		return nil, nil, cliErr(http.StatusNotFound, "no hay ninguna release %q", version)
+		return nil, nil, cliErr(http.StatusNotFound, "there is no release %q", version)
 	}
 	ids := make([]int64, len(ps))
 	names = make([]string, len(ps))
@@ -125,7 +125,7 @@ func (s *Service) finalizeRelease(w http.ResponseWriter, r *http.Request) error 
 		DateReleased *time.Time `json:"dateReleased"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		return cliErr(http.StatusBadRequest, "JSON no válido: %v", err)
+		return cliErr(http.StatusBadRequest, "invalid JSON: %v", err)
 	}
 	version := r.PathValue("version")
 	ids, names, err := s.releaseProjects(r, version, req.Projects)
@@ -140,7 +140,7 @@ func (s *Service) finalizeRelease(w http.ResponseWriter, r *http.Request) error 
 	for _, id := range ids {
 		rel, err := s.store.FinalizeRelease(r.Context(), id, version, at)
 		if err != nil {
-			return notFoundErr(err, "proyecto no encontrado")
+			return notFoundErr(err, "project not found")
 		}
 		rels = append(rels, rel)
 	}
@@ -160,10 +160,10 @@ func (s *Service) newDeploy(w http.ResponseWriter, r *http.Request) error {
 		Projects     []string   `json:"projects"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
-		return cliErr(http.StatusBadRequest, "JSON no válido: %v", err)
+		return cliErr(http.StatusBadRequest, "invalid JSON: %v", err)
 	}
 	if req.Environment == "" {
-		return cliErr(http.StatusBadRequest, "falta environment")
+		return cliErr(http.StatusBadRequest, "missing environment")
 	}
 	version := r.PathValue("version")
 	ids, names, err := s.releaseProjects(r, version, req.Projects)
@@ -179,9 +179,9 @@ func (s *Service) newDeploy(w http.ResponseWriter, r *http.Request) error {
 		var resolved []int64
 		d, resolved, err = s.store.AddDeploy(r.Context(), id, version, req.Environment, at)
 		if err != nil {
-			return notFoundErr(err, "proyecto no encontrado")
+			return notFoundErr(err, "project not found")
 		}
-		s.log.InfoContext(r.Context(), "despliegue apuntado", "project", names[i], "release", version,
+		s.log.InfoContext(r.Context(), "deploy recorded", "project", names[i], "release", version,
 			"environment", req.Environment, "resolved_issues", len(resolved))
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{

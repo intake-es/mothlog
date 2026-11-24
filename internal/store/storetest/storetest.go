@@ -1,5 +1,5 @@
 // Package storetest prepara un Store para los tests de otros paquetes, con
-// Postgres si hay INTAKE_ERRORS_TEST_DATABASE_URL y si no con SQLite en un
+// Postgres si hay MOTHLOG_TEST_DATABASE_URL y si no con SQLite en un
 // fichero temporal, y crea issues y eventos directamente en la base.
 package storetest
 
@@ -20,10 +20,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/envelope"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/envelope"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 type DB struct {
@@ -40,7 +40,7 @@ func RandomHex(t testing.TB, n int) string {
 }
 
 // URLVar es la variable con la URL del Postgres de pruebas.
-const URLVar = "INTAKE_ERRORS_TEST_DATABASE_URL"
+const URLVar = "MOTHLOG_TEST_DATABASE_URL"
 
 // Postgres dice si los tests corren con Postgres; si no, con SQLite.
 func Postgres() bool { return os.Getenv(URLVar) != "" }
@@ -53,7 +53,7 @@ func OnlyPostgres(t testing.TB, why string) {
 	}
 }
 
-// New abre un Store en un esquema propio de INTAKE_ERRORS_TEST_DATABASE_URL,
+// New abre un Store en un esquema propio de MOTHLOG_TEST_DATABASE_URL,
 // que se borra al acabar. Sin esa variable, en un fichero de SQLite nuevo.
 func New(t testing.TB) *store.Store {
 	t.Helper()
@@ -72,7 +72,7 @@ func NewURL(t testing.TB) string {
 	t.Helper()
 	base := os.Getenv(URLVar)
 	if base == "" {
-		return "sqlite://" + filepath.Join(t.TempDir(), "intake.db")
+		return "sqlite://" + filepath.Join(t.TempDir(), "mothlog.db")
 	}
 	ctx := context.Background()
 	schema := "test_" + RandomHex(t, 6)

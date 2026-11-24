@@ -67,19 +67,19 @@ func (e *Error) Error() string {
 	var msg string
 	switch e.Code {
 	case ErrUnclosedQuote:
-		msg = "faltan las comillas de cierre"
+		msg = "missing closing quotes"
 	case ErrEmptyKey:
-		msg = "falta la clave antes de los dos puntos"
+		msg = "missing key before the colon"
 	case ErrLoneNegation:
-		msg = "! va pegado al término que niega, como !browser:Chrome"
+		msg = "! goes right before the term it negates, like !browser:Chrome"
 	case ErrBadStatus:
-		msg = fmt.Sprintf("is:%s no existe; is: es %s", e.Value, strings.Join(Statuses, ", "))
+		msg = fmt.Sprintf("is:%s does not exist; is: is %s", e.Value, strings.Join(Statuses, ", "))
 	case ErrAfterQuote:
-		msg = "tras las comillas de cierre va un espacio"
+		msg = "a space goes after the closing quotes"
 	default:
 		msg = e.Code
 	}
-	return fmt.Sprintf("búsqueda, carácter %d: %s", e.Pos+1, msg)
+	return fmt.Sprintf("search, character %d: %s", e.Pos+1, msg)
 }
 
 // Parse lee una búsqueda. Una clave es una letra o _ seguida de letras,

@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/lang"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func contextWith(frames []event.Frame, history []store.HistoryEntry) store.IssueContext {
@@ -34,15 +35,25 @@ func TestContextCollapsesLibraryFrames(t *testing.T) {
 		{Filename: "src/c.ts", Function: "c", Line: 3, ContextLine: "c()", InApp: app(true)},
 		{Filename: "node_modules/d.js", Function: "d", InApp: app(false)},
 	}
-	full := Context(contextWith(frames, nil), "", MaxContextBytes)
-	if !strings.Contains(full, "- `node_modules/a.js` en `a`\n") || strings.Contains(full, "Recortado") {
-		t.Errorf("sin pasar del tamaño quita fotogramas:\n%s", full)
-	}
-	var b strings.Builder
-	writeFrames(&b, style{}, frames, "#####", true)
-	want := "- (2 fotogramas de librerías, sin poner)\n\n##### `src/c.ts:3` en `c` (app)\n\n```\n> 3 | c()\n```\n\n- (1 fotograma de librerías, sin poner)\n"
-	if b.String() != want {
-		t.Errorf("fotogramas recogidos =\n%s\nquiero\n%s", b.String(), want)
+	for _, tc := range []struct {
+		l         lang.Lang
+		line, cut string
+		collapsed string
+	}{
+		{lang.EN, "- `node_modules/a.js` in `a`\n", "Trimmed",
+			"- (2 library frames, omitted)\n\n##### `src/c.ts:3` in `c` (app)\n\n```\n> 3 | c()\n```\n\n- (1 library frame, omitted)\n"},
+		{lang.ES, "- `node_modules/a.js` en `a`\n", "Recortado",
+			"- (2 fotogramas de librerías, sin poner)\n\n##### `src/c.ts:3` en `c` (app)\n\n```\n> 3 | c()\n```\n\n- (1 fotograma de librerías, sin poner)\n"},
+	} {
+		full := Context(contextWith(frames, nil), "", MaxContextBytes, tc.l)
+		if !strings.Contains(full, tc.line) || strings.Contains(full, tc.cut) {
+			t.Errorf("%s: sin pasar del tamaño quita fotogramas:\n%s", tc.l, full)
+		}
+		var b strings.Builder
+		writeFrames(&b, style{l: tc.l}, frames, "#####", true)
+		if b.String() != tc.collapsed {
+			t.Errorf("%s: fotogramas recogidos =\n%s\nquiero\n%s", tc.l, b.String(), tc.collapsed)
+		}
 	}
 }
 
@@ -52,12 +63,20 @@ func TestContextHardCut(t *testing.T) {
 	for range 200 {
 		frames = append(frames, event.Frame{Filename: "src/a.ts", Function: "f", Line: 10, ContextLine: strings.Repeat("x", 2000), InApp: app(true)})
 	}
-	md := Context(contextWith(frames, nil), "", 32<<10)
-	if len(md) > 32<<10 {
-		t.Errorf("ocupa %d bytes", len(md))
-	}
-	if !strings.Contains(md, "> Recortado para no pasar de 32 KB") || !strings.HasSuffix(md, "se ha cortado aquí. El resto, con `get_event` y `list_comments`.\n") {
-		t.Errorf("no dice que lo ha cortado:\n%s", md[len(md)-300:])
+	for _, tc := range []struct {
+		l          lang.Lang
+		head, tail string
+	}{
+		{lang.EN, "> Trimmed to stay under 32 KB", "has been cut here. The rest, with `get_event` and `list_comments`.\n"},
+		{lang.ES, "> Recortado para no pasar de 32 KB", "se ha cortado aquí. El resto, con `get_event` y `list_comments`.\n"},
+	} {
+		md := Context(contextWith(frames, nil), "", 32<<10, tc.l)
+		if len(md) > 32<<10 {
+			t.Errorf("%s: ocupa %d bytes", tc.l, len(md))
+		}
+		if !strings.Contains(md, tc.head) || !strings.HasSuffix(md, tc.tail) {
+			t.Errorf("%s: no dice que lo ha cortado:\n%s", tc.l, md[len(md)-300:])
+		}
 	}
 }
 
@@ -70,23 +89,34 @@ func TestContextHistory(t *testing.T) {
 			Release: &rel, Comment: &store.Comment{Body: "Arreglado"}},
 		{Type: "status", At: at, Source: store.SourceIngest, From: "resolved", To: "open", Release: &rel},
 	}
-	md := Context(contextWith(nil, h), "https://errors.example.com/issues/7", MaxContextBytes)
-	for _, want := range []string{
-		"- En la interfaz: https://errors.example.com/issues/7\n",
-		"- 2026-11-22T10:00:00.000Z, ana comentó:\n  > # Causa\n  >\n  > - una\n",
-		"- 2026-11-22T10:00:00.000Z, agente (token) desde el MCP: open → resolved_next (release web@1.3.0)\n  > Arreglado\n",
-		"- 2026-11-22T10:00:00.000Z, intake-errors al llegar un evento: resolved → open (release web@1.3.0)\n",
-		"Pasa a resuelto al desplegarse una release posterior a web@1.2.0",
+	for l, wants := range map[lang.Lang][]string{
+		lang.EN: {
+			"- In the UI: https://errors.example.com/issues/7\n",
+			"- 2026-11-22T10:00:00.000Z, ana commented:\n  > # Causa\n  >\n  > - una\n",
+			"- 2026-11-22T10:00:00.000Z, agente (token) from the MCP: open → resolved_next (release web@1.3.0)\n  > Arreglado\n",
+			"- 2026-11-22T10:00:00.000Z, Mothlog when an event came in: resolved → open (release web@1.3.0)\n",
+			"It becomes resolved when a release later than web@1.2.0 is deployed",
+		},
+		lang.ES: {
+			"- En la interfaz: https://errors.example.com/issues/7\n",
+			"- 2026-11-22T10:00:00.000Z, ana comentó:\n  > # Causa\n  >\n  > - una\n",
+			"- 2026-11-22T10:00:00.000Z, agente (token) desde el MCP: open → resolved_next (release web@1.3.0)\n  > Arreglado\n",
+			"- 2026-11-22T10:00:00.000Z, Mothlog al llegar un evento: resolved → open (release web@1.3.0)\n",
+			"Pasa a resuelto al desplegarse una release posterior a web@1.2.0",
+		},
 	} {
-		if !strings.Contains(md, want) {
-			t.Errorf("no lleva %q:\n%s", want, md)
+		md := Context(contextWith(nil, h), "https://errors.example.com/issues/7", MaxContextBytes, l)
+		for _, want := range wants {
+			if !strings.Contains(md, want) {
+				t.Errorf("%s: no lleva %q:\n%s", l, want, md)
+			}
 		}
 	}
 }
 
 func TestContextLinks(t *testing.T) {
 	c := contextWith(nil, nil)
-	if strings.Contains(Context(c, "", 0), "## Enlaces") {
+	if strings.Contains(Context(c, "", 0, lang.EN), "## Links") {
 		t.Fatal("sin enlaces no debería haber sección")
 	}
 	c.Links = []store.IssueLink{
@@ -95,14 +125,23 @@ func TestContextLinks(t *testing.T) {
 		{Provider: store.ProviderGitHub, Kind: store.LinkPullRequest, ExternalID: "o/r#9", Identifier: "o/r#9",
 			URL: "https://github.com/o/r/pull/9", State: store.LinkMerged, StateName: "merged"},
 	}
-	out := Context(c, "", 0)
-	for _, want := range []string{
-		"## Enlaces",
-		"- Issue de Linear ERR-7: cerrada (Done), https://linear.app/x/issue/ERR-7",
-		"- PR de GitHub o/r#9: mergeado, https://github.com/o/r/pull/9",
+	for l, wants := range map[lang.Lang][]string{
+		lang.EN: {
+			"## Links",
+			"- Linear issue ERR-7: closed (Done), https://linear.app/x/issue/ERR-7",
+			"- GitHub PR o/r#9: merged, https://github.com/o/r/pull/9",
+		},
+		lang.ES: {
+			"## Enlaces",
+			"- Issue de Linear ERR-7: cerrada (Done), https://linear.app/x/issue/ERR-7",
+			"- PR de GitHub o/r#9: mergeado, https://github.com/o/r/pull/9",
+		},
 	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("falta %q en:\n%s", want, out)
+		out := Context(c, "", 0, l)
+		for _, want := range wants {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s: falta %q en:\n%s", l, want, out)
+			}
 		}
 	}
 }

@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/migrations"
-	sqlitemigrations "github.com/intake-es/intake-errors/migrations/sqlite"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/migrations"
+	sqlitemigrations "github.com/intake-es/mothlog/migrations/sqlite"
 )
 
 func TestOAuthGrantFollowsPerson(t *testing.T) {
@@ -179,7 +179,7 @@ func TestMigrationOAuthPostgres(t *testing.T) {
 
 func TestMigrationOAuthSQLite(t *testing.T) {
 	ctx := context.Background()
-	lite, err := db.OpenSQLite(ctx, "sqlite://"+filepath.Join(t.TempDir(), "intake.db"), db.SQLiteOptions{})
+	lite, err := db.OpenSQLite(ctx, "sqlite://"+filepath.Join(t.TempDir(), "mothlog.db"), db.SQLiteOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

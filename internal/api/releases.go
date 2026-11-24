@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 func (h *handlers) registerReleases(route func(string, http.HandlerFunc)) {
@@ -93,7 +93,7 @@ func (h *handlers) createRelease(w http.ResponseWriter, r *http.Request) {
 		deployBody
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, `el cuerpo debe ser {"version": "...", "environment": "..."}`)
+		writeError(w, http.StatusBadRequest, `the body must be {"version": "...", "environment": "..."}`)
 		return
 	}
 	if _, err := h.st.ProjectByID(r.Context(), id); err != nil {
@@ -159,7 +159,7 @@ func (h *handlers) createDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	var body deployBody
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, `el cuerpo debe ser {"environment": "..."}`)
+		writeError(w, http.StatusBadRequest, `the body must be {"environment": "..."}`)
 		return
 	}
 	if _, err := h.st.ProjectByID(r.Context(), id); err != nil {

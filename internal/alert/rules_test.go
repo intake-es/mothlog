@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
-	"github.com/intake-es/intake-errors/internal/event"
-	"github.com/intake-es/intake-errors/internal/ingest"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/db"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/ingest"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
 )
 
 type recorded struct {
@@ -245,6 +245,16 @@ func TestRuleWebhookSigned(t *testing.T) {
 	if r.Header.Get("Content-Type") != "application/json" || r.Header.Get(HeaderEvent) != "new" || r.Header.Get(HeaderDelivery) == "" {
 		t.Errorf("cabeceras = %v", r.Header)
 	}
+	// Las cabeceras de antes del nombre Mothlog van también, con los mismos valores.
+	for name, legacy := range map[string]string{
+		"X-Mothlog-Signature": "X-Intake-Errors-Signature",
+		"X-Mothlog-Event":     "X-Intake-Errors-Event",
+		"X-Mothlog-Delivery":  "X-Intake-Errors-Delivery",
+	} {
+		if v := r.Header.Get(name); v == "" || r.Header.Get(legacy) != v {
+			t.Errorf("%s = %q y %s = %q", name, v, legacy, r.Header.Get(legacy))
+		}
+	}
 	var pl WebhookPayload
 	if err := json.Unmarshal(r.Body, &pl); err != nil {
 		t.Fatal(err)
@@ -255,7 +265,7 @@ func TestRuleWebhookSigned(t *testing.T) {
 		!strings.HasPrefix(pl.Event.Error, "task failed id=88dfc065281046dfa0098d0fa91bbdf4") || pl.Event.Release != "fixture-release-1" {
 		t.Errorf("payload = %+v", pl)
 	}
-	if !strings.HasPrefix(pl.Markdown, "# task failed") || !strings.Contains(pl.Markdown, "- Proyecto: backend") {
+	if !strings.HasPrefix(pl.Markdown, "# task failed") || !strings.Contains(pl.Markdown, "- Project: backend") {
 		t.Errorf("markdown:\n%s", pl.Markdown)
 	}
 	// Una firma con otro secreto no vale.
@@ -272,7 +282,7 @@ func TestRuleEachAction(t *testing.T) {
 	telegramURL := serve(t, telegramSrv)
 	e := newEnv(t, func(o *Options) {
 		o.SMTPURL = "smtp://avisos:clave-smtp@" + mail.addr
-		o.SMTPFrom = "intake-errors <avisos@errores.test>"
+		o.SMTPFrom = "Mothlog <avisos@errores.test>"
 		o.TelegramAPIURL = telegramURL
 	})
 	if err := e.db.SetProjectLabels(context.Background(), "backend", []string{"label-proyecto"}); err != nil {
@@ -307,7 +317,7 @@ func TestRuleEachAction(t *testing.T) {
 	}
 	var sp slackPayload
 	_ = json.Unmarshal(sl[0].Body, &sp)
-	if !strings.HasPrefix(sp.Text, "Nuevo error en backend: "+head) || !slices.Equal(buttons(sp), []string{"Ver el error", "ERR-101 en Linear"}) {
+	if !strings.HasPrefix(sp.Text, "New error in backend: "+head) || !slices.Equal(buttons(sp), []string{"View error", "ERR-101 in Linear"}) {
 		t.Errorf("slack = %s", sl[0].Body)
 	}
 	evidence["slack"] = string(sl[0].Body)
@@ -331,8 +341,8 @@ func TestRuleEachAction(t *testing.T) {
 		m.Auth != "|avisos|clave-smtp" {
 		t.Errorf("correo = %+v", m)
 	}
-	for _, want := range []string{"Subject: [intake-errors] Nuevo error en backend: task failed", "To: guardia@errores.test, equipo@errores.test",
-		"Content-Type: text/plain; charset=utf-8", head, "Nuevo error · backend · production", link, "# task failed"} {
+	for _, want := range []string{"Subject: [Mothlog] New error in backend: task failed", "To: guardia@errores.test, equipo@errores.test",
+		"Content-Type: text/plain; charset=utf-8", head, "New error · backend · production", link, "# task failed"} {
 		if !strings.Contains(m.Data, want) {
 			t.Errorf("el correo no lleva %q:\n%s", want, m.Data)
 		}
@@ -344,7 +354,7 @@ func TestRuleEachAction(t *testing.T) {
 	if len(dc) != 1 || json.Unmarshal(dc[0].Body, &dp) != nil {
 		t.Fatalf("discord = %v", dc)
 	}
-	if dp.Content != "**Nuevo error** · backend · production" || len(dp.Embeds) != 1 || !strings.HasPrefix(dp.Embeds[0].Title, head) ||
+	if dp.Content != "**New error** · backend · production" || len(dp.Embeds) != 1 || !strings.HasPrefix(dp.Embeds[0].Title, head) ||
 		dp.Embeds[0].URL != link || dp.AllowedMentions["parse"] == nil {
 		t.Errorf("discord = %s", dc[0].Body)
 	}
@@ -360,8 +370,8 @@ func TestRuleEachAction(t *testing.T) {
 		ParseMode string `json:"parse_mode"`
 	}
 	_ = json.Unmarshal(tg[0].Body, &tp)
-	if tp.ChatID != "-100200" || tp.ParseMode != "HTML" || !strings.Contains(tp.Text, "<b>Nuevo error</b> · backend · production") ||
-		!strings.Contains(tp.Text, `<a href="`+link+`">Ver el error</a>`) {
+	if tp.ChatID != "-100200" || tp.ParseMode != "HTML" || !strings.Contains(tp.Text, "<b>New error</b> · backend · production") ||
+		!strings.Contains(tp.Text, `<a href="`+link+`">View error</a>`) {
 		t.Errorf("telegram = %s", tg[0].Body)
 	}
 	evidence["telegram"] = tg[0].Path + "\n" + string(tg[0].Body)
@@ -372,7 +382,7 @@ func TestRuleEachAction(t *testing.T) {
 	}
 	h := nt[0].Header
 	if nt[0].Path != "/errores-backend" || h.Get("Authorization") != "Bearer tk_ntfy" || h.Get("Click") != link ||
-		h.Get("Priority") != "high" || h.Get("Tags") != "rotating_light" || !strings.Contains(h.Get("Title"), "Nuevo_error") ||
+		h.Get("Priority") != "high" || h.Get("Tags") != "rotating_light" || !strings.Contains(h.Get("Title"), "New_error") ||
 		!strings.HasPrefix(string(nt[0].Body), head) {
 		t.Errorf("ntfy = %v\n%s", h, nt[0].Body)
 	}
@@ -464,7 +474,7 @@ func TestRuleFrequency(t *testing.T) {
 	e.ingestEvent(t, other)
 	e.send(t)
 	if got := len(hook.all()); got != 3 {
-		t.Fatalf("4 eventos en 10 minutos: avisos = %d, quiero 3", got)
+		t.Fatalf("4 events in 10 minutos: avisos = %d, quiero 3", got)
 	}
 }
 
@@ -622,7 +632,7 @@ func TestRulesReplaceDefaultAlerts(t *testing.T) {
 	if n := e.send(t); n != 3 {
 		t.Fatalf("enviados = %d, quiero 3", n)
 	}
-	if got := e.slack.messages(); len(got) != 1 || !strings.Contains(got[0], "Nuevo error en web") {
+	if got := e.slack.messages(); len(got) != 1 || !strings.Contains(got[0], "New error in web") {
 		t.Errorf("slack de las variables = %q; solo el proyecto sin reglas avisa ahí", got)
 	}
 	if issues, order := e.linear.snapshot(); len(order) != 1 || !strings.HasPrefix(issues[order[0]].Title, "[web]") {
@@ -676,7 +686,7 @@ func TestRemovedActionIsAbandoned(t *testing.T) {
 	e.clock.set(e.clock.now().Add(time.Hour))
 	e.send(t)
 	rows := e.outbox(t)
-	if len(rows) != 1 || !rows[0].Failed || rows[0].Attempts != 2 || !strings.Contains(rows[0].LastError, "ya no existe") {
+	if len(rows) != 1 || !rows[0].Failed || rows[0].Attempts != 2 || !strings.Contains(rows[0].LastError, "no longer exists") {
 		t.Fatalf("filas = %+v", rows)
 	}
 }
@@ -695,7 +705,7 @@ func TestRuleSlackAndLinearOfSameRule(t *testing.T) {
 	e.linear.setFail(0)
 	e.clock.set(e.clock.now().Add(time.Minute))
 	e.send(t)
-	if msgs := slackSrv.payloads(t); len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"Ver el error", "ERR-101 en Linear"}) {
+	if msgs := slackSrv.payloads(t); len(msgs) != 1 || !slices.Equal(buttons(msgs[0]), []string{"View error", "ERR-101 in Linear"}) {
 		t.Fatalf("slack = %+v", msgs)
 	}
 }
@@ -714,7 +724,7 @@ func TestLinearCommentsOnFrequency(t *testing.T) {
 		t.Fatalf("issues = %d", len(order))
 	}
 	li := issues[order[0]]
-	if len(li.Comments) != 1 || !strings.HasPrefix(li.Comments[0], "Más de 2 eventos en 30 min: ") || li.State != "state-triage" {
+	if len(li.Comments) != 1 || !strings.HasPrefix(li.Comments[0], "More than 2 events in 30 min: ") || li.State != "state-triage" {
 		t.Errorf("issue = %+v: la frecuencia comenta sin cambiar el estado", li)
 	}
 }
@@ -740,13 +750,13 @@ func TestTestAction(t *testing.T) {
 	var pl WebhookPayload
 	_ = json.Unmarshal(reqs[0].Body, &pl)
 	if pl.Type != "test" || pl.Rule.Name != "Pagos" || pl.Project != "backend" || !strings.HasPrefix(pl.Delivery, "test-") ||
-		!strings.Contains(pl.Markdown, "Si ves este aviso") || pl.Issue.URL != fmt.Sprintf("%s/projects/%d/settings", publicURL, e.project) {
+		!strings.Contains(pl.Markdown, "If you see this alert") || pl.Issue.URL != fmt.Sprintf("%s/projects/%d/settings", publicURL, e.project) {
 		t.Errorf("payload = %+v", pl)
 	}
 	if err := e.alerter.TestAction(ctx, r, "slack"); err != nil {
 		t.Fatal(err)
 	}
-	if msgs := slackSrv.messages(); len(msgs) != 1 || !strings.HasPrefix(msgs[0], "Aviso de prueba de backend") {
+	if msgs := slackSrv.messages(); len(msgs) != 1 || !strings.HasPrefix(msgs[0], "Test alert from backend") {
 		t.Errorf("slack = %q", msgs)
 	}
 	if err := e.alerter.TestAction(ctx, r, "roto"); !errors.Is(err, ErrTestFailed) || strings.Contains(err.Error(), "127.0.0.1:1/x") {

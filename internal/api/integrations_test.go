@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/api"
-	"github.com/intake-es/intake-errors/internal/store"
-	"github.com/intake-es/intake-errors/internal/store/storetest"
-	"github.com/intake-es/intake-errors/internal/webhooks"
+	"github.com/intake-es/mothlog/internal/api"
+	"github.com/intake-es/mothlog/internal/store"
+	"github.com/intake-es/mothlog/internal/store/storetest"
+	"github.com/intake-es/mothlog/internal/webhooks"
 )
 
 func TestIssueDetailLinks(t *testing.T) {
@@ -41,7 +41,7 @@ func TestIssueDetailLinks(t *testing.T) {
 		t.Fatalf("enlaces = %+v", d.Links)
 	}
 	code, md := e.do(t, http.MethodGet, "/api/0/issues/"+itoa(id)+"/context.md", "")
-	if code != http.StatusOK || !strings.Contains(string(md), "- Issue de Linear ERR-1: cerrada (Done), https://linear.app/x/issue/ERR-1") {
+	if code != http.StatusOK || !strings.Contains(string(md), "- Linear issue ERR-1: closed (Done), https://linear.app/x/issue/ERR-1") {
 		t.Errorf("context.md (%d) sin los enlaces:\n%s", code, md)
 	}
 }

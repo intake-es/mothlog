@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
+	"github.com/intake-es/mothlog/internal/lang"
 )
 
 // Límites de Block Kit.
@@ -89,7 +90,7 @@ func slackMessage(p *pending, ev *event.Event, link string) slackPayload {
 		meta = append(meta, esc(p.environment))
 	}
 	if p.kind == "regressed" && p.resolvedAt != nil {
-		meta = append(meta, "se resolvió el "+spanishDate(*p.resolvedAt, p.eventAt))
+		meta = append(meta, resolvedOn(p.l, *p.resolvedAt, p.eventAt))
 	}
 
 	msg := slackPayload{Text: esc(fallback + p.project + ": " + headline)}
@@ -98,7 +99,7 @@ func slackMessage(p *pending, ev *event.Event, link string) slackPayload {
 		section("*"+esc(strings.ReplaceAll(headline, "*", "\u2217"))+"*"))
 
 	if f := failingFrame(ev); f != nil {
-		msg.Blocks = append(msg.Blocks, section(frameText(f)))
+		msg.Blocks = append(msg.Blocks, section(frameText(f, p.l)))
 	} else if c := oneLine(p.culprit); c != "" {
 		msg.Blocks = append(msg.Blocks, section("`"+esc(truncate(c, maxCodeLine))+"`"))
 	}
@@ -109,10 +110,10 @@ func slackMessage(p *pending, ev *event.Event, link string) slackPayload {
 
 	var buttons []any
 	if link != "" {
-		buttons = append(buttons, slackButton{Type: "button", Text: plain("Ver el error", maxButtonText), URL: link, Style: "primary"})
+		buttons = append(buttons, slackButton{Type: "button", Text: plain(p.l.T("View error", "Ver el error"), maxButtonText), URL: link, Style: "primary"})
 	}
 	if p.linearIdentifier != "" && p.linearURL != "" {
-		buttons = append(buttons, slackButton{Type: "button", Text: plain(p.linearIdentifier+" en Linear", maxButtonText), URL: p.linearURL})
+		buttons = append(buttons, slackButton{Type: "button", Text: plain(p.linearIdentifier+p.l.T(" in Linear", " en Linear"), maxButtonText), URL: p.linearURL})
 	}
 	if len(buttons) > 0 {
 		msg.Blocks = append(msg.Blocks, slackBlock{Type: "actions", Elements: buttons})
@@ -153,7 +154,7 @@ func failingFrame(ev *event.Event) *event.Frame {
 	return nil
 }
 
-func frameText(f *event.Frame) string {
+func frameText(f *event.Frame, l lang.Lang) string {
 	file := f.Filename
 	if file == "" {
 		file = f.AbsPath
@@ -167,7 +168,7 @@ func frameText(f *event.Frame) string {
 	var b strings.Builder
 	b.WriteString(code(truncate(file, maxCodeLine)))
 	if fn := oneLine(f.Function); fn != "" {
-		b.WriteString(" en " + code(truncate(fn, maxCodeLine)))
+		b.WriteString(l.T(" in ", " en ") + code(truncate(fn, maxCodeLine)))
 	}
 	if line := strings.TrimSpace(f.ContextLine); line != "" {
 		line = strings.ReplaceAll(truncate(oneLine(line), maxCodeLine), "```", "`\u200b``")
@@ -199,19 +200,19 @@ func slackFields(p *pending, ev *event.Event) []slackText {
 	add("Release", release)
 	if ev != nil {
 		if name := ev.Tags["organization_name"]; strings.TrimSpace(name) != "" {
-			add("Espacio", name)
+			add(p.l.T("Workspace", "Espacio"), name)
 		} else if id := strings.TrimSpace(ev.Tags["organization_id"]); id != "" {
-			add("Espacio", shortID(id))
+			add(p.l.T("Workspace", "Espacio"), shortID(id))
 		}
 	}
 	if p.kind == "regressed" || p.kind == "frequency" || p.kind == "users" {
-		add("Eventos", strconv.FormatInt(p.count, 10)+" en total")
+		add(p.l.T("Events", "Eventos"), p.l.F("%d in total", "%d en total", p.count))
 	}
 	if ev != nil {
 		if ev.User != nil && strings.TrimSpace(ev.User.ID) != "" {
-			add("Usuario", ev.User.ID)
+			add(p.l.T("User", "Usuario"), ev.User.ID)
 		} else if r := requestText(ev.Request); r != "" {
-			add("Petición", r)
+			add(p.l.T("Request", "Petición"), r)
 		}
 	}
 	return fields
@@ -245,6 +246,23 @@ func requestText(r *event.Request) string {
 
 var spanishMonths = [...]string{"enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 	"agosto", "septiembre", "octubre", "noviembre", "diciembre"}
+
+// resolvedOn es «resolved on November 3» o «se resolvió el 3 de noviembre».
+func resolvedOn(l lang.Lang, t, ref time.Time) string {
+	return l.T("resolved on ", "se resolvió el ") + localDate(l, t, ref)
+}
+
+// localDate es spanishDate en el idioma: «November 3» en inglés.
+func localDate(l lang.Lang, t, ref time.Time) string {
+	if l == lang.ES {
+		return spanishDate(t, ref)
+	}
+	t, ref = t.In(madrid), ref.In(madrid)
+	if t.Year() != ref.Year() {
+		return t.Format("January 2, 2006")
+	}
+	return t.Format("January 2")
+}
 
 var madrid = func() *time.Location {
 	if loc, err := time.LoadLocation("Europe/Madrid"); err == nil {

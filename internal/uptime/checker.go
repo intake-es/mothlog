@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/netguard"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/netguard"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // MaxRedirects es lo más que sigue una comprobación.
@@ -56,7 +56,7 @@ func NewChecker(allowPrivate bool, resolve Resolver) *Checker {
 		Transport: t,
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			if len(via) > MaxRedirects {
-				return fmt.Errorf("más de %d redirecciones", MaxRedirects)
+				return fmt.Errorf("more than %d redirects", MaxRedirects)
 			}
 			return nil
 		},
@@ -93,7 +93,7 @@ func (c *Checker) dial(ctx context.Context, network, addr string) (net.Conn, err
 		}
 	}
 	if firstErr == nil {
-		firstErr = fmt.Errorf("%s no tiene direcciones", host)
+		firstErr = fmt.Errorf("%s has no addresses", host)
 	}
 	return nil, firstErr
 }
@@ -115,10 +115,10 @@ func (c *Checker) Check(ctx context.Context, t store.UptimeTarget, now time.Time
 	start := time.Now()
 	req, err := http.NewRequestWithContext(ctx, t.Method, t.URL, nil)
 	if err != nil {
-		res.Error = "petición no válida: " + err.Error()
+		res.Error = "invalid request: " + err.Error()
 		return res
 	}
-	req.Header.Set("User-Agent", "intake-errors-uptime")
+	req.Header.Set("User-Agent", "Mothlog-Uptime")
 	resp, err := c.client.Do(req)
 	res.DurationMs = int(time.Since(start).Milliseconds())
 	if err != nil {
@@ -130,7 +130,7 @@ func (c *Checker) Check(ctx context.Context, t store.UptimeTarget, now time.Time
 	res.StatusCode = &code
 	res.OK = store.StatusMatches(t.ExpectedStatus, code)
 	if !res.OK {
-		res.Error = "código " + strconv.Itoa(code)
+		res.Error = "status " + strconv.Itoa(code)
 	}
 	return res
 }
@@ -150,18 +150,18 @@ func errorText(err error, timeout time.Duration) string {
 		}
 		return err.Error()
 	case errors.Is(err, context.DeadlineExceeded), isTimeout(err):
-		return "sin respuesta en " + timeout.String()
+		return "no response in " + timeout.String()
 	case errors.As(err, &dnsErr):
 		if dnsErr.IsNotFound {
-			return "el nombre " + dnsErr.Name + " no existe"
+			return "the name " + dnsErr.Name + " does not exist"
 		}
 		return "DNS: " + dnsErr.Err
 	case errors.Is(err, syscall.ECONNREFUSED):
-		return "conexión rechazada"
+		return "connection refused"
 	case errors.Is(err, syscall.ECONNRESET):
-		return "conexión cortada"
+		return "connection reset"
 	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
-		return "conexión cerrada sin respuesta"
+		return "connection closed without a response"
 	}
 	var op *net.OpError
 	if errors.As(err, &op) && op.Err != nil {

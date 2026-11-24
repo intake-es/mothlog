@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/event"
+	"github.com/intake-es/mothlog/internal/event"
 )
 
 // MaxAggregates es cuántos grupos puede traer un item sessions.
@@ -34,7 +34,7 @@ type SessionAttrs struct {
 func (a *SessionAttrs) clean(item string) error {
 	rel, err := event.CleanName(a.Release)
 	if err != nil {
-		return fmt.Errorf("%w: %s con release no válida: %v", ErrMalformed, item, err)
+		return fmt.Errorf("%w: %s with invalid release: %v", ErrMalformed, item, err)
 	}
 	a.Release = rel
 	if strings.TrimSpace(a.Environment) == "" {
@@ -43,7 +43,7 @@ func (a *SessionAttrs) clean(item string) error {
 	}
 	env, err := event.CleanName(a.Environment)
 	if err != nil {
-		return fmt.Errorf("%w: %s con entorno no válido: %v", ErrMalformed, item, err)
+		return fmt.Errorf("%w: %s with invalid environment: %v", ErrMalformed, item, err)
 	}
 	a.Environment = env
 	return nil
@@ -94,14 +94,14 @@ func ParseSession(payload []byte) (*Session, error) {
 	}
 	s.SID = strings.ToLower(strings.ReplaceAll(s.SID, "-", ""))
 	if s.SID == "" {
-		return nil, fmt.Errorf("%w: session sin sid", ErrMalformed)
+		return nil, fmt.Errorf("%w: session without sid", ErrMalformed)
 	}
 	if err := s.Attrs.clean("session"); err != nil {
 		return nil, err
 	}
 	switch {
 	case s.Errors < 0:
-		return nil, fmt.Errorf("%w: session con errors negativo", ErrMalformed)
+		return nil, fmt.Errorf("%w: session with negative errors", ErrMalformed)
 	}
 	if s.Status == "" {
 		s.Status = SessionOK
@@ -144,11 +144,11 @@ func ParseSessionAggregates(payload []byte) (*SessionAggregates, error) {
 		return nil, err
 	}
 	if len(s.Aggregates) > MaxAggregates {
-		return nil, fmt.Errorf("%w: sessions con más de %d grupos", ErrMalformed, MaxAggregates)
+		return nil, fmt.Errorf("%w: sessions with more than %d groups", ErrMalformed, MaxAggregates)
 	}
 	for _, a := range s.Aggregates {
 		if a.Exited < 0 || a.Errored < 0 || a.Abnormal < 0 || a.Crashed < 0 || a.Unhandled < 0 {
-			return nil, fmt.Errorf("%w: sessions con un recuento negativo", ErrMalformed)
+			return nil, fmt.Errorf("%w: sessions with a negative count", ErrMalformed)
 		}
 	}
 	return &s, nil

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // Cada cuánto va el resumen de un proyecto.
@@ -46,10 +46,24 @@ type DigestConfig struct {
 	UpdatedAt  *time.Time `json:"updated_at"`
 }
 
-// DefaultDigest es el resumen de un proyecto que no lo ha configurado: apagado, diario a las 9 UTC.
+// DefaultDigest es el resumen de un proyecto que no lo ha configurado:
+// apagado, diario a las 9 UTC y en inglés.
 func DefaultDigest(projectID int64) DigestConfig {
 	return DigestConfig{ProjectID: projectID, Frequency: DigestDaily, Weekday: 1, Hour: 9, Timezone: "UTC",
-		Language: "es", SendEmpty: true, Destinations: []RuleAction{}}
+		Language: "en", SendEmpty: true, Destinations: []RuleAction{}}
+}
+
+// SetDefaultLanguage elige el idioma del resumen de los proyectos que no lo
+// han configurado (DEFAULT_LANGUAGE); se llama antes de usar el Store.
+func (s *Store) SetDefaultLanguage(l string) { s.lang = l }
+
+// DefaultDigest es DefaultDigest con el idioma por defecto del servicio.
+func (s *Store) DefaultDigest(projectID int64) DigestConfig {
+	c := DefaultDigest(projectID)
+	if s.lang != "" {
+		c.Language = s.lang
+	}
+	return c
 }
 
 // Location es la zona horaria del resumen; si no se puede cargar, UTC.
@@ -125,35 +139,35 @@ func (c *DigestConfig) Normalize() ([]string, error) {
 	}
 	switch {
 	case c.Frequency != DigestDaily && c.Frequency != DigestWeekly:
-		return nil, fmt.Errorf("%w: frequency es daily o weekly", ErrInvalid)
+		return nil, fmt.Errorf("%w: frequency is daily or weekly", ErrInvalid)
 	case c.Weekday < 0 || c.Weekday > 6:
-		return nil, fmt.Errorf("%w: weekday va de 0 (domingo) a 6 (sábado)", ErrInvalid)
+		return nil, fmt.Errorf("%w: weekday goes from 0 (Sunday) to 6 (Saturday)", ErrInvalid)
 	case c.Hour < 0 || c.Hour > 23:
-		return nil, fmt.Errorf("%w: hour va de 0 a 23", ErrInvalid)
+		return nil, fmt.Errorf("%w: hour goes from 0 to 23", ErrInvalid)
 	case c.Language != "es" && c.Language != "en":
-		return nil, fmt.Errorf("%w: language es es o en", ErrInvalid)
+		return nil, fmt.Errorf("%w: language is es or en", ErrInvalid)
 	case len(c.Destinations) > maxRuleActions:
-		return nil, fmt.Errorf("%w: el resumen admite hasta %d destinos", ErrInvalid, maxRuleActions)
+		return nil, fmt.Errorf("%w: the digest allows up to %d destinations", ErrInvalid, maxRuleActions)
 	}
 	if _, err := time.LoadLocation(c.Timezone); err != nil || c.Timezone == "Local" {
-		return nil, fmt.Errorf("%w: la zona horaria %q no existe", ErrInvalid, c.Timezone)
+		return nil, fmt.Errorf("%w: time zone %q does not exist", ErrInvalid, c.Timezone)
 	}
 	if c.Enabled && len(c.Destinations) == 0 {
-		return nil, fmt.Errorf("%w: el resumen necesita al menos un destino", ErrInvalid)
+		return nil, fmt.Errorf("%w: the digest needs at least one destination", ErrInvalid)
 	}
 	var generated []string
 	seen := map[string]bool{}
 	for i := range c.Destinations {
 		a := &c.Destinations[i]
 		if !slices.Contains(DigestDestinationTypes, a.Type) {
-			return nil, fmt.Errorf("%w: el resumen va por correo, Slack o webhook, no por %q", ErrInvalid, a.Type)
+			return nil, fmt.Errorf("%w: the digest goes by email, Slack or webhook, not by %q", ErrInvalid, a.Type)
 		}
 		a.ID = strings.TrimSpace(a.ID)
 		if a.ID == "" {
 			a.ID = hexID(4)
 		}
 		if seen[a.ID] || len(a.ID) > 64 {
-			return nil, fmt.Errorf("%w: id de destino repetido o demasiado largo: %q", ErrInvalid, a.ID)
+			return nil, fmt.Errorf("%w: duplicate or too long destination id: %q", ErrInvalid, a.ID)
 		}
 		seen[a.ID] = true
 		gen, err := a.normalize()
@@ -191,10 +205,10 @@ func (s *Store) Digest(ctx context.Context, projectID int64, now time.Time) (Dig
 		if _, err := s.ProjectByID(ctx, projectID); err != nil {
 			return DigestConfig{}, err
 		}
-		return DefaultDigest(projectID), nil
+		return s.DefaultDigest(projectID), nil
 	}
 	if err != nil {
-		return DigestConfig{}, fmt.Errorf("leer el resumen: %w", err)
+		return DigestConfig{}, fmt.Errorf("read digest: %w", err)
 	}
 	return c, nil
 }
@@ -230,7 +244,7 @@ func (s *Store) SetDigest(ctx context.Context, projectID int64, c DigestConfig, 
 		RETURNING `+digestColumns,
 		projectID, c.Enabled, c.Frequency, c.Weekday, c.Hour, c.Timezone, c.Language, c.SendEmpty, c.Destinations, last), now)
 	if err != nil {
-		return DigestConfig{}, nil, fmt.Errorf("guardar el resumen: %w", err)
+		return DigestConfig{}, nil, fmt.Errorf("save digest: %w", err)
 	}
 	return out, generated, nil
 }
@@ -239,11 +253,11 @@ func (s *Store) SetDigest(ctx context.Context, projectID int64, c DigestConfig, 
 func (s *Store) DigestsDue(ctx context.Context, now time.Time) ([]DigestConfig, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+digestColumns+` FROM project_digests WHERE enabled ORDER BY project_id`)
 	if err != nil {
-		return nil, fmt.Errorf("leer los resúmenes: %w", err)
+		return nil, fmt.Errorf("read digests: %w", err)
 	}
 	all, err := db.CollectRows(rows, func(r db.CollectableRow) (DigestConfig, error) { return scanDigest(r, now) })
 	if err != nil {
-		return nil, fmt.Errorf("leer los resúmenes: %w", err)
+		return nil, fmt.Errorf("read digests: %w", err)
 	}
 	return slices.DeleteFunc(all, func(c DigestConfig) bool {
 		return c.LastPeriodEnd != nil && !c.PeriodEnd(now).After(*c.LastPeriodEnd)
@@ -273,7 +287,7 @@ func (s *Store) EnqueueDigest(ctx context.Context, projectID int64, start, end t
 		return false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("encolar el resumen: %w", err)
+		return false, fmt.Errorf("enqueue digest: %w", err)
 	}
 	if !enabled || (last != nil && !end.After(*last)) {
 		return false, nil
@@ -287,15 +301,15 @@ func (s *Store) EnqueueDigest(ctx context.Context, projectID int64, start, end t
 				VALUES ($1, $2, $3, $4, $5, $5, $6, $7)
 				ON CONFLICT (digest_project_id, action_id, event_at) WHERE digest_project_id IS NOT NULL DO NOTHING`,
 				projectID, d.Type, KindDigest, end.UTC(), now.UTC(), d.ID, detail); err != nil {
-				return false, fmt.Errorf("encolar el resumen: %w", err)
+				return false, fmt.Errorf("enqueue digest: %w", err)
 			}
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE project_digests SET last_period_end = $2 WHERE project_id = $1`, projectID, end.UTC()); err != nil {
-		return false, fmt.Errorf("encolar el resumen: %w", err)
+		return false, fmt.Errorf("enqueue digest: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("encolar el resumen: %w", err)
+		return false, fmt.Errorf("enqueue digest: %w", err)
 	}
 	return true, nil
 }

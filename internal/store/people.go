@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/intake-es/intake-errors/internal/db"
+	"github.com/intake-es/mothlog/internal/db"
 )
 
 // SessionsValidSince es desde cuándo valen las sesiones de login: las
@@ -19,7 +19,7 @@ func (s *Store) SessionsValidSince(ctx context.Context, login string) (time.Time
 		return time.Time{}, ErrNotFound
 	}
 	if err != nil {
-		return time.Time{}, fmt.Errorf("leer sesiones: %w", err)
+		return time.Time{}, fmt.Errorf("read sessions: %w", err)
 	}
 	return since, nil
 }
@@ -35,7 +35,7 @@ func (s *Store) RevokeSessions(ctx context.Context, login string, at time.Time) 
 		return "", ErrNotFound
 	}
 	if err != nil {
-		return "", fmt.Errorf("revocar sesiones: %w", err)
+		return "", fmt.Errorf("revoke sessions: %w", err)
 	}
 	return got, nil
 }
@@ -63,7 +63,7 @@ func (s *Store) RenamePerson(ctx context.Context, from, base string) (string, er
 			}
 		}
 		if to == "" {
-			return fmt.Errorf("%q y sus %d variantes ya son de otras personas", base, maxLoginSuffix)
+			return fmt.Errorf("%q and its %d variants already belong to other people", base, maxLoginSuffix)
 		}
 		tag, err := tx.Exec(ctx, `UPDATE people SET login = $2 WHERE login = $1`, from, to)
 		if err != nil {
@@ -91,7 +91,7 @@ func (s *Store) RenamePerson(ctx context.Context, from, base string) (string, er
 		return "", err
 	}
 	if err != nil {
-		return "", fmt.Errorf("renombrar persona: %w", err)
+		return "", fmt.Errorf("rename person: %w", err)
 	}
 	return to, nil
 }

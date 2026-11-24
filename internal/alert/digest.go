@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/intake-es/intake-errors/internal/digest"
-	"github.com/intake-es/intake-errors/internal/store"
+	"github.com/intake-es/mothlog/internal/digest"
+	"github.com/intake-es/mothlog/internal/store"
 )
 
 // loadDigest arma el resumen de una fila de la tabla de salida y da el envío
@@ -27,15 +27,15 @@ func (a *Alerter) loadDigest(ctx context.Context, p *pending, projectID int64, d
 		return nil, err
 	}
 	if !cfg.Enabled {
-		return nil, fmt.Errorf("%w: el resumen está apagado", errGone)
+		return nil, fmt.Errorf("%w: the digest is turned off", errGone)
 	}
 	i := slices.IndexFunc(cfg.Destinations, func(x store.RuleAction) bool { return x.ID == p.actionID })
 	if i < 0 {
-		return nil, fmt.Errorf("%w: el destino ya no está en el resumen", errGone)
+		return nil, fmt.Errorf("%w: the destination is no longer in the digest", errGone)
 	}
 	var dd store.DigestDetail
 	if err := json.Unmarshal(detail, &dd); err != nil {
-		return nil, fmt.Errorf("resumen %d: %w", p.id, err)
+		return nil, fmt.Errorf("digest %d: %w", p.id, err)
 	}
 	d, err := digest.Build(ctx, a.st, digest.Options{Config: cfg, Start: dd.PeriodStart, End: p.eventAt, Base: a.base})
 	if err != nil {
@@ -67,7 +67,7 @@ func (a *Alerter) SendDigestNow(ctx context.Context, projectID int64) ([]DigestR
 		return nil, err
 	}
 	if len(cfg.Destinations) == 0 {
-		return nil, fmt.Errorf("%w: el resumen no tiene ningún destino", store.ErrInvalid)
+		return nil, fmt.Errorf("%w: the digest has no destinations", store.ErrInvalid)
 	}
 	d, err := digest.Build(ctx, a.st, digest.Options{Config: cfg, Start: now.Add(-cfg.Length()), End: now, Base: a.base})
 	if err != nil {
@@ -82,9 +82,9 @@ func (a *Alerter) SendDigestNow(ctx context.Context, projectID int64) ([]DigestR
 			snd, err = a.actionSender(dest)
 		}
 		if err == nil {
-			p := &pending{kind: store.KindDigest, digest: d, digestProject: projectID, project: d.Project, eventAt: now, test: true}
+			p := &pending{l: a.lang, kind: store.KindDigest, digest: d, digestProject: projectID, project: d.Project, eventAt: now, test: true}
 			if err = snd.send(ctx, p); err != nil {
-				a.log.WarnContext(ctx, "resumen fallido", "proyecto", projectID, "destino", dest.ID, "err", err)
+				a.log.WarnContext(ctx, "digest failed", "project", projectID, "destination", dest.ID, "err", err)
 			}
 		}
 		if err != nil {
@@ -107,14 +107,14 @@ func (p *pending) delivery() string {
 
 // digestMessage es el correo del resumen: el texto y el HTML como alternativas.
 func (e *email) digestMessage(d *digest.Digest, now time.Time) []byte {
-	boundary := "ie-" + strings.ReplaceAll(newUUID(), "-", "")
+	boundary := "mothlog-" + strings.ReplaceAll(newUUID(), "-", "")
 	var m strings.Builder
 	header := func(k, v string) { m.WriteString(k + ": " + v + "\r\n") }
 	header("From", e.cfg.from)
 	header("To", strings.Join(e.to, ", "))
-	header("Subject", mime.QEncoding.Encode("utf-8", "[intake-errors] "+d.Subject()))
+	header("Subject", mime.QEncoding.Encode("utf-8", subjectPrefix+d.Subject()))
 	header("Date", now.Format(time.RFC1123Z))
-	header("Message-ID", "<"+newUUID()+"@intake-errors>")
+	header("Message-ID", "<"+newUUID()+"@mothlog>")
 	header("MIME-Version", "1.0")
 	header("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	m.WriteString("\r\n")
