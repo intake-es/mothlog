@@ -26,11 +26,11 @@
     "@angular/build": "21.2.31",
     "@angular/cli": "21.2.31",
     "@angular/compiler-cli": "21.2.25",
-    "@biomejs/biome": "2.4.16",
+    "@biomejs/biome": "2.6.8",
     "@phosphor-icons/core": "2.1.1",
-    "@types/node": "22.20.5",
-    "jsdom": "28.1.0",
-    "typescript": "~5.9.2",
-    "vitest": "4.1.12"
+    "@types/node": "26.6.6",
+    "jsdom": "31.0.1",
+    "typescript": "~7.0.2",
+    "vitest": "5.1.1"
   }
 }
