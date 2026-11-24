@@ -216,7 +216,7 @@ func run(args []string) error {
 	}
 	mux := routes(db, envelopes, register...)
 	apiAuth := api.RequireAuth(api.BearerToken(db), auth.Authenticator())
-	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks, Digests: alerts}); err != nil {
+	if err := api.Register(mux, db, api.Options{PublicURL: cfg.PublicURL, Auth: apiAuth, Alerts: alerts, Integrations: hooks, Digests: alerts, Channels: alerts}); err != nil {
 		return err
 	}
 	srv := &http.Server{

@@ -322,7 +322,9 @@ func (a *Alerter) linearFor(team string, labels []string) *linear {
 	if l, ok := a.linears[key]; ok {
 		return l
 	}
-	l := &linear{st: a.st, endpoint: a.linearEndpoint, key: a.linearKey, client: a.client, team: team, labels: labels}
+	// En el equipo del servidor, la issue de un error es una sola, la cree un aviso o se cree a mano.
+	l := &linear{st: a.st, endpoint: a.linearEndpoint, key: a.linearKey, client: a.client, team: team, labels: labels,
+		shared: team == a.linearTeam}
 	a.linears[key] = l
 	return l
 }

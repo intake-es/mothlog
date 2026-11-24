@@ -130,6 +130,12 @@ describe('IssueDetailPage', () => {
   });
 
   afterEach(() => {
+    // Las pantallas que no pinta render() también preguntan si hay Linear.
+    for (const req of http.match('/api/0/integrations/')) {
+      if (!req.cancelled) {
+        req.flush({});
+      }
+    }
     // Cada cambio de estado vuelve a pedir el historial; aquí da igual su contenido.
     for (const req of http.match('/api/0/issues/5/history/')) {
       if (!req.cancelled) {
@@ -143,10 +149,18 @@ describe('IssueDetailPage', () => {
     d: IssueDetail = detail(),
     tags: IssueTags = issueTags(),
     history: HistoryEntry[] = [],
+    linear = false,
   ) {
     const fixture = TestBed.createComponent(IssueDetailPage);
     fixture.componentRef.setInput('id', '5');
     fixture.detectChanges();
+    const integ = (token_set: boolean) => ({
+      webhook_url: '',
+      secret_set: false,
+      token_set,
+      last_delivery: null,
+    });
+    http.expectOne('/api/0/integrations/').flush({ linear: integ(linear), github: integ(false) });
     http.expectOne('/api/0/issues/5/').flush(d);
     http.expectOne('/api/0/issues/5/tags/').flush(tags);
     http
@@ -351,6 +365,99 @@ describe('IssueDetailPage', () => {
     await new Promise((resolve) => setTimeout(resolve));
     await fixture.whenStable();
     expect(el.querySelector('.toast')?.textContent).toContain('no encontrado');
+  });
+
+  describe('crear en Linear', () => {
+    const linearLink = {
+      id: 9,
+      issue_id: 5,
+      provider: 'linear' as const,
+      kind: 'issue' as const,
+      external_id: '0b6a2c4e-1d2a-4f00-9a7e-3c1b2a1d0e9f',
+      identifier: 'ERR-12',
+      url: 'https://linear.app/ejemplo/issue/ERR-12',
+      state: 'open' as const,
+      state_name: '',
+      author: { name: 'ana', kind: 'user' as const },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    it('con Linear en el servidor y sin issue, la crea, la enlaza y quita el botón', async () => {
+      const fixture = await render(detail({ links: [] }), issueTags(), [], true);
+      const el: HTMLElement = fixture.nativeElement;
+      const button = el.querySelector<HTMLButtonElement>('app-linear-create button');
+      expect(button?.textContent).toContain('Crear en Linear');
+      button?.click();
+      fixture.detectChanges();
+      expect(button?.disabled).toBe(true);
+      expect(button?.textContent).toContain('Creando…');
+      const req = http.expectOne('/api/0/issues/5/linear');
+      expect(req.request.method).toBe('POST');
+      req.flush(linearLink, { status: 201, statusText: 'Created' });
+      await fixture.whenStable();
+      expect(el.querySelector('app-linear-create')).toBeNull();
+      const link = el.querySelector<HTMLAnchorElement>('app-issue-links a.link__name');
+      expect(link?.textContent).toContain('ERR-12');
+      expect(link?.getAttribute('href')).toBe('https://linear.app/ejemplo/issue/ERR-12');
+      expect(el.querySelector('.toast')?.textContent).toContain('Issue ERR-12 creada en Linear');
+      http.expectOne('/api/0/issues/5/history/').flush({
+        data: [
+          {
+            type: 'link',
+            id: 9,
+            at: linearLink.created_at,
+            author: linearLink.author,
+            link: linearLink,
+          },
+        ],
+      });
+      await fixture.whenStable();
+      expect(el.querySelector('app-history .item')?.textContent).toContain(
+        'ana creó en Linear la issue ERR-12',
+      );
+    });
+
+    it('si el error ya tiene issue de Linear, enseña el enlace y no el botón', async () => {
+      const fixture = await render(detail({ links: [linearLink] }), issueTags(), [], true);
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('app-linear-create')).toBeNull();
+      expect(el.querySelector('app-issue-links')?.textContent).toContain('ERR-12');
+    });
+
+    it('sin Linear en el servidor, no hay botón', async () => {
+      const fixture = await render(detail({ links: [] }));
+      expect((fixture.nativeElement as HTMLElement).querySelector('app-linear-create')).toBeNull();
+    });
+
+    it('si Linear falla, lo dice en una línea sin el detalle del servidor', async () => {
+      const fixture = await render(detail({ links: [] }), issueTags(), [], true);
+      const el: HTMLElement = fixture.nativeElement;
+      el.querySelector<HTMLButtonElement>('app-linear-create button')?.click();
+      http
+        .expectOne('/api/0/issues/5/linear')
+        .flush(
+          { error: 'linear: 500 Internal Server Error' },
+          { status: 502, statusText: 'Bad Gateway' },
+        );
+      await fixture.whenStable();
+      const alert = el.querySelector('app-linear-create [role=alert]');
+      expect(alert?.textContent?.trim()).toBe(
+        'Linear no ha podido crear la issue. Prueba otra vez en un rato.',
+      );
+      expect(el.textContent).not.toContain('Internal Server Error');
+      expect(el.querySelector<HTMLButtonElement>('app-linear-create button')?.disabled).toBe(false);
+    });
+
+    it('en inglés', async () => {
+      lang.set('en');
+      const fixture = await render(detail({ links: [] }), issueTags(), [], true);
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('app-linear-create button')?.textContent).toContain(
+        'Create in Linear',
+      );
+      expect(spanishLeft(el.querySelector('app-linear-create') as HTMLElement)).toEqual([]);
+    });
   });
 
   it('anterior y siguiente cambian de evento', async () => {

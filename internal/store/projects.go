@@ -87,3 +87,51 @@ func (s *Store) SetProjectLabels(ctx context.Context, name string, ids []string)
 	}
 	return nil
 }
+
+// DefaultAlerts dice a qué canales por defecto avisa un proyecto sin reglas.
+type DefaultAlerts struct {
+	Slack  bool `json:"slack"`
+	Linear bool `json:"linear"`
+}
+
+// DefaultAlertsOf lee los canales por defecto del proyecto dentro de q.
+func DefaultAlertsOf(ctx context.Context, q Querier, projectID int64) (DefaultAlerts, error) {
+	var d DefaultAlerts
+	err := q.QueryRow(ctx, `SELECT default_slack, default_linear FROM projects WHERE id = $1`, projectID).Scan(&d.Slack, &d.Linear)
+	if errors.Is(err, db.ErrNoRows) {
+		return d, ErrNotFound
+	}
+	if err != nil {
+		return d, fmt.Errorf("leer avisos por defecto: %w", err)
+	}
+	return d, nil
+}
+
+func (s *Store) DefaultAlerts(ctx context.Context, projectID int64) (DefaultAlerts, error) {
+	return DefaultAlertsOf(ctx, s.pool, projectID)
+}
+
+// SetDefaultAlerts guarda los canales por defecto del proyecto.
+func (s *Store) SetDefaultAlerts(ctx context.Context, projectID int64, d DefaultAlerts) (DefaultAlerts, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE projects SET default_slack = $2, default_linear = $3 WHERE id = $1`,
+		projectID, d.Slack, d.Linear)
+	if err != nil {
+		return d, fmt.Errorf("guardar avisos por defecto: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return d, ErrNotFound
+	}
+	return d, nil
+}
+
+// HasIssueRules dice si el proyecto tiene reglas de errores, encendidas o no:
+// con ellas, los canales por defecto no cuentan.
+func (s *Store) HasIssueRules(ctx context.Context, projectID int64) (bool, error) {
+	var has bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1 AND `+IssueRulesSQL(s.pool.Dialect())+`)`,
+		projectID).Scan(&has)
+	if err != nil {
+		return false, fmt.Errorf("leer reglas: %w", err)
+	}
+	return has, nil
+}

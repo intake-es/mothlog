@@ -123,6 +123,8 @@ export interface IssueLink {
   state: LinkState | '';
   /** El nombre del estado allí: «Done», «In Progress». */
   state_name: string;
+  /** Quién la creó a mano; sin él, la crearon los avisos. */
+  author?: Actor;
   created_at: string;
   updated_at: string;
 }
@@ -177,9 +179,9 @@ export interface IssueComment {
 
 export type ChangeSource = 'ui' | 'api' | 'mcp' | 'ingest' | 'deploy' | 'linear' | 'github';
 
-/** Un comentario, un cambio de estado o una asignación del historial de un error. */
+/** Un comentario, un cambio de estado, una asignación o una issue creada a mano del historial de un error. */
 export interface HistoryEntry {
-  type: 'comment' | 'status' | 'assignment';
+  type: 'comment' | 'status' | 'assignment' | 'link';
   id: number;
   at: string;
   /** Vacío en los cambios de la ingesta y de los despliegues. */
@@ -195,6 +197,8 @@ export interface HistoryEntry {
   /** En las asignaciones: a quién (sin él, desasignar) y quién lo llevaba. */
   assignee?: Actor;
   previous?: Actor;
+  /** En las issues de Linear creadas a mano. */
+  link?: IssueLink;
 }
 
 export interface TagValue {
@@ -443,6 +447,18 @@ export interface Filters {
   events_per_issue_per_hour: number | null;
   sample_rate: number;
   rate_limit_per_minute: number | null;
+}
+
+export type DefaultChannel = 'slack' | 'linear';
+
+/** A qué canales por defecto avisa un proyecto sin reglas de errores. */
+export interface DefaultAlerts {
+  slack: boolean;
+  linear: boolean;
+  /** Los canales que tiene configurados el servidor. */
+  configured: DefaultChannel[];
+  /** Con reglas de errores, los canales por defecto no cuentan. */
+  has_rules: boolean;
 }
 
 export interface DroppedStats {
@@ -764,6 +780,22 @@ export class Api {
 
   setFilters(projectId: number, f: Filters): Observable<Filters> {
     return this.http.patch<Filters>(`${BASE}/projects/${projectId}/filters`, f);
+  }
+
+  defaultAlerts(projectId: number): Observable<DefaultAlerts> {
+    return this.http.get<DefaultAlerts>(`${BASE}/projects/${projectId}/default-alerts`);
+  }
+
+  setDefaultAlerts(
+    projectId: number,
+    change: Partial<Record<DefaultChannel, boolean>>,
+  ): Observable<DefaultAlerts> {
+    return this.http.patch<DefaultAlerts>(`${BASE}/projects/${projectId}/default-alerts`, change);
+  }
+
+  /** Crea la issue de Linear del error; si ya tiene una, la devuelve. */
+  createLinear(issueId: number): Observable<IssueLink> {
+    return this.http.post<IssueLink>(`${BASE}/issues/${issueId}/linear`, {});
   }
 
   dropped(projectId: number, days: number): Observable<DroppedStats> {

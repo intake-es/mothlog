@@ -1,0 +1,119 @@
+:host {
+  display: block;
+  margin-bottom: 2.25rem;
+}
+
+.defaults {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.defaults__row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+}
+
+.defaults__row + .defaults__row {
+  border-top: 1px solid var(--border);
+}
+
+.defaults__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.defaults__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.defaults__text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.defaults__name {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.defaults__hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.defaults__row--off .defaults__text {
+  cursor: default;
+}
+
+.defaults__row--off .defaults__name,
+.defaults__row--off .defaults__icon {
+  color: var(--text-subtle);
+}
+
+.switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.defaults--idle .defaults__row:not(.defaults__row--off) .defaults__name {
+  color: var(--text-muted);
+}
+
+.defaults__foot {
+  padding: 0.65rem 1rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  background: var(--bg-hover);
+}
+
+.defaults__scope {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.defaults__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.defaults__link:hover {
+  text-decoration-color: currentColor;
+}
+
+.defaults__link svg {
+  width: 11px;
+  height: 11px;
+}

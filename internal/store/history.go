@@ -52,7 +52,8 @@ type Comment struct {
 }
 
 // HistoryEntry es un comentario (Type "comment"), un cambio de estado
-// ("status") o una asignación ("assignment") del historial de un issue.
+// ("status"), una asignación ("assignment") o una issue de Linear o GitHub
+// creada a mano ("link") del historial de un issue.
 type HistoryEntry struct {
 	Type string    `json:"type"`
 	ID   int64     `json:"id"`
@@ -72,6 +73,8 @@ type HistoryEntry struct {
 	// desasignar) y quién lo llevaba.
 	Assignee *Actor `json:"assignee,omitempty"`
 	Previous *Actor `json:"previous,omitempty"`
+	// Link, en las issues creadas a mano.
+	Link *IssueLink `json:"link,omitempty"`
 }
 
 // StatusChange es quién pide un cambio de estado, desde dónde y con qué comentario.
@@ -198,6 +201,16 @@ func (s *Store) History(ctx context.Context, issueID int64, viewer *Actor) ([]Hi
 		return nil, err
 	}
 	out = append(out, assigned...)
+	links, err := s.IssueLinks(ctx, issueID)
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range links {
+		if l.Author != nil {
+			l := l
+			out = append(out, HistoryEntry{Type: "link", ID: l.ID, At: l.CreatedAt, Author: l.Author, Link: &l})
+		}
+	}
 	slices.SortStableFunc(out, func(a, b HistoryEntry) int { return a.At.Compare(b.At) })
 	if out == nil {
 		out = []HistoryEntry{}

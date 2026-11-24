@@ -218,6 +218,9 @@
         <section class="side__block">
           <h3 class="block__title block__title--gap">{{ t('links.title') }}</h3>
           <app-issue-links [links]="d.links" />
+          @if (canCreateLinear()) {
+            <app-linear-create [issueId]="d.id" (created)="onLinearCreated($event)" />
+          }
         </section>
 
         <section class="side__block">

@@ -17,6 +17,7 @@ import {
   type EventSummary,
   type Issue,
   type IssueDetail,
+  type IssueLink,
   type IssueStatus,
   type IssueTags,
   type StoredEvent,
@@ -32,6 +33,7 @@ import { AssigneePicker } from './assignee-picker';
 import { Breadcrumbs } from './breadcrumbs';
 import { History } from './history';
 import { IssueLinks } from './issue-links';
+import { LinearCreate } from './linear-create';
 import { Stacktrace } from './stacktrace';
 import { TagsPanel } from './tags-panel';
 
@@ -71,6 +73,7 @@ const STATUS_TOAST: Record<IssueStatus, Key> = {
     History,
     AssigneePicker,
     IssueLinks,
+    LinearCreate,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown.escape)': 'menuOpen.set(false)' },
@@ -108,6 +111,14 @@ export class IssueDetailPage {
   protected readonly toast = signal('');
   /** Sube con cada cambio de estado, para que el historial lo vuelva a pedir. */
   protected readonly historyVersion = signal(0);
+  /** Si el servidor puede crear issues en Linear (LINEAR_API_KEY). */
+  private readonly linearReady = signal(false);
+  /** «Crear en Linear» sale con Linear en el servidor y sin issue de Linear en el error. */
+  protected readonly canCreateLinear = computed(
+    () =>
+      this.linearReady() &&
+      !(this.detail()?.links ?? []).some((l) => l.provider === 'linear' && l.kind === 'issue'),
+  );
 
   private subs: Subscription[] = [];
   private eventSub?: Subscription;
@@ -244,6 +255,10 @@ export class IssueDetailPage {
   }
 
   constructor() {
+    this.api.integrations().subscribe({
+      next: (s) => this.linearReady.set(!!s?.linear?.token_set),
+      error: () => this.linearReady.set(false),
+    });
     effect(() => {
       const id = Number(this.id());
       const env = environment();
@@ -354,6 +369,15 @@ export class IssueDetailPage {
         this.notify(apiError(err));
       },
     });
+  }
+
+  protected onLinearCreated(link: IssueLink): void {
+    const d = this.detail();
+    if (d) {
+      this.detail.set({ ...d, links: [...(d.links ?? []).filter((l) => l.id !== link.id), link] });
+      this.historyVersion.update((v) => v + 1);
+    }
+    this.notify(this.t('linear.created', { identifier: link.identifier || link.external_id }));
   }
 
   protected onAssigned(issue: Issue): void {

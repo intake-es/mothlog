@@ -1,4 +1,6 @@
-<section class="section">
+<app-default-alerts [projectId]="projectId()" [rules]="rules()" (notice)="notify($event)" (showRules)="focusRules(rulesSection)" />
+
+<section class="section" id="rules" tabindex="-1" #rulesSection>
   <div class="section__head">
     <div>
       <h2 class="section__title">{{ t('rules.title') }}</h2>

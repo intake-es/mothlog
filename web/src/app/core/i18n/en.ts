@@ -385,7 +385,7 @@ export const en: Record<Key, string> = {
     'Each rule says what to alert about and where. It fires when any of its conditions and all of its filters match.',
   'rules.default.title': 'Alerts as the server says',
   'rules.default.text':
-    'With no rules, this project alerts on new errors and regressions in Slack and Linear, using the server’s configuration. Once it has a rule, it only alerts on what its rules say.',
+    'With no rules, this project alerts on new errors and regressions through the default alerts above. Once it has a rule, it only alerts on what its rules say.',
   'rules.allOff': 'Every rule is turned off: this project doesn’t alert on anything.',
   'rules.new': 'New rule',
   'rules.edit': 'Edit',
@@ -799,4 +799,29 @@ export const en: Record<Key, string> = {
   'editor.uptimeDown': 'A monitor goes down',
   'editor.uptimeUp': 'A monitor is back up, with how long the incident lasted',
   'editor.uptimeMonitorsPlaceholder': 'main-website, api',
+
+  // Default alerts per project and «Create in Linear» on the detail page.
+  'defaults.title': 'Default alerts',
+  'defaults.lede':
+    'With no error rules, the project alerts on every new error and every regression through the channels set up on the server. Turn off the ones this project doesn’t need.',
+  'defaults.slackHint':
+    'A message in the server’s channel with the error, the failing line and the link.',
+  'defaults.linearHint':
+    'One issue per error in the server’s team, linked: its state and the error’s stay in sync.',
+  'defaults.notConfigured': 'Not set up',
+  'defaults.missing': 'The server has no {env}.',
+  'defaults.scope':
+    'They only count while the project has no error rules. Cron and uptime monitors keep alerting through every channel on the server.',
+  'defaults.withRules':
+    'This project has error rules: it alerts wherever they say, and these switches don’t count.',
+  'defaults.seeRules': 'See the rules',
+  'defaults.error': 'Couldn’t load the default alerts.',
+  'defaults.on': '{channel} turned on for this project',
+  'defaults.off': '{channel} turned off for this project',
+  'linear.create': 'Create in Linear',
+  'linear.creating': 'Creating…',
+  'linear.createHint': 'Creates the issue with the error and links it: their states stay in sync.',
+  'linear.failed': 'Linear couldn’t create the issue. Try again in a while.',
+  'linear.created': 'Issue {identifier} created in Linear',
+  'history.linkCreated': 'created the Linear issue',
 };

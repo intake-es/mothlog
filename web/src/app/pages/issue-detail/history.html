@@ -46,6 +46,16 @@
                     <span>{{ t('history.unassigned') }} </span>
                     <strong class="item__who">{{ prev.name }} </strong>
                   }
+                } @else if (r.entry.type === 'link') {
+                  <span>{{ t('history.linkCreated') }} </span>
+                  @if (r.entry.link; as l) {
+                    @if (l.url) {
+                      <a class="item__ref mono" [href]="l.url" target="_blank" rel="noopener noreferrer">{{ l.identifier || l.external_id }}</a>
+                    } @else {
+                      <span class="item__ref mono">{{ l.identifier || l.external_id }}</span>
+                    }
+                    <span> </span>
+                  }
                 } @else {
                   <span>{{ t('history.changed') }} </span>
                   @if (r.entry.from; as from) {

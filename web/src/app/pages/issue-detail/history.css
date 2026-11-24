@@ -221,3 +221,18 @@
   min-height: 30px;
   padding: 0.3rem 0.75rem;
 }
+
+.item__ref {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+a.item__ref {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+a.item__ref:hover {
+  text-decoration-color: currentColor;
+}

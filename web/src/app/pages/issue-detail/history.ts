@@ -109,9 +109,11 @@ export class History {
         title: fullDate(entry.at),
         icon: entry.to
           ? STATUS_ICON[entry.to]
-          : entry.type === 'assignment' && !entry.assignee
-            ? 'user-circle-dashed'
-            : 'user',
+          : entry.type === 'link'
+            ? 'kanban'
+            : entry.type === 'assignment' && !entry.assignee
+              ? 'user-circle-dashed'
+              : 'user',
         system,
         source: source ? this.t(source) : '',
         comment,

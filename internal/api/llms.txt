@@ -14,7 +14,8 @@ Un agente puede llevar un error de principio a fin sin salir del MCP: buscarlo, 
 
 - [Contexto de un issue en Markdown]({base}/api/0/issues/{id}/context.md): resumen, releases, entornos, etiquetas, la traza con el código, breadcrumbs, historial y qué hacer; `?environment=` y `?event=`.
 - [Issues]({base}/api/0/issues/?query=is:open): la lista, con el lenguaje de búsqueda en `query`.
-- [Historial]({base}/api/0/issues/{id}/history/): comentarios, cambios de estado y asignaciones, por fecha.
+- [Historial]({base}/api/0/issues/{id}/history/): comentarios, cambios de estado, asignaciones e issues de Linear creadas a mano, por fecha.
+- `POST {base}/api/0/issues/{id}/linear` crea la issue de Linear del error y la enlaza; si ya tiene una, la devuelve sin crear otra.
 - `POST {base}/api/0/issues/{id}/assignee` con `{"assignee": "me"}` (o un login o el nombre de un token) asigna; `DELETE` en la misma ruta desasigna. [A quién se puede asignar]({base}/api/0/assignees/). En la búsqueda, `assigned:me`, `is:assigned` e `is:unassigned`.
 - `POST {base}/api/0/issues/{id}/comments/` con `{"body": "..."}` comenta; `POST {base}/api/0/issues/{id}/status` con `{"status": "resolved_next", "comment": "..."}` cambia el estado.
 - [Releases]({base}/api/0/releases/): las releases con sus despliegues, lo que trajo cada una y su salud: el porcentaje de sesiones y de usuarios sin crash y la adopción.

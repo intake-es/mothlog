@@ -1,6 +1,6 @@
 // Package alert avisa de los errores. Sin reglas, un proyecto avisa en Slack y
-// Linear de los errores nuevos y las regresiones; con reglas, de lo que digan y
-// a donde digan. La ingesta deja los avisos en alert_outbox, en su misma
+// Linear (los que no haya apagado) de los errores nuevos y las regresiones; con
+// reglas, de lo que digan y a donde digan. La ingesta deja los avisos en alert_outbox, en su misma
 // transacción, y un bucle los envía y reintenta.
 package alert
 
@@ -112,18 +112,20 @@ type Alerter struct {
 	linears map[string]*linear
 
 	rulesMu sync.Mutex
-	// hasRules dice, por proyecto, si tiene reglas y desde cuándo se sabe.
-	hasRules map[int64]rulesSeen
+	// projects dice, por proyecto, si tiene reglas, a qué canales por defecto
+	// avisa y desde cuándo se sabe.
+	projects map[int64]projectSeen
 }
 
-type rulesSeen struct {
-	has bool
-	at  time.Time
+type projectSeen struct {
+	has      bool
+	defaults store.DefaultAlerts
+	at       time.Time
 }
 
-// RulesCacheTTL es cuánto se fía el Alerter de si un proyecto tiene reglas.
-// Las que se guardan por la API de esta réplica valen al momento; las de
-// otra réplica o de la CLI, como mucho pasado este tiempo.
+// RulesCacheTTL es cuánto se fía el Alerter de si un proyecto tiene reglas y
+// de sus canales por defecto. Lo que se guarda por la API de esta réplica
+// vale al momento; lo de otra réplica o de la CLI, como mucho pasado este tiempo.
 const RulesCacheTTL = 30 * time.Second
 
 // sender manda el aviso fuera de cualquier transacción: lo que haya que
@@ -175,7 +177,7 @@ type pending struct {
 
 func New(st *store.Store, log *slog.Logger, o Options) (*Alerter, error) {
 	a := &Alerter{st: st, log: log, interval: o.Interval, channels: map[string]sender{}, now: time.Now,
-		linears: map[string]*linear{}, hasRules: map[int64]rulesSeen{}}
+		linears: map[string]*linear{}, projects: map[int64]projectSeen{}}
 	if a.interval <= 0 {
 		a.interval = DefaultInterval
 	}
@@ -235,15 +237,19 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, r
 		return nil
 	}
 	// Sin reglas, como siempre: un evento que no cambia el issue no toca la base.
+	var defaults []string
 	if res.ProjectID != 0 {
-		has, err := a.projectHasRules(ctx, tx, res.ProjectID)
+		seen, err := a.project(ctx, tx, res.ProjectID)
 		if err != nil {
 			a.log.ErrorContext(ctx, "encolar aviso", "issue", issueID, "err", err)
 			return nil
 		}
-		if !has && (res.Outcome == ingest.Unchanged || len(a.order) == 0) {
+		defaults = a.defaultChannels(seen.defaults)
+		if !seen.has && (res.Outcome == ingest.Unchanged || len(defaults) == 0) {
 			return nil
 		}
+	} else {
+		defaults = a.order
 	}
 	sp, err := tx.Begin(ctx)
 	if err != nil {
@@ -256,7 +262,7 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, r
 		if len(rules) > 0 {
 			err = a.applyRules(ctx, sp, rules, ev, res)
 		} else {
-			err = a.enqueueDefault(ctx, sp, ev, res)
+			err = a.enqueueDefault(ctx, sp, ev, res, defaults)
 		}
 	}
 	if err == nil {
@@ -269,35 +275,52 @@ func (a *Alerter) IssueChanged(ctx context.Context, tx db.Tx, ev *event.Event, r
 	return nil
 }
 
-// projectHasRules lo pregunta a la base como mucho una vez cada RulesCacheTTL
-// por proyecto. Va por la transacción de la ingesta, en un savepoint para que
-// un fallo no la tumbe: pedir otra conexión al pool con ella abierta puede
-// dejar la ingesta esperando cuando todas las conexiones están en uso.
-func (a *Alerter) projectHasRules(ctx context.Context, tx db.Tx, projectID int64) (bool, error) {
+// project pregunta a la base, como mucho una vez cada RulesCacheTTL por
+// proyecto, si tiene reglas y a qué canales por defecto avisa. Va por la
+// transacción de la ingesta, en un savepoint para que un fallo no la tumbe:
+// pedir otra conexión al pool con ella abierta puede dejar la ingesta
+// esperando cuando todas las conexiones están en uso.
+func (a *Alerter) project(ctx context.Context, tx db.Tx, projectID int64) (projectSeen, error) {
 	now := time.Now()
 	a.rulesMu.Lock()
-	seen, ok := a.hasRules[projectID]
+	seen, ok := a.projects[projectID]
 	a.rulesMu.Unlock()
 	if ok && now.Sub(seen.at) < RulesCacheTTL {
-		return seen.has, nil
+		return seen, nil
 	}
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		return false, err
+		return seen, err
 	}
-	var has bool
-	if err := sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = $1 AND `+store.IssueRulesSQL(sp.Dialect())+`)`,
-		projectID).Scan(&has); err != nil {
+	seen = projectSeen{at: now}
+	err = sp.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM alert_rules WHERE project_id = p.id AND `+store.IssueRulesSQL(sp.Dialect())+`),
+		p.default_slack, p.default_linear FROM projects p WHERE p.id = $1`,
+		projectID).Scan(&seen.has, &seen.defaults.Slack, &seen.defaults.Linear)
+	if errors.Is(err, db.ErrNoRows) {
+		err = nil
+	}
+	if err != nil {
 		_ = sp.Rollback(ctx)
-		return false, err
+		return seen, err
 	}
 	if err := sp.Commit(ctx); err != nil {
-		return false, err
+		return seen, err
 	}
 	a.rulesMu.Lock()
-	a.hasRules[projectID] = rulesSeen{has: has, at: now}
+	a.projects[projectID] = seen
 	a.rulesMu.Unlock()
-	return has, nil
+	return seen, nil
+}
+
+// defaultChannels son los canales configurados que el proyecto no ha apagado.
+func (a *Alerter) defaultChannels(d store.DefaultAlerts) []string {
+	var out []string
+	for _, ch := range a.order {
+		if (ch == channelSlack && d.Slack) || (ch == channelLinear && d.Linear) {
+			out = append(out, ch)
+		}
+	}
+	return out
 }
 
 // RulesChanged olvida lo que se sabía de las reglas del proyecto: se llama al
@@ -305,16 +328,20 @@ func (a *Alerter) projectHasRules(ctx context.Context, tx db.Tx, projectID int64
 func (a *Alerter) RulesChanged(projectID int64) {
 	a.rulesMu.Lock()
 	defer a.rulesMu.Unlock()
-	delete(a.hasRules, projectID)
+	delete(a.projects, projectID)
 }
 
-// enqueueDefault es el aviso de un proyecto sin reglas.
-func (a *Alerter) enqueueDefault(ctx context.Context, tx db.Tx, ev *event.Event, res ingest.Result) error {
-	if res.Outcome == ingest.Unchanged || len(a.order) == 0 {
+// DefaultsChanged olvida los canales por defecto del proyecto: se llama al cambiarlos.
+func (a *Alerter) DefaultsChanged(projectID int64) { a.RulesChanged(projectID) }
+
+// enqueueDefault es el aviso de un proyecto sin reglas, por los canales que
+// no ha apagado. Slack solo espera a Linear si se avisa por los dos.
+func (a *Alerter) enqueueDefault(ctx context.Context, tx db.Tx, ev *event.Event, res ingest.Result, channels []string) error {
+	if res.Outcome == ingest.Unchanged || len(channels) == 0 {
 		return nil
 	}
 	ids := map[string]int64{}
-	for _, ch := range a.order {
+	for _, ch := range channels {
 		var id int64
 		err := tx.QueryRow(ctx, `
 			INSERT INTO alert_outbox (issue_id, channel, kind, release, environment, event_at, resolved_at, next_attempt_at, created_at)
@@ -505,7 +532,7 @@ func (a *Alerter) deliver(ctx context.Context, tx db.Tx, p *pending, snd sender,
 	return a.finish(ctx, tx, p, channel, attempts, now, sendErr)
 }
 
-func (a *Alerter) loadIssue(ctx context.Context, tx db.Tx, p *pending) error {
+func (a *Alerter) loadIssue(ctx context.Context, tx db.Querier, p *pending) error {
 	err := tx.QueryRow(ctx, db.ByEngine(tx.Dialect(), `
 		SELECT p.name, p.linear_label_ids, i.title, i.culprit, i.event_count, COALESCE(l.external_id, ''),
 			COALESCE(l.identifier, ''), COALESCE(l.url, '')

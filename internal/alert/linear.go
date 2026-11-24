@@ -28,6 +28,9 @@ type linear struct {
 	client   *http.Client
 	team     string
 	labels   []string
+	// shared: crea con el id de creación del error (issues.linear_create_id),
+	// el mismo que usa la issue creada a mano.
+	shared bool
 
 	mu        sync.Mutex
 	unstarted string
@@ -67,6 +70,15 @@ func (l *linear) send(ctx context.Context, p *pending) error {
 		}
 	}
 	if p.linear == "" || err != nil {
+		// Sin issue aún, el id es el del error: si a la vez se crea a mano, Linear
+		// rechaza la segunda con el mismo id y las dos acaban en la misma.
+		if p.linear == "" && !p.test && l.shared {
+			id, err := l.st.ClaimLinearCreateID(ctx, p.issueID, p.createID)
+			if err != nil {
+				return err
+			}
+			p.createID = id
+		}
 		if is, err = l.create(ctx, p); err != nil {
 			return err
 		}
@@ -124,8 +136,15 @@ func (l *linear) create(ctx context.Context, p *pending) (linearRef, error) {
 		map[string]any{"input": input}, &out)
 	if err != nil {
 		// Si un intento anterior la creó pero no llegó a guardarse su id, ya existe.
-		if is, found, _, lookupErr := l.lookup(ctx, p.createID); lookupErr == nil && found {
+		is, found, _, lookupErr := l.lookup(ctx, p.createID)
+		if lookupErr == nil && found {
 			return is, nil
+		}
+		// Si Linear no la tiene, el siguiente intento puede pedir otro id.
+		if lookupErr == nil && !p.test && l.shared && p.issueID != 0 {
+			if err := l.st.ForgetLinearCreateID(ctx, p.issueID, p.createID); err != nil {
+				return linearRef{}, err
+			}
 		}
 		return linearRef{}, err
 	}

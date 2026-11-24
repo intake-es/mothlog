@@ -383,7 +383,7 @@ export const es = {
     'Cada regla dice de qué avisa y a dónde. Salta cuando se cumple alguna de sus condiciones y todos sus filtros.',
   'rules.default.title': 'Avisa como dice el servidor',
   'rules.default.text':
-    'Sin reglas, este proyecto avisa de los errores nuevos y las regresiones en Slack y Linear, con la configuración del servidor. Con la primera regla, avisa solo de lo que digan sus reglas.',
+    'Sin reglas, este proyecto avisa de los errores nuevos y las regresiones por los avisos por defecto de arriba. Con la primera regla, avisa solo de lo que digan sus reglas.',
   'rules.allOff': 'Todas las reglas están desactivadas: este proyecto no avisa de nada.',
   'rules.new': 'Nueva regla',
   'rules.edit': 'Editar',
@@ -798,6 +798,31 @@ export const es = {
   'editor.uptimeDown': 'Un monitor que cae',
   'editor.uptimeUp': 'Un monitor que vuelve, con la duración del incidente',
   'editor.uptimeMonitorsPlaceholder': 'web-principal, api',
+
+  // Avisos por defecto por proyecto y «Crear en Linear» en el detalle.
+  'defaults.title': 'Avisos por defecto',
+  'defaults.lede':
+    'Sin reglas de errores, el proyecto avisa de cada error nuevo y cada regresión por los canales configurados en el servidor. Apaga los que este proyecto no necesite.',
+  'defaults.slackHint':
+    'Un mensaje en el canal del servidor con el error, la línea que falla y el enlace.',
+  'defaults.linearHint':
+    'Una issue por error en el equipo del servidor, enlazada: su estado y el del error se sincronizan.',
+  'defaults.notConfigured': 'Sin configurar',
+  'defaults.missing': 'El servidor no tiene {env}.',
+  'defaults.scope':
+    'Solo valen mientras el proyecto no tenga reglas de errores. Los crons y la disponibilidad siguen avisando por todos los canales del servidor.',
+  'defaults.withRules':
+    'Este proyecto tiene reglas de errores: avisa a donde digan ellas y estos interruptores no cuentan.',
+  'defaults.seeRules': 'Ver las reglas',
+  'defaults.error': 'No se han podido cargar los avisos por defecto.',
+  'defaults.on': '{channel} encendido en este proyecto',
+  'defaults.off': '{channel} apagado en este proyecto',
+  'linear.create': 'Crear en Linear',
+  'linear.creating': 'Creando…',
+  'linear.createHint': 'Crea la issue con el error y la deja enlazada: sus estados se sincronizan.',
+  'linear.failed': 'Linear no ha podido crear la issue. Prueba otra vez en un rato.',
+  'linear.created': 'Issue {identifier} creada en Linear',
+  'history.linkCreated': 'creó en Linear la issue',
 };
 
 export type Key = keyof typeof es;

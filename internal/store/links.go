@@ -40,10 +40,12 @@ type IssueLink struct {
 	Identifier string `json:"identifier"`
 	URL        string `json:"url"`
 	// State es open, closed, canceled o merged; vacío, aún no se sabe.
-	State     string    `json:"state"`
-	StateName string    `json:"state_name"`
-	RuleID    *int64    `json:"-"`
-	ActionID  string    `json:"-"`
+	State     string `json:"state"`
+	StateName string `json:"state_name"`
+	RuleID    *int64 `json:"-"`
+	ActionID  string `json:"-"`
+	// Author es quien lo creó a mano; nil en los de los avisos y los webhooks.
+	Author    *Actor    `json:"author,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -72,12 +74,16 @@ func LinearStateCategory(typ string) string {
 }
 
 const linkColumns = `id, issue_id, provider, kind, external_id, COALESCE(identifier, ''), COALESCE(url, ''),
-	COALESCE(state, ''), COALESCE(state_name, ''), rule_id, COALESCE(action_id, ''), created_at, updated_at`
+	COALESCE(state, ''), COALESCE(state_name, ''), rule_id, COALESCE(action_id, ''), author, author_kind, created_at, updated_at`
 
 func scanLink(r db.Row) (IssueLink, error) {
 	var l IssueLink
+	var author, kind *string
 	err := r.Scan(&l.ID, &l.IssueID, &l.Provider, &l.Kind, &l.ExternalID, &l.Identifier, &l.URL,
-		&l.State, &l.StateName, &l.RuleID, &l.ActionID, &l.CreatedAt, &l.UpdatedAt)
+		&l.State, &l.StateName, &l.RuleID, &l.ActionID, &author, &kind, &l.CreatedAt, &l.UpdatedAt)
+	if author != nil && kind != nil {
+		l.Author = &Actor{Name: *author, Kind: *kind}
+	}
 	return l, err
 }
 
@@ -123,8 +129,13 @@ func (s *Store) Link(ctx context.Context, id int64) (IssueLink, error) {
 
 // SaveLink guarda el enlace o, si ya estaba, le pone el identificador, la
 // URL y el estado que traiga. Con only, quita los demás del issue del mismo
-// sitio y tipo: así guarda la ingesta la issue de Linear de cada error.
+// sitio y tipo: así guarda la ingesta la issue de Linear de cada error. El
+// autor solo se pone si no lo tenía.
 func SaveLink(ctx context.Context, q Querier, l IssueLink, only bool) (IssueLink, error) {
+	var author, kind *string
+	if l.Author != nil {
+		author, kind = &l.Author.Name, &l.Author.Kind
+	}
 	if only {
 		if _, err := q.Exec(ctx, `DELETE FROM issue_links WHERE issue_id = $1 AND provider = $2 AND kind = $3 AND external_id <> $4`,
 			l.IssueID, l.Provider, l.Kind, l.ExternalID); err != nil {
@@ -132,8 +143,9 @@ func SaveLink(ctx context.Context, q Querier, l IssueLink, only bool) (IssueLink
 		}
 	}
 	out, err := scanLink(q.QueryRow(ctx, `
-		INSERT INTO issue_links (issue_id, provider, kind, external_id, identifier, url, state, state_name, rule_id, action_id)
-		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9, NULLIF($10, ''))
+		INSERT INTO issue_links (issue_id, provider, kind, external_id, identifier, url, state, state_name, rule_id, action_id,
+			author, author_kind)
+		VALUES ($1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), $9, NULLIF($10, ''), $11, $12)
 		ON CONFLICT (issue_id, provider, kind, external_id) DO UPDATE SET
 			identifier = COALESCE(EXCLUDED.identifier, issue_links.identifier),
 			url = COALESCE(EXCLUDED.url, issue_links.url),
@@ -141,9 +153,11 @@ func SaveLink(ctx context.Context, q Querier, l IssueLink, only bool) (IssueLink
 			state_name = COALESCE(EXCLUDED.state_name, issue_links.state_name),
 			rule_id = COALESCE(issue_links.rule_id, EXCLUDED.rule_id),
 			action_id = COALESCE(issue_links.action_id, EXCLUDED.action_id),
+			author_kind = CASE WHEN issue_links.author IS NULL THEN EXCLUDED.author_kind ELSE issue_links.author_kind END,
+			author = COALESCE(issue_links.author, EXCLUDED.author),
 			updated_at = now()
 		RETURNING `+linkColumns,
-		l.IssueID, l.Provider, l.Kind, l.ExternalID, l.Identifier, l.URL, l.State, l.StateName, l.RuleID, l.ActionID))
+		l.IssueID, l.Provider, l.Kind, l.ExternalID, l.Identifier, l.URL, l.State, l.StateName, l.RuleID, l.ActionID, author, kind))
 	if db.IsForeignKeyViolation(err) {
 		return l, ErrNotFound
 	}
@@ -306,4 +320,31 @@ func (s *Store) LastWebhookDelivery(ctx context.Context, provider string) (*time
 		return nil, fmt.Errorf("última entrega: %w", err)
 	}
 	return at, nil
+}
+
+// ClaimLinearCreateID da el id con el que se crea a mano la issue de Linear
+// del error: el que ya tenga o, si no, candidate. Así, dos peticiones a la vez
+// piden a Linear el mismo id y la segunda no crea otra.
+func (s *Store) ClaimLinearCreateID(ctx context.Context, issueID int64, candidate string) (string, error) {
+	var id string
+	err := s.pool.QueryRow(ctx, `UPDATE issues SET linear_create_id = COALESCE(linear_create_id, $2) WHERE id = $1
+		RETURNING CAST(linear_create_id AS text)`, issueID, candidate).Scan(&id)
+	if errors.Is(err, db.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("id para Linear: %w", err)
+	}
+	return id, nil
+}
+
+// ForgetLinearCreateID suelta el id si sigue siendo id: Linear no lo tiene y el
+// siguiente intento puede usar otro.
+func (s *Store) ForgetLinearCreateID(ctx context.Context, issueID int64, id string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE issues SET linear_create_id = NULL
+		WHERE id = $1 AND CAST(linear_create_id AS text) = $2`, issueID, id)
+	if err != nil {
+		return fmt.Errorf("id para Linear: %w", err)
+	}
+	return nil
 }

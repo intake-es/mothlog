@@ -79,6 +79,7 @@ func (s *Store) RenamePerson(ctx context.Context, from, base string) (string, er
 			`UPDATE issue_assignment_changes SET author = $2 WHERE author_kind = 'user' AND author = $1`,
 			`UPDATE issue_assignment_changes SET from_name = $2 WHERE from_kind = 'user' AND from_name = $1`,
 			`UPDATE issue_assignment_changes SET to_name = $2 WHERE to_kind = 'user' AND to_name = $1`,
+			`UPDATE issue_links SET author = $2 WHERE author_kind = 'user' AND author = $1`,
 		} {
 			if _, err := tx.Exec(ctx, q, from, to); err != nil {
 				return err

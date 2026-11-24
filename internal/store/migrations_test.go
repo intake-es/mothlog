@@ -687,6 +687,10 @@ func TestMigrationOIDC(t *testing.T) {
 	if page, err := s.ListIssues(ctx, IssueFilter{Query: "assigned:me", Viewer: &Actor{Name: "ana~2", Kind: ActorUser}}); err != nil || len(page.Issues) != 0 {
 		t.Errorf("la de OIDC ve como suyos los de GitHub: %d, %v", len(page.Issues), err)
 	}
+	// El historial de hoy lee también columnas de migraciones posteriores.
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatal(err)
+	}
 	h, err := s.History(ctx, issue, nil)
 	if err != nil || len(h) != 1 || h[0].Author == nil || h[0].Author.Name != "luis" || h[0].Assignee.Name != "ana" {
 		t.Errorf("historial = %+v, %v", h, err)
@@ -863,3 +867,58 @@ func TestMigrationCompressedEvents(t *testing.T) {
 }
 
 func storeOn(pool *pgxpool.Pool) *Store { return &Store{pool: db.NewPostgres(pool)} }
+
+func TestMigrationDefaultAlerts(t *testing.T) {
+	ctx := context.Background()
+	u := testSchemaURL(t, migrationsOnlyPostgres)
+	pool, err := pgxpool.New(ctx, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	p, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.FS,
+		goose.WithSlog(slog.New(slog.NewTextHandler(io.Discard, nil))), goose.WithAllowOutofOrder(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.UpTo(ctx, 24); err != nil {
+		t.Fatal(err)
+	}
+	var project, issue int64
+	if err := pool.QueryRow(ctx, `INSERT INTO projects (name, public_key) VALUES ('api', 'clave-api') RETURNING id`).Scan(&project); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO issues (project_id, fingerprint, title, first_seen, last_seen, event_count)
+		VALUES ($1, 'fp', 'KeyError', now(), now(), 1) RETURNING id`, project).Scan(&issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO issue_links (issue_id, provider, kind, external_id) VALUES ($1, 'linear', 'issue', 'lin-1')`, issue); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ApplyVersion(ctx, 25, true); err != nil {
+		t.Fatal(err)
+	}
+	s := storeOn(pool)
+	// Los proyectos de antes siguen avisando como hasta ahora.
+	if d, err := s.DefaultAlerts(ctx, project); err != nil || !d.Slack || !d.Linear {
+		t.Fatalf("avisos por defecto = %+v, %v", d, err)
+	}
+	links, err := s.IssueLinks(ctx, issue)
+	if err != nil || len(links) != 1 || links[0].Author != nil {
+		t.Fatalf("enlaces = %+v, %v", links, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE issue_links SET author = 'ana', author_kind = 'otro'`); pgCode(err) != "23514" {
+		t.Errorf("un autor de tipo desconocido: err = %v", err)
+	}
+	if _, err := s.SetDefaultAlerts(ctx, project, DefaultAlerts{Slack: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ApplyVersion(ctx, 25, false); err != nil {
+		t.Fatalf("bajar: %v", err)
+	}
+	if _, err := p.ApplyVersion(ctx, 25, true); err != nil {
+		t.Fatal(err)
+	}
+}

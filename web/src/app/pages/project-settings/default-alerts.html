@@ -1,0 +1,63 @@
+<section class="section">
+  <div class="section__head">
+    <div>
+      <h2 class="section__title">{{ t('defaults.title') }}</h2>
+      <p class="section__lede">{{ t('defaults.lede') }}</p>
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="state state--error" role="alert">
+      <svg appIcon="warning-circle" weight="duotone"></svg>
+      <p class="state__title">{{ t('defaults.error') }}</p>
+      <p class="state__text">{{ error() }}</p>
+      <button type="button" class="btn" (click)="load()">{{ t('common.retry') }}</button>
+    </div>
+  } @else if (!data()) {
+    <div class="card group" aria-busy="true" [attr.aria-label]="t('settings.loading')">
+      <span class="sp-skeleton" style="width: 40%; height: 0.8rem"></span>
+    </div>
+  } @else {
+    <div class="card" [class.defaults--idle]="hasRules()">
+      <ul class="defaults" role="list">
+        @for (c of rows(); track c.id) {
+          <li class="defaults__row" [class.defaults__row--off]="!c.ready">
+            <span class="defaults__icon"><svg [appIcon]="icons[c.id]"></svg></span>
+            <label class="defaults__text" [attr.for]="'default-' + c.id">
+              <span class="defaults__name">
+                {{ t(c.name) }}
+                @if (!c.ready) {
+                  <span class="sp-badge sp-badge--sm sp-badge--gray">{{ t('defaults.notConfigured') }}</span>
+                }
+              </span>
+              <span class="defaults__hint">
+                {{ c.ready ? t(c.hint) : t('defaults.missing', { env: c.env }) }}
+              </span>
+            </label>
+            <input
+              type="checkbox"
+              class="switch"
+              role="switch"
+              [id]="'default-' + c.id"
+              [checked]="c.on"
+              [disabled]="!c.ready || saving() === c.id"
+              (change)="toggle(c.id, $any($event.target))"
+            />
+          </li>
+        }
+      </ul>
+      <div class="defaults__foot">
+        @if (hasRules()) {
+          <p class="defaults__scope">
+            {{ t('defaults.withRules') }}
+            <button type="button" class="defaults__link" (click)="showRules.emit()">
+              {{ t('defaults.seeRules') }}<svg appIcon="caret-right"></svg>
+            </button>
+          </p>
+        } @else {
+          <p class="defaults__scope">{{ t('defaults.scope') }}</p>
+        }
+      </div>
+    </div>
+  }
+</section>

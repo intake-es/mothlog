@@ -28,6 +28,8 @@ type Options struct {
 	Integrations Integrations
 	// Digests comprueba y manda el resumen; sin él, no se manda a mano.
 	Digests Digests
+	// Channels son los canales por defecto; sin él, ninguno está configurado.
+	Channels Channels
 }
 
 type handlers struct {
@@ -36,11 +38,12 @@ type handlers struct {
 	alerts    Alerts
 	integ     Integrations
 	digests   Digests
+	channels  Channels
 }
 
 // Register añade las rutas de la API y del MCP a mux.
 func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
-	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations, digests: opts.Digests}
+	h := &handlers{st: st, alerts: opts.Alerts, integ: opts.Integrations, digests: opts.Digests, channels: opts.Channels}
 	if opts.PublicURL != "" {
 		u, err := url.Parse(opts.PublicURL)
 		if err != nil || u.Host == "" {
@@ -63,6 +66,7 @@ func Register(mux *http.ServeMux, st *store.Store, opts Options) error {
 	route("GET /api/0/projects/{id}/dropped/{$}", h.dropped)
 	h.registerRules(route)
 	h.registerDigest(route)
+	h.registerDefaults(route)
 	route("GET /api/0/issues/{$}", h.issues)
 	route("GET /api/0/issues/{id}/{$}", h.issue)
 	route("GET /api/0/issues/{id}/events/{$}", h.issueEvents)

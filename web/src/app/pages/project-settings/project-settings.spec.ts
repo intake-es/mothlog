@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import type { DroppedStats, Filters, Rule } from '../../core/api';
+import type { DefaultAlerts, DroppedStats, Filters, Rule } from '../../core/api';
 import { I18n, lang } from '../../core/i18n';
 import { spanishLeft } from '../../core/i18n.testing';
 import { ProjectSettingsPage } from './project-settings';
@@ -68,6 +68,14 @@ const dropped: DroppedStats = {
   daily: [],
 };
 
+const defaults = (over: Partial<DefaultAlerts> = {}): DefaultAlerts => ({
+  slack: true,
+  linear: true,
+  configured: ['slack', 'linear'],
+  has_rules: false,
+  ...over,
+});
+
 describe('ProjectSettingsPage', () => {
   let http: HttpTestingController;
 
@@ -80,11 +88,17 @@ describe('ProjectSettingsPage', () => {
   });
 
   afterEach(() => {
+    // Cambiar de proyecto vuelve a pedir sus avisos por defecto.
+    for (const req of http.match((r) => r.url.endsWith('/default-alerts'))) {
+      if (!req.cancelled) {
+        req.flush(defaults());
+      }
+    }
     http.verify();
     lang.set('es');
   });
 
-  async function render(section: string, rules: Rule[] = []) {
+  async function render(section: string, rules: Rule[] = [], d: DefaultAlerts = defaults()) {
     const fixture = TestBed.createComponent(ProjectSettingsPage);
     fixture.componentRef.setInput('id', '4');
     fixture.componentRef.setInput('section', section);
@@ -93,6 +107,7 @@ describe('ProjectSettingsPage', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     if (section === 'alerts') {
+      http.expectOne('/api/0/projects/4/default-alerts').flush(d);
       http.expectOne('/api/0/projects/4/rules').flush({ data: rules });
     } else {
       http.expectOne('/api/0/projects/4/filters').flush(filters());
@@ -108,8 +123,91 @@ describe('ProjectSettingsPage', () => {
     expect(el.querySelector('.titlebar__title')?.textContent).toContain('Ajustes');
     expect(el.querySelector('[aria-current=page]')?.textContent).toContain('Avisos');
     expect(el.querySelector('.note__title')?.textContent).toContain('Avisa como dice el servidor');
-    expect(el.querySelector('.note__text')?.textContent).toContain('Slack y Linear');
+    expect(el.querySelector('.note__text')?.textContent).toContain('avisos por defecto de arriba');
     expect(el.querySelector('.btn--primary')?.textContent).toContain('Nueva regla');
+  });
+
+  it('los avisos por defecto tienen un interruptor por canal y guardan al cambiarlo', async () => {
+    const { fixture, el } = await render('alerts');
+    const section = el.querySelector('app-default-alerts')!;
+    expect(section.querySelector('.section__title')?.textContent).toContain('Avisos por defecto');
+    const rows = section.querySelectorAll('.defaults__row');
+    expect(
+      Array.from(rows).map((r) => r.querySelector('.defaults__name')?.textContent?.trim()),
+    ).toEqual(['Slack', 'Linear']);
+    expect(section.querySelector('.defaults__scope')?.textContent).toContain(
+      'Solo valen mientras el proyecto no tenga reglas de errores',
+    );
+    const linear = section.querySelector<HTMLInputElement>('#default-linear')!;
+    expect(linear.checked).toBe(true);
+    linear.checked = false;
+    linear.dispatchEvent(new Event('change'));
+    const req = http.expectOne('/api/0/projects/4/default-alerts');
+    expect(req.request.method).toBe('PATCH');
+    expect(req.request.body).toEqual({ linear: false });
+    req.flush(defaults({ linear: false }));
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(section.querySelector<HTMLInputElement>('#default-linear')?.checked).toBe(false);
+    expect(el.querySelector('.toast')?.textContent).toContain('Linear apagado en este proyecto');
+  });
+
+  it('si guardar falla, el interruptor vuelve a como estaba', async () => {
+    const { fixture, el } = await render('alerts');
+    const slack = el.querySelector<HTMLInputElement>('#default-slack')!;
+    slack.checked = false;
+    slack.dispatchEvent(new Event('change'));
+    http
+      .expectOne('/api/0/projects/4/default-alerts')
+      .flush({ error: 'no' }, { status: 500, statusText: 'Error' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(el.querySelector<HTMLInputElement>('#default-slack')?.checked).toBe(true);
+  });
+
+  it('un canal sin configurar en el servidor sale sin poder usarse', async () => {
+    const { el } = await render('alerts', [], defaults({ configured: ['slack'] }));
+    const linear = el.querySelector<HTMLInputElement>('#default-linear')!;
+    expect(linear.disabled).toBe(true);
+    expect(linear.checked).toBe(false);
+    const row = linear.closest('.defaults__row')!;
+    expect(row.textContent).toContain('Sin configurar');
+    expect(row.textContent).toContain('El servidor no tiene LINEAR_API_KEY.');
+  });
+
+  it('con reglas de errores lo dice y lleva a ellas', async () => {
+    const { el } = await render('alerts', [rule()], defaults({ has_rules: true }));
+    const scope = el.querySelector('app-default-alerts .defaults__scope');
+    expect(scope?.textContent).toContain('Este proyecto tiene reglas de errores');
+    const rules = el.querySelector<HTMLElement>('#rules')!;
+    rules.scrollIntoView = () => {};
+    scope?.querySelector<HTMLButtonElement>('button')?.click();
+    expect(document.activeElement).toBe(rules);
+  });
+
+  it('una regla solo de crons no cuenta como regla de errores', async () => {
+    const cron = rule({
+      conditions: {
+        ...rule().conditions,
+        new: false,
+        regressed: false,
+        frequency: null,
+        cron: { failed: true, missed: true, timeout: false, recovered: false, monitors: [] },
+      },
+    });
+    const { el } = await render('alerts', [cron]);
+    expect(el.querySelector('app-default-alerts .defaults__scope')?.textContent).toContain(
+      'Solo valen mientras',
+    );
+  });
+
+  it('los avisos por defecto en inglés', async () => {
+    lang.set('en');
+    const { el } = await render('alerts', [], defaults({ configured: ['slack'] }));
+    const section = el.querySelector('app-default-alerts') as HTMLElement;
+    expect(section.querySelector('.section__title')?.textContent).toContain('Default alerts');
+    expect(section.textContent).toContain('Not set up');
+    expect(spanishLeft(section)).toEqual([]);
   });
 
   it('lista las reglas con su resumen y sus destinos', async () => {

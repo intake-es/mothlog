@@ -1,0 +1,13 @@
+<div class="lc">
+  <button type="button" class="btn lc__btn" [disabled]="busy()" [attr.aria-describedby]="'lc-hint-' + issueId()" (click)="create()">
+    <svg appIcon="kanban"></svg>
+    {{ busy() ? t('linear.creating') : t('linear.create') }}
+  </button>
+  <p class="lc__hint" [id]="'lc-hint-' + issueId()">{{ t('linear.createHint') }}</p>
+  @if (failed()) {
+    <p class="lc__error" role="alert">
+      <svg appIcon="warning-circle"></svg>
+      {{ t('linear.failed') }}
+    </p>
+  }
+</div>

@@ -1,9 +1,10 @@
 // servicios-falsos levanta un Linear y un GitHub falsos para probar a mano
 // la sincronización: hacen de sus API, mandan sus webhooks firmados al
-// servicio y apuntan en JSON Lines lo que reciben y mandan, en orden.
+// servicio y apuntan en JSON Lines lo que reciben y mandan, en orden. Con
+// -slack, también un webhook entrante de Slack (SLACK_WEBHOOK_URL).
 //
 //	go run ./tools/servicios-falsos -linear 127.0.0.1:7801 -github 127.0.0.1:7802 \
-//	  -webhooks http://127.0.0.1:8080 -log servicios.jsonl
+//	  -slack 127.0.0.1:7803 -webhooks http://127.0.0.1:8080 -log servicios.jsonl
 //
 // Lo que haría una persona allí va por /_control/ (ver internal/webhooks/fakes).
 package main
@@ -21,6 +22,7 @@ import (
 func main() {
 	linearAddr := flag.String("linear", "127.0.0.1:7801", "dirección del Linear falso")
 	githubAddr := flag.String("github", "127.0.0.1:7802", "dirección del GitHub falso")
+	slackAddr := flag.String("slack", "", "dirección del webhook de Slack falso; vacía, no se levanta")
 	target := flag.String("webhooks", "http://127.0.0.1:8080", "URL base del servicio que recibe los webhooks")
 	logPath := flag.String("log", "", "fichero JSON Lines con lo que reciben y mandan; vacío, la salida estándar")
 	flag.Parse()
@@ -54,6 +56,9 @@ func main() {
 		mux.Handle("/", api)
 		log.Printf("escuchando en %s", addr)
 		log.Fatal(http.ListenAndServe(addr, mux))
+	}
+	if *slackAddr != "" {
+		go serve(*slackAddr, fakes.NewSlack(l).Handler(), http.NotFoundHandler())
 	}
 	go serve(*linearAddr, lin.Handler(), lin.Control())
 	serve(*githubAddr, gh.Handler(), gh.Control())

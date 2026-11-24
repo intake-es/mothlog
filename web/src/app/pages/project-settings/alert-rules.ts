@@ -12,13 +12,14 @@ import {
 import { Api, apiError, type Rule } from '../../core/api';
 import { I18n } from '../../core/i18n';
 import { Icon } from '../../ui/icon';
+import { DefaultAlertsSection } from './default-alerts';
 import { ACTION_ICON, draftOf, inputOf, minutes, summary } from './rule-draft';
 import { RuleEditor } from './rule-editor';
 
-/** La sección Avisos: las reglas del proyecto y el editor de la que se edita. */
+/** La sección Avisos: los canales por defecto, las reglas del proyecto y el editor de la que se edita. */
 @Component({
   selector: 'app-alert-rules',
-  imports: [Icon, RuleEditor],
+  imports: [Icon, RuleEditor, DefaultAlertsSection],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './alert-rules.html',
   styleUrls: ['./settings.css', './alert-rules.css'],
@@ -127,7 +128,12 @@ export class AlertRules {
     });
   }
 
-  private notify(message: string): void {
+  protected focusRules(el: HTMLElement): void {
+    el.scrollIntoView({ block: 'start' });
+    el.focus({ preventScroll: true });
+  }
+
+  protected notify(message: string): void {
     clearTimeout(this.toastTimer);
     this.toast.set(message);
     this.toastTimer = setTimeout(() => this.toast.set(''), 2500);
