@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, input } from '@an
 import { around, I18n, type Key, locale } from '../../core/i18n';
 import { Session } from '../../core/session';
 import { Icon } from '../../ui/icon';
+import { Logo } from '../../ui/logo';
 
 const ERRORS: Record<string, Key> = {
   org: 'login.error.org',
@@ -24,7 +25,7 @@ const LIMITS_SLOT = OIDC_LIMITS.join();
 
 @Component({
   selector: 'app-login',
-  imports: [Icon],
+  imports: [Icon, Logo],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './login.html',
   styleUrl: './login.css',

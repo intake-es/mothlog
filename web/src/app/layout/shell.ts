@@ -7,6 +7,7 @@ import { I18n, type Key, LANGS, type Lang } from '../core/i18n';
 import { Session } from '../core/session';
 import { Theme, type ThemeChoice } from '../core/theme';
 import { Icon } from '../ui/icon';
+import { Logo } from '../ui/logo';
 
 const THEMES: { value: ThemeChoice; label: Key; icon: string }[] = [
   { value: 'system', label: 'theme.system', icon: 'desktop' },
@@ -30,7 +31,7 @@ function sectionOf(url: string): 'issues' | 'releases' | 'monitors' | 'settings'
 /** El raíl fino a la izquierda (arriba en el móvil) y el panel blanco con la pantalla. */
 @Component({
   selector: 'app-shell',
-  imports: [RouterOutlet, RouterLink, Icon],
+  imports: [RouterOutlet, RouterLink, Icon, Logo],
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { '(keydown.escape)': 'menu.set(null)' },
   templateUrl: './shell.html',

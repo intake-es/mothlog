@@ -14,6 +14,7 @@ import { Browser, OAuthApi, type OAuthRequest, SCOPES, type Scope } from '../../
 import { Session } from '../../core/session';
 import { AppMark } from '../../ui/app-mark';
 import { Icon } from '../../ui/icon';
+import { Logo } from '../../ui/logo';
 
 const ERRORS: Record<string, Key> = {
   client: 'consent.error.client',
@@ -39,7 +40,7 @@ type State = 'loading' | 'ready' | 'gone' | 'failed' | 'leaving';
  */
 @Component({
   selector: 'app-authorize',
-  imports: [Icon, AppMark],
+  imports: [Icon, AppMark, Logo],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './authorize.html',
   styleUrl: './authorize.css',

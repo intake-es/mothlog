@@ -1,88 +1,105 @@
-# Mothlog
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo-dark.svg">
+    <img src="docs/images/logo-light.svg" alt="" width="64" height="64">
+  </picture>
+</p>
 
-Mothlog is a self-hosted error tracker that speaks the Sentry protocol: point any Sentry SDK at it by changing only the DSN, and it groups what arrives into issues, translates browser stack traces with your source maps, and alerts you on Slack, Linear, email, GitHub and more. It is a single Go binary with the web UI built in, running on Postgres 16 or on a SQLite file, and it has an MCP server so a coding agent can pick up an error, read its whole context, fix it and mark it resolved.
+<h1 align="center">Mothlog</h1>
 
-The name comes from the moth that was found in 1947 stuck in a relay of the Harvard Mark II and taped into its logbook as the "first actual case of bug being found".
+<p align="center">
+  Self-hosted error tracking that speaks the Sentry protocol,<br>
+  with an MCP server so your coding agents can fix what breaks.
+</p>
 
-![The issue list, with each error's events over 14 days and who is on it](docs/images/issues.png)
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#documentation">Docs</a> ·
+  <a href="docs/agents.md">Agents</a> ·
+  <a href="LICENSE">Apache-2.0</a>
+</p>
 
-![An issue: the browser stack trace translated back to TypeScript with its source map, and the agent it is assigned to](docs/images/issue.png)
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/issues-dark.png">
+    <img src="docs/images/issues-light.png" alt="The issue list, with each error's events over 14 days, its project, release and assignee" width="880">
+  </picture>
+</p>
+
+**Drop-in for Sentry SDKs.** Point any Sentry SDK at Mothlog by changing only the DSN. Errors, releases, release health, cron check-ins and source maps work as they do with Sentry, `sentry-cli` included.
+
+**Built for agents.** An MCP server and a REST API let a coding agent find an error, read its whole context, fix it, leave a comment and mark it resolved. It connects with OAuth or an API token, and everything it does shows in the issue's history.
+
+**Small.** One Go binary with the UI inside, on Postgres 16 or a single SQLite file. At 0.25 vCPU it takes over 200 events per second in under 50 MB of RAM.
 
 ## Quick start
 
 You need Docker with Compose.
 
 ```sh
-git clone https://github.com/intake-es/mothlog.git
-cd mothlog
-docker compose up
+git clone https://github.com/intake-es/mothlog.git && cd mothlog
+docker compose up -d
+docker compose logs mothlog | grep dev/login                # open the sign-in link it prints
+docker compose exec mothlog /mothlog projects create demo   # prints the project's DSN
 ```
 
-This starts Mothlog and a Postgres 16 on http://localhost:8000 and applies the migrations. If the published image (`ghcr.io/intake-es/mothlog:latest`) can't be pulled, Compose builds it from the `Dockerfile`, which takes a few minutes the first time. It is for trying Mothlog out: it signs you in as `dev` without any account, and only listens on `127.0.0.1`.
-
-Leave it running (or start it with `docker compose up -d`) and, in another terminal in the same directory, get the sign-in link that Mothlog writes to its log when it starts; it carries a new key on every start:
-
-```sh
-docker compose logs mothlog | grep dev/login
-# … "url":"http://localhost:8000/auth/dev/login?key=…"
-```
-
-Create a project, from the command line (the UI doesn't create projects); it prints the project's DSN:
-
-```sh
-docker compose exec mothlog /mothlog projects create demo
-# http://<key>@localhost:8000/1
-```
-
-Then put that DSN in a Sentry SDK and raise an error. With Python (`pip install sentry-sdk`):
+Then put the DSN in a Sentry SDK and raise an error:
 
 ```python
 import sentry_sdk
 
-sentry_sdk.init(dsn="http://<key>@localhost:8000/1", release="demo@1.0.0", environment="production")
+sentry_sdk.init(dsn="http://<key>@localhost:8000/1", release="demo@1.0.0")
 1 / 0
 ```
 
-or in the browser, with `@sentry/browser`:
+It shows up in the UI, on http://localhost:8000, within a second.
 
-```js
-import * as Sentry from '@sentry/browser';
+This Compose file is for trying Mothlog out: it listens only on `127.0.0.1` and signs you in without an account, with a new key on every start. If the published image can't be pulled, it builds one from the `Dockerfile`, which takes a few minutes the first time. `docker compose -f docker-compose.sqlite.yml up -d` does the same with SQLite, and `docker compose down -v` deletes everything. To run it for real, with a GitHub or OIDC login, see [Deploy](docs/deploy.md).
 
-Sentry.init({ dsn: 'http://<key>@localhost:8000/1', release: 'demo@1.0.0' });
-throw new Error('Something broke');
+## Connect a coding agent
+
+With Claude Code:
+
+```sh
+claude mcp add --transport http mothlog https://errors.example.com/mcp
 ```
 
-The error shows up in the UI within a second. To see browser stack traces in your original source, [upload the source maps](docs/sdks.md#source-maps). `docker compose down` stops everything and `docker compose down -v` also deletes the data. `MOTHLOG_PORT` changes the port and `MOTHLOG_IMAGE` the image; `docker compose -f docker-compose.sqlite.yml up` does the same with SQLite instead of Postgres.
+The first time, the client opens the browser: you sign in with your Mothlog login and choose whether the agent may only read or also comment, assign and change statuses. Clients that can't do OAuth, and agents without a browser, use an API token. [Agents](docs/agents.md) has the details and other clients.
 
-From here:
-
-- [Send errors from your apps](docs/sdks.md): SDK options, releases, release health and source maps (with `sentry-cli` or `curl`).
-- [Connect a coding agent](docs/agents.md) to the MCP server.
-- [Deploy it](docs/deploy.md) with a real login (GitHub or any OIDC provider).
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/issue-dark.png">
+    <img src="docs/images/issue-light.png" alt="An issue assigned to an agent's token: its events over 14 days and the stack trace with the code around each frame" width="880">
+  </picture>
+</p>
 
 ## What it does
 
-- **Ingestion** of the Sentry envelope protocol: errors, logged exceptions, sessions and cron check-ins, with per-project filters, a per-issue hourly cap, sampling and rate limits. [Ingestion](docs/ingestion.md).
-- **Issues** grouped by fingerprint, with regressions, assignees (people or agents), comments, a status history and a search language (`is:open browser:Safari release:1.4.0`). [API and search](docs/api.md).
-- **Releases, deploys and environments**: what each release brought, "resolved in the next release", and crash-free sessions and users. [SDKs](docs/sdks.md#releases-deploys-and-environments).
-- **Source maps** for browser errors, uploaded with `sentry-cli` or a plain `POST`. [Source maps](docs/sdks.md#source-maps).
-- **Cron and uptime monitors**. [Monitors](docs/monitors.md).
-- **Alerts** to Slack and Linear by default, and per-project rules to Slack, Linear, email, Discord, Telegram, ntfy, GitHub issues and a signed webhook; two-way sync with Linear and GitHub, and a daily or weekly digest. [Alerts](docs/alerts.md).
-- **An MCP server and a REST API** for agents and scripts, with API tokens or OAuth. [Agents](docs/agents.md), [API](docs/api.md).
-- **Prometheus metrics**. [Metrics](docs/metrics.md).
-- **Import from Sentry**: projects, issues with their latest events, and releases. [Import](docs/import.md).
+| Area | What you get |
+|---|---|
+| **Issues** | Grouped by fingerprint, with regressions, assignees (people or agents), comments, a status history and a search language: `is:open browser:Safari release:1.4.0`. [API and search](docs/api.md) |
+| **Releases** | What each release brought, "resolved in the next release", deploys per environment, and crash-free sessions and users. [SDKs](docs/sdks.md#releases-deploys-and-environments) |
+| **Source maps** | Browser stack traces in your original source, uploaded with `sentry-cli` or a plain `POST`. [Source maps](docs/sdks.md#source-maps) |
+| **Monitors** | Cron check-ins and uptime checks. [Monitors](docs/monitors.md) |
+| **Alerts** | Slack and Linear by default; per-project rules to email, Discord, Telegram, ntfy, GitHub issues and a signed webhook; two-way sync with Linear and GitHub; a daily or weekly digest. [Alerts](docs/alerts.md) |
+| **Ingestion** | Errors, logged exceptions, sessions and check-ins, with per-project filters, a per-issue hourly cap, sampling and rate limits. [Ingestion](docs/ingestion.md) |
+| **Metrics** | `/metrics` for Prometheus. [Metrics](docs/metrics.md) |
+| **Import** | Projects, issues with their latest events, and releases from a Sentry server. [Import](docs/import.md) |
 
-The UI is in English and Spanish: it follows the browser's language and can be switched from the sidebar. What the server writes (alerts, the Markdown for agents, the MCP, `/llms.txt` and new projects' digests) follows `DEFAULT_LANGUAGE`, `en` by default or `es`.
+The UI is in English and Spanish, and follows the browser's language. What the server writes (alerts, the Markdown for agents, the MCP, `/llms.txt` and new projects' digests) follows `DEFAULT_LANGUAGE`: `en` by default, or `es`.
 
 ## Install
 
-- **Docker**: `ghcr.io/intake-es/mothlog`, multi-arch (amd64 and arm64), distroless, without a shell or root, listening on port 8000. There is a tag per version (`ghcr.io/intake-es/mothlog:1.0.0`) and `latest`, the newest one that isn't a pre-release.
+- **Docker:** `ghcr.io/intake-es/mothlog`, multi-arch (amd64 and arm64), distroless, without a shell or root, on port 8000. There is a tag per version (`ghcr.io/intake-es/mothlog:1.0.0`) and `latest`, the newest one that isn't a pre-release.
 
   ```sh
   docker run -p 8000:8000 -e DATABASE_URL=postgres://… -e PUBLIC_URL=https://errors.example.com ghcr.io/intake-es/mothlog:latest
   ```
 
-- **Binary**: every release on [GitHub Releases](https://github.com/intake-es/mothlog/releases) has a `.tar.gz` for Linux and macOS, amd64 and arm64, with the UI inside, and `checksums.txt` with their SHA-256:
+- **Binary:** every release on [GitHub Releases](https://github.com/intake-es/mothlog/releases) has a `.tar.gz` for Linux and macOS, amd64 and arm64, with the UI inside, and `checksums.txt` with their SHA-256.
+
+  <details>
+  <summary>Download and check it</summary>
 
   ```sh
   v=1.0.0; os=linux; arch=amd64   # or darwin, arm64
@@ -94,13 +111,15 @@ The UI is in English and Spanish: it follows the browser's language and can be s
   DATABASE_URL=postgres://… PUBLIC_URL=https://errors.example.com ./mothlog
   ```
 
-- **From source**: `docker build -t mothlog .`, or see [CONTRIBUTING.md](CONTRIBUTING.md) to build the binary.
+  </details>
+
+- **From source:** `docker build -t mothlog .`, or see [CONTRIBUTING.md](CONTRIBUTING.md) to build the binary.
 
 It needs Postgres 16, or nothing with SQLite: `DATABASE_URL=sqlite:///var/lib/mothlog/mothlog.db` keeps everything in one file, for a single instance ([SQLite](docs/sqlite.md)). Migrations run on start.
 
 ## Documentation
 
-| | |
+| Guide | What it covers |
 |---|---|
 | [Configuration](docs/configuration.md) | Every environment variable, signing in (GitHub, OIDC and the development login), sessions and offboarding |
 | [Deploy](docs/deploy.md) | Running it in production, memory, secrets and the command line |
@@ -117,10 +136,10 @@ It needs Postgres 16, or nothing with SQLite: `DATABASE_URL=sqlite:///var/lib/mo
 
 `GET /llms.txt`, public and without a token, describes the service, the API and the MCP for a model.
 
-## Contributing and security
+## Why "Mothlog"
 
-[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build it, run the tests and send a change. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+In 1947, the operators of the Harvard Mark II found a moth stuck in one of its relays and taped it into the logbook as the "first actual case of bug being found".
 
-## License
+## Contributing, security and license
 
-Mothlog is licensed under the [Apache License 2.0](LICENSE).
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build it, run the tests and send a change. To report a vulnerability, see [SECURITY.md](SECURITY.md). Mothlog is licensed under the [Apache License 2.0](LICENSE).
