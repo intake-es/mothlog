@@ -1,4 +1,4 @@
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { provideHttpClient, withInterceptors, withXhr } from '@angular/common/http';
 import {
   type ApplicationConfig,
   provideBrowserGlobalErrorListeners,
@@ -14,7 +14,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
     provideRouter(routes, withComponentInputBinding()),
-    provideHttpClient(withInterceptors([unauthorizedInterceptor])),
+    provideHttpClient(withXhr(), withInterceptors([unauthorizedInterceptor])),
     { provide: TitleStrategy, useExisting: PageTitle },
   ],
 };
