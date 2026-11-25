@@ -30,6 +30,9 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # @angular/compiler-cli 22 pide TypeScript >=6.0 <6.1; quitarlo cuando Angular admita la siguiente.
+      - dependency-name: typescript
+        versions: [">= 6.1"]
     groups:
       angular:
         patterns: ["@angular/*"]
