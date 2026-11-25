@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/intake-es/mothlog/internal/event"
 )
@@ -209,23 +208,29 @@ func TestCanonicalJSONLimits(t *testing.T) {
 
 // Normalizar un objeto cuesta lo mismo por clave tenga las claves que tenga.
 func TestCanonicalJSONManyKeysLinear(t *testing.T) {
-	timeOf := func(n int) time.Duration {
+	// Tiempo por operación con testing.Benchmark, que repite hasta que la medida es estable: una sola pasada de
+	// unos milisegundos depende demasiado de la máquina y de los demás tests que corren a la vez.
+	perOp := func(n int) float64 {
 		in := repeatJSON(`{`, `"k%07d":0`, `}`, n)
-		best := time.Duration(1 << 62)
-		for range 5 {
-			start := time.Now()
-			if _, err := canonicalJSON(in); err != nil {
-				t.Fatal(err)
+		runtime.GC()
+		r := testing.Benchmark(func(b *testing.B) {
+			for b.Loop() {
+				if _, err := canonicalJSON(in); err != nil {
+					b.Fatal(err)
+				}
 			}
-			best = min(best, time.Since(start))
+		})
+		if r.N == 0 {
+			t.Fatalf("%d claves: sin medida", n)
 		}
-		return best
+		return float64(r.NsPerOp())
 	}
-	small, big := timeOf(1_250), timeOf(10_000)
-	t.Logf("1250 claves: %v, 10000 claves: %v (%.1fx)", small, big, float64(big)/float64(small))
-	// Con 8 veces más claves, lineal da unas 8 veces más y cuadrático 64.
-	if big > 24*small {
-		t.Errorf("8 veces más claves tardan %.1f veces más", float64(big)/float64(small))
+	small, big := perOp(maxObjectMembers/16), perOp(maxObjectMembers)
+	ratio := big / small
+	t.Logf("%d claves: %.0f ns, %d claves: %.0f ns (%.1fx)", maxObjectMembers/16, small, maxObjectMembers, big, ratio)
+	// Con 16 veces más claves, lineal da unas 16 veces más y cuadrático unas 256.
+	if ratio > 64 {
+		t.Errorf("16 veces más claves tardan %.1f veces más", ratio)
 	}
 }
 
